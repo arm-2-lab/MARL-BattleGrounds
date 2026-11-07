@@ -17,7 +17,7 @@ redact privileged fields. Audience filtering belongs to the producing adapter.
 
 from dataclasses import dataclass, field
 from math import isclose, isfinite
-from typing import Literal, cast
+from typing import ClassVar, Literal, cast
 
 from marl_battlegrounds.evaluation._replays.wire_shapes import MAX_AGENT_SLOTS_V1
 from marl_battlegrounds.rendering.vocabulary import (
@@ -2399,6 +2399,181 @@ class RespawnWaveSceneV2:
             raise ValueError("countdown_steps must be less than period_steps.")
 
 
+type CaptureTheFlagFlagState = Literal["home", "carried", "dropped"]
+
+
+def capture_the_flag_flag_state(
+    *, carried: bool, countdown_steps: int
+) -> CaptureTheFlagFlagState:
+    """Return one flag's state from whether it is carried and its drop countdown.
+
+    Parameters
+    ----------
+    carried : bool
+        Whether an agent carries the flag: a carrier slot in the snapshot, or
+        the "controlled by" column of the carrier's team in an actor's flag
+        row (decision 139).
+    countdown_steps : int
+        Ticks before the dropped flag goes home by itself; 0 unless dropped.
+
+    Returns
+    -------
+    CaptureTheFlagFlagState
+        "carried", "dropped" (no carrier, a countdown above 0) or "home".
+
+    Raises
+    ------
+    ValueError
+        A carried flag has a countdown, or the countdown is negative.
+
+    Notes
+    -----
+    The one owner of the three flag states, for the Oracle scene and every
+    POV reader, so the clients can never disagree about them.
+    """
+    if countdown_steps < 0:
+        raise ValueError("a dropped flag's countdown cannot be negative.")
+    if carried:
+        if countdown_steps:
+            raise ValueError("a carried flag cannot count down.")
+        return "carried"
+    return "dropped" if countdown_steps else "home"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CaptureTheFlagFlagSceneV1:
+    """Describe one team's flag in a researcher scene.
+
+    This is a frozen, slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    team_index : int
+        Whose flag: Python team-axis index 0 (Team A) or 1 (Team B).
+    team_id : int
+        Python physical team ID equal to team_index + 1.
+    state : CaptureTheFlagFlagState
+        "home", "carried" or "dropped" (capture_the_flag_flag_state).
+    position : Point2D
+        World (x, y) of the flag now: its home, its carrier, or where it fell.
+    home_position : Point2D
+        World (x, y) of the flag's home.
+    carrier_global_slot : int | None
+        The carrier's global slot 0-9 while carried, on the flag's enemy team;
+        None otherwise. Researcher-only: no actor view receives it.
+    countdown_steps : int
+        Ticks before a dropped flag goes home by itself; 0 unless dropped.
+
+    Raises
+    ------
+    ValueError
+        A team, slot, state, position or countdown is invalid or disagrees.
+
+    Notes
+    -----
+    The containing scene joins the carrier to its agent. Positions are the
+    recorded float32 values; nothing here is recomputed.
+    """
+
+    team_index: int
+    """Whose flag: Python team-axis index 0 (Team A) or 1 (Team B)."""
+    team_id: int
+    """Python physical team ID equal to team_index + 1."""
+    state: CaptureTheFlagFlagState
+    """"home", "carried" or "dropped" (capture_the_flag_flag_state)."""
+    position: Point2D
+    """World (x, y) of the flag now: its home, its carrier, or where it fell."""
+    home_position: Point2D
+    """World (x, y) of the flag's home."""
+    carrier_global_slot: int | None
+    """The carrier's global slot 0-9 while carried, on the flag's enemy team."""
+    countdown_steps: int
+    """Ticks before a dropped flag goes home by itself; 0 unless dropped."""
+
+    def __post_init__(self) -> None:
+        """Validate CaptureTheFlagFlagSceneV1 during host construction.
+
+        Raise ValueError if the team join, state, carrier, positions or
+        countdown disagree; otherwise return None without changing values.
+        """
+        _require_python_int(self.team_index, name="team_index", minimum=0)
+        if self.team_index not in (0, 1) or self.team_id != self.team_index + 1:
+            raise ValueError("flag team_index and team_id must join.")
+        _require_point(self.position, name="position")
+        _require_point(self.home_position, name="home_position")
+        _require_python_int(self.countdown_steps, name="countdown_steps", minimum=0)
+        if self.carrier_global_slot is not None:
+            _require_slot(self.carrier_global_slot, name="carrier_global_slot")
+            if self.carrier_global_slot // 5 == self.team_index:
+                raise ValueError("a flag's carrier must be on the flag's enemy team.")
+        if self.state != capture_the_flag_flag_state(
+            carried=self.carrier_global_slot is not None,
+            countdown_steps=self.countdown_steps,
+        ):
+            raise ValueError("flag state must follow its carrier and countdown.")
+        if self.state == "home" and self.position != self.home_position:
+            raise ValueError("a flag at home must sit at its home position.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CaptureTheFlagSceneV1:
+    """Hold both flags and the Capture the Flag rule settings for one scene.
+
+    This is a frozen, slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    flags : tuple[CaptureTheFlagFlagSceneV1, CaptureTheFlagFlagSceneV1]
+        Team A's flag, then Team B's.
+    capture_distance : float
+        Positive reach of a home for a capture, in map units.
+    interaction_distance : float
+        Positive reach for a pickup or a return, in map units.
+    return_steps : int
+        Positive ticks a dropped flag waits before going home by itself.
+
+    Raises
+    ------
+    ValueError
+        The flags are not Team A's then Team B's, or a setting is invalid.
+
+    Notes
+    -----
+    Copied from the frame V4 snapshot and the Capture the Flag config record;
+    the clients draw from it and never recompute a rule.
+    """
+
+    flags: tuple[CaptureTheFlagFlagSceneV1, CaptureTheFlagFlagSceneV1]
+    """Team A's flag, then Team B's."""
+    capture_distance: float
+    """Positive reach of a home for a capture, in map units."""
+    interaction_distance: float
+    """Positive reach for a pickup or a return, in map units."""
+    return_steps: int
+    """Positive ticks a dropped flag waits before going home by itself."""
+
+    def __post_init__(self) -> None:
+        """Validate CaptureTheFlagSceneV1 during host construction.
+
+        Raise ValueError if the flag order or a setting is invalid; otherwise
+        return None without changing values.
+        """
+        if (
+            len(self.flags) != 2
+            or any(type(flag) is not CaptureTheFlagFlagSceneV1 for flag in self.flags)
+            or tuple(flag.team_index for flag in self.flags) != (0, 1)
+        ):
+            raise ValueError("flags must be Team A's flag, then Team B's.")
+        for name in ("capture_distance", "interaction_distance"):
+            _require_finite(getattr(self, name), name=name)
+            if getattr(self, name) <= 0.0:
+                raise ValueError(f"{name} must be positive.")
+        _require_python_int(self.return_steps, name="return_steps", minimum=1)
+        for flag in self.flags:
+            if flag.countdown_steps > self.return_steps:
+                raise ValueError("a countdown cannot exceed the return ticks.")
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BattlefieldSceneV2:
     """Collect one canonical researcher frame and its presentation choices.
@@ -2451,6 +2626,10 @@ class BattlefieldSceneV2:
     observer_visibility : tuple[ObserverVisibilitySceneV1, ...], default ()
         Exact tuple covering the ordered roster for the controlled observer;
         empty when selection is None.
+    capture_the_flag : CaptureTheFlagSceneV1 | None, default None
+        Both flags and the Capture the Flag settings in a CTF game; None in
+        every other mode. Each carrier joins a living scene agent at the flag's
+        position.
 
     Raises
     ------
@@ -2521,6 +2700,8 @@ class BattlefieldSceneV2:
     """Exact tuple covering the ordered roster for the controlled observer; empty
     when selection is None.
     """
+    capture_the_flag: CaptureTheFlagSceneV1 | None = None
+    """Both flags and the CTF settings in a CTF game; None in every other mode."""
 
     def __post_init__(self) -> None:
         """Validate BattlefieldSceneV2 during host construction.
@@ -2801,6 +2982,21 @@ class BattlefieldSceneV2:
                 raise ValueError(
                     "next-decision legality must join the current scene selection."
                 )
+        if self.capture_the_flag is not None:
+            if type(self.capture_the_flag) is not CaptureTheFlagSceneV1:
+                raise ValueError("capture_the_flag must be CaptureTheFlagSceneV1.")
+            for flag in self.capture_the_flag.flags:
+                if flag.carrier_global_slot is None:
+                    continue
+                carrier = agent_by_slot.get(flag.carrier_global_slot)
+                if (
+                    carrier is None
+                    or carrier.life_state != "alive"
+                    or carrier.position != flag.position
+                ):
+                    raise ValueError(
+                        "a carried flag must sit at its living scene carrier."
+                    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -5404,6 +5600,365 @@ class TeamDeathmatchCompletedEventV2(CanonicalVisualEventBaseV2):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class FlagVisualEventBaseV2(CanonicalVisualEventBaseV2):
+    """Name whose flag a Capture the Flag event is about.
+
+    Inherited fields follow CanonicalVisualEventBaseV2. This is a frozen,
+    slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    flag_team_index : int
+        Whose flag: Python team-axis index 0 (Team A) or 1 (Team B).
+    flag_team_id : int
+        Python physical team ID equal to flag_team_index + 1.
+
+    Raises
+    ------
+    ValueError
+        Canonical header or flag team join is invalid.
+    """
+
+    flag_team_index: int
+    """Whose flag: Python team-axis index 0 (Team A) or 1 (Team B)."""
+    flag_team_id: int
+    """Python physical team ID equal to flag_team_index + 1."""
+
+    def __post_init__(self) -> None:
+        """Validate FlagVisualEventBaseV2 during host construction.
+
+        Raise ValueError if the canonical header or flag team join is invalid.
+        Otherwise return None without changing values.
+        """
+        CanonicalVisualEventBaseV2.__post_init__(self)
+        _require_python_int(self.flag_team_index, name="flag_team_index", minimum=0)
+        if self.flag_team_index not in (0, 1) or self.flag_team_id != (
+            self.flag_team_index + 1
+        ):
+            raise ValueError("flag event team_index and team_id must join.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FlagAgentVisualEventBaseV2(FlagVisualEventBaseV2):
+    """Name the agent who returned, picked up, captured or dropped a flag.
+
+    Inherited fields follow FlagVisualEventBaseV2. This is a frozen, slotted,
+    keyword-only host record.
+
+    Attributes
+    ----------
+    agent_global_slot : int
+        The acting agent's global slot, a Python int in 0..9.
+    agent_anchor : VisualAgentAnchorV2
+        Matching agent anchor at successor: where the agent ended the tick
+        (for a drop, the body where the flag fell, decision 159).
+    touches_own_flag : ClassVar[bool]
+        True only for a return; every other kind acts on the enemy's flag.
+
+    Raises
+    ------
+    ValueError
+        Canonical header, flag team, agent slot or team, or successor anchor
+        is invalid.
+    """
+
+    touches_own_flag: ClassVar[bool] = False
+    """True only for a return; every other kind acts on the enemy's flag."""
+    agent_global_slot: int
+    """The acting agent's global slot, a Python int in 0..9."""
+    agent_anchor: VisualAgentAnchorV2
+    """Matching agent anchor at successor: where the agent ended the tick."""
+
+    def __post_init__(self) -> None:
+        """Validate FlagAgentVisualEventBaseV2 during host construction.
+
+        Raise ValueError if the canonical header, flag team, agent slot or team,
+        or successor anchor is invalid. Otherwise return None without changing
+        values.
+        """
+        FlagVisualEventBaseV2.__post_init__(self)
+        _require_slot(self.agent_global_slot, name="agent_global_slot")
+        if (self.agent_global_slot // 5 == self.flag_team_index) != (
+            self.touches_own_flag
+        ):
+            raise ValueError("flag event agent is on the wrong team for its kind.")
+        _require_agent_anchor(
+            self.agent_anchor,
+            name="agent_anchor",
+            phase="successor",
+            global_slot=self.agent_global_slot,
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FlagReturnedEventV2(FlagAgentVisualEventBaseV2):
+    """Record that an agent touched its own dropped flag and sent it home.
+
+    Inherited fields follow FlagAgentVisualEventBaseV2. This is a frozen,
+    slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_returned']
+        Fixed serialized event kind, supplied by the class and excluded from
+        construction.
+    phase_rank : Literal[130]
+        Fixed event ordering rank, supplied by the class and excluded from
+        construction.
+
+    Raises
+    ------
+    ValueError
+        Inherited canonical identity, flag team or agent anchor checks fail.
+    """
+
+    touches_own_flag: ClassVar[bool] = True
+    """A return is the one kind that acts on the agent's own flag."""
+    event_type: Literal["flag_returned"] = field(default="flag_returned", init=False)
+    """Fixed serialized event kind, supplied by the class and excluded from
+    construction.
+    """
+    phase_rank: Literal[130] = field(default=130, init=False)
+    """Fixed event ordering rank, supplied by the class and excluded from
+    construction.
+    """
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FlagPickedUpEventV2(FlagAgentVisualEventBaseV2):
+    """Record that an agent picked up the enemy's flag.
+
+    Inherited fields follow FlagAgentVisualEventBaseV2. This is a frozen,
+    slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_picked_up']
+        Fixed serialized event kind, supplied by the class and excluded from
+        construction.
+    phase_rank : Literal[131]
+        Fixed event ordering rank, supplied by the class and excluded from
+        construction.
+    picked_up_from : Literal['home', 'ground']
+        Where the flag lay: on its home, or on the ground after a drop.
+
+    Raises
+    ------
+    ValueError
+        Inherited checks fail, or picked_up_from is not home or ground.
+    """
+
+    event_type: Literal["flag_picked_up"] = field(default="flag_picked_up", init=False)
+    """Fixed serialized event kind, supplied by the class and excluded from
+    construction.
+    """
+    phase_rank: Literal[131] = field(default=131, init=False)
+    """Fixed event ordering rank, supplied by the class and excluded from
+    construction.
+    """
+    picked_up_from: Literal["home", "ground"]
+    """Where the flag lay: on its home, or on the ground after a drop."""
+
+    def __post_init__(self) -> None:
+        """Validate FlagPickedUpEventV2 during host construction.
+
+        Raise ValueError if inherited checks fail or picked_up_from is not home
+        or ground. Otherwise return None without changing values.
+        """
+        FlagAgentVisualEventBaseV2.__post_init__(self)
+        if self.picked_up_from not in ("home", "ground"):
+            raise ValueError("a flag is picked up from home or the ground.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FlagCapturedEventV2(FlagAgentVisualEventBaseV2):
+    """Record that a carrier brought the enemy's flag home and scored one.
+
+    Inherited fields follow FlagAgentVisualEventBaseV2. This is a frozen,
+    slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_captured']
+        Fixed serialized event kind, supplied by the class and excluded from
+        construction.
+    phase_rank : Literal[132]
+        Fixed event ordering rank, supplied by the class and excluded from
+        construction.
+    previous_score : int
+        The capturing team's nonnegative Python int captures before the tick.
+    successor_score : int
+        previous_score plus one.
+
+    Raises
+    ------
+    ValueError
+        Inherited checks fail, or the scores do not step up by exactly one.
+    """
+
+    event_type: Literal["flag_captured"] = field(default="flag_captured", init=False)
+    """Fixed serialized event kind, supplied by the class and excluded from
+    construction.
+    """
+    phase_rank: Literal[132] = field(default=132, init=False)
+    """Fixed event ordering rank, supplied by the class and excluded from
+    construction.
+    """
+    previous_score: int
+    """The capturing team's nonnegative Python int captures before the tick."""
+    successor_score: int
+    """previous_score plus one."""
+
+    def __post_init__(self) -> None:
+        """Validate FlagCapturedEventV2 during host construction.
+
+        Raise ValueError if inherited checks fail or the scores do not step up
+        by exactly one. Otherwise return None without changing values.
+        """
+        FlagAgentVisualEventBaseV2.__post_init__(self)
+        _require_int32(self.previous_score, name="previous_score")
+        _require_int32(self.successor_score, name="successor_score")
+        if self.previous_score < 0 or self.successor_score != self.previous_score + 1:
+            raise ValueError("a capture raises its team's captures by exactly one.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FlagDroppedEventV2(FlagAgentVisualEventBaseV2):
+    """Record that a carrier died and dropped the enemy's flag.
+
+    Inherited fields follow FlagAgentVisualEventBaseV2. This is a frozen,
+    slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_dropped']
+        Fixed serialized event kind, supplied by the class and excluded from
+        construction.
+    phase_rank : Literal[133]
+        Fixed event ordering rank, supplied by the class and excluded from
+        construction.
+
+    Raises
+    ------
+    ValueError
+        Inherited canonical identity, flag team or agent anchor checks fail.
+    """
+
+    event_type: Literal["flag_dropped"] = field(default="flag_dropped", init=False)
+    """Fixed serialized event kind, supplied by the class and excluded from
+    construction.
+    """
+    phase_rank: Literal[133] = field(default=133, init=False)
+    """Fixed event ordering rank, supplied by the class and excluded from
+    construction.
+    """
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FlagAutomaticallyReturnedEventV2(FlagVisualEventBaseV2):
+    """Record that a dropped flag's countdown ran out and it went home.
+
+    Inherited fields follow FlagVisualEventBaseV2. This is a frozen, slotted,
+    keyword-only host record.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_automatically_returned']
+        Fixed serialized event kind, supplied by the class and excluded from
+        construction.
+    phase_rank : Literal[134]
+        Fixed event ordering rank, supplied by the class and excluded from
+        construction.
+
+    Raises
+    ------
+    ValueError
+        Canonical header or flag team join is invalid.
+
+    Notes
+    -----
+    No agent acts, so the event has no agent anchor.
+    """
+
+    event_type: Literal["flag_automatically_returned"] = field(
+        default="flag_automatically_returned", init=False
+    )
+    """Fixed serialized event kind, supplied by the class and excluded from
+    construction.
+    """
+    phase_rank: Literal[134] = field(default=134, init=False)
+    """Fixed event ordering rank, supplied by the class and excluded from
+    construction.
+    """
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CaptureTheFlagCompletedEventV2(CanonicalVisualEventBaseV2):
+    """Record the declared Capture the Flag outcome and completion basis.
+
+    Inherited fields follow CanonicalVisualEventBaseV2. This is a frozen,
+    slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    event_type : Literal['capture_the_flag_completed']
+        Fixed serialized event kind, supplied by the class and excluded from
+        construction.
+    phase_rank : Literal[140]
+        Fixed event ordering rank, supplied by the class and excluded from
+        construction.
+    outcome : Literal['team_a_win', 'team_b_win', 'draw']
+        team_a_win, team_b_win or draw.
+    completion_basis : Literal['score_threshold', 'horizon',
+    'score_threshold_at_horizon']
+        score_threshold, horizon or score_threshold_at_horizon.
+
+    Raises
+    ------
+    ValueError
+        Canonical header, outcome or completion basis is invalid.
+
+    Notes
+    -----
+    The record preserves the producer's result. It does not recompute captures
+    or decide the winner.
+    """
+
+    event_type: Literal["capture_the_flag_completed"] = field(
+        default="capture_the_flag_completed", init=False
+    )
+    """Fixed serialized event kind, supplied by the class and excluded from
+    construction.
+    """
+    phase_rank: Literal[140] = field(default=140, init=False)
+    """Fixed event ordering rank, supplied by the class and excluded from
+    construction.
+    """
+    outcome: Literal["team_a_win", "team_b_win", "draw"]
+    """team_a_win, team_b_win or draw."""
+    completion_basis: Literal[
+        "score_threshold", "horizon", "score_threshold_at_horizon"
+    ]
+    """score_threshold, horizon or score_threshold_at_horizon."""
+
+    def __post_init__(self) -> None:
+        """Validate CaptureTheFlagCompletedEventV2 during host construction.
+
+        Raise ValueError if canonical header, outcome or completion basis is
+        invalid. Otherwise return None without changing values.
+        """
+        CanonicalVisualEventBaseV2.__post_init__(self)
+        if self.outcome not in ("team_a_win", "team_b_win", "draw"):
+            raise ValueError("Capture the Flag completion outcome is invalid.")
+        if self.completion_basis not in (
+            "score_threshold",
+            "horizon",
+            "score_threshold_at_horizon",
+        ):
+            raise ValueError("Capture the Flag completion basis is invalid.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class VisualAgentPhaseTrajectoryV2:
     """Keep one agent's three explicit recorded phase anchors.
 
@@ -5468,6 +6023,63 @@ class VisualAgentPhaseTrajectoryV2:
                 raise ValueError("phase anchors must retain one public agent ID.")
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class VisualFlagTrajectoryV1:
+    """Keep one flag's recorded state at both ends of a transition.
+
+    This is a frozen, slotted, keyword-only host record.
+
+    Attributes
+    ----------
+    team_index : int
+        Whose flag: Python team-axis index 0 (Team A) or 1 (Team B).
+    team_id : int
+        Python physical team ID equal to team_index + 1.
+    transition_start : CaptureTheFlagFlagSceneV1
+        The flag in the start frame.
+    successor : CaptureTheFlagFlagSceneV1
+        The flag in the successor frame.
+
+    Raises
+    ------
+    ValueError
+        A flag is not an exact CaptureTheFlagFlagSceneV1 of this team, or the
+        two ends disagree about the flag's home.
+
+    Notes
+    -----
+    The twin of VisualAgentPhaseTrajectoryV2 for flags: it lets a client slide,
+    fly or fade a flag between two recorded positions after a seek. It does
+    not encode a path between them.
+    """
+
+    team_index: int
+    """Whose flag: Python team-axis index 0 (Team A) or 1 (Team B)."""
+    team_id: int
+    """Python physical team ID equal to team_index + 1."""
+    transition_start: CaptureTheFlagFlagSceneV1
+    """The flag in the start frame."""
+    successor: CaptureTheFlagFlagSceneV1
+    """The flag in the successor frame."""
+
+    def __post_init__(self) -> None:
+        """Validate VisualFlagTrajectoryV1 during host construction.
+
+        Raise ValueError if either end is not this team's exact flag record or
+        the ends disagree about its home. Otherwise return None without
+        changing values.
+        """
+        for end in (self.transition_start, self.successor):
+            if (
+                type(end) is not CaptureTheFlagFlagSceneV1
+                or end.team_index != self.team_index
+                or end.team_id != self.team_id
+            ):
+                raise ValueError("flag trajectory ends must be this team's flag.")
+        if self.transition_start.home_position != self.successor.home_position:
+            raise ValueError("a flag's home cannot move during a transition.")
+
+
 type VisualEventV2 = (
     ActionRejectedEventV2
     | AbilityActivatedEventV2
@@ -5493,6 +6105,12 @@ type VisualEventV2 = (
     | AgentRespawnedEventV2
     | TeamDeathmatchScoreChangedEventV2
     | TeamDeathmatchCompletedEventV2
+    | FlagReturnedEventV2
+    | FlagPickedUpEventV2
+    | FlagCapturedEventV2
+    | FlagDroppedEventV2
+    | FlagAutomaticallyReturnedEventV2
+    | CaptureTheFlagCompletedEventV2
 )
 
 _VISUAL_EVENT_V2_TYPES: tuple[type[object], ...] = (
@@ -5520,7 +6138,14 @@ _VISUAL_EVENT_V2_TYPES: tuple[type[object], ...] = (
     AgentRespawnedEventV2,
     TeamDeathmatchScoreChangedEventV2,
     TeamDeathmatchCompletedEventV2,
+    FlagReturnedEventV2,
+    FlagPickedUpEventV2,
+    FlagCapturedEventV2,
+    FlagDroppedEventV2,
+    FlagAutomaticallyReturnedEventV2,
+    CaptureTheFlagCompletedEventV2,
 )
+_FLAG_VISUAL_EVENT_V2_TYPES: tuple[type[object], ...] = _VISUAL_EVENT_V2_TYPES[-6:]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -5556,12 +6181,16 @@ class VisualEventBatchV2:
     events : tuple[VisualEventV2, ...]
         Tuple of supported exact V2 event types with ordinals 0..N-1, this
         transition ID and nondecreasing phase ranks.
+    flag_trajectories : tuple of two VisualFlagTrajectoryV1, or None, default None
+        Team A's flag, then Team B's, at both ends in a Capture the Flag game;
+        None in every other mode, where no flag event may appear.
 
     Raises
     ------
     ValueError
         Canonical identity/step joins, ten-slot roster, trajectory coverage,
-        event ordering/types or phase-anchor joins are invalid.
+        event ordering/types, phase-anchor joins or flag trajectories are
+        invalid.
 
     Notes
     -----
@@ -5595,6 +6224,10 @@ class VisualEventBatchV2:
     """Tuple of supported exact V2 event types with ordinals 0..N-1, this
     transition ID and nondecreasing phase ranks.
     """
+    flag_trajectories: tuple[VisualFlagTrajectoryV1, VisualFlagTrajectoryV1] | None = (
+        None
+    )
+    """Both flags at both ends in a Capture the Flag game; None in other modes."""
 
     def __post_init__(self) -> None:
         """Validate VisualEventBatchV2 during host construction.
@@ -5689,6 +6322,18 @@ class VisualEventBatchV2:
             sorted(event.phase_rank for event in self.events)
         ):
             raise ValueError("V2 event phase ranks must retain canonical order.")
+        if self.flag_trajectories is None:
+            if any(type(event) in _FLAG_VISUAL_EVENT_V2_TYPES for event in self.events):
+                raise ValueError("flag events need the batch's flag trajectories.")
+        elif (
+            type(self.flag_trajectories) is not tuple
+            or any(
+                type(row) is not VisualFlagTrajectoryV1
+                for row in self.flag_trajectories
+            )
+            or tuple(row.team_index for row in self.flag_trajectories) != (0, 1)
+        ):
+            raise ValueError("flag trajectories must be Team A's flag, then Team B's.")
         trajectory_by_slot = {
             row.global_slot: row for row in self.agent_phase_trajectories
         }

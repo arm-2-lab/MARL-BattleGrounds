@@ -2,7 +2,11 @@
  * @file Check live transport normalization, schema/authority boundaries and
  * production-captured frame identities. A live combat configuration keeps the
  * BETA (scenario_5) and GAMMA (tdm_gamma) controllers for either team under
- * SharedObs and rejects them under NoSharedObs.
+ * SharedObs and rejects them under NoSharedObs. A researcher Capture the Flag
+ * scene's flags, its six flag event kinds and the batch's flag trajectories join
+ * each other; flag events without trajectories, a carrier away from its flag, a
+ * flag state that disagrees with its countdown and a pickup of one's own flag
+ * are refused.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -574,6 +578,7 @@ function researcherFrame() {
         ranges: [{ global_slot: 0, center: [2, 1], radius: 6, kind: "observation" }],
         selection: { controlled_global_slot: 0, selected_global_slot: 1 },
         next_decision_selected_legality: null,
+        capture_the_flag: null,
         observer_visibility: [
           {
             observer_global_slot: 0,
@@ -611,6 +616,7 @@ function researcherFrame() {
           false,
           false,
         ],
+        flag_trajectories: null,
         agent_phase_trajectories: [
           {
             global_slot: 0,
@@ -1286,14 +1292,18 @@ test("researcher event and scene normalization rejects semantic drift", () => {
   const normalizedEventFrame = normalizeLiveDebuggerFrameV2(
     structuredClone(eventFrame),
   );
-  assert.equal(researcherEventTypesV2.length, 24);
+  assert.equal(researcherEventTypesV2.length, 30);
   assert.deepEqual(
     new Set(
       normalizedEventFrame.event_batch.events.map(
         (/** @type {any} */ row) => row.event_type,
       ),
     ),
-    new Set(researcherEventTypesV2),
+    new Set(
+      researcherEventTypesV2.filter(
+        (type) => !type.startsWith("flag_") && type !== "capture_the_flag_completed",
+      ),
+    ),
   );
   const normalizedDamage = normalizedEventFrame.event_batch.events.find(
     (/** @type {any} */ row) => row.event_type === "source_damage_output",
@@ -2769,4 +2779,97 @@ test("controller names reject values that only stringify to known names", () => 
   }
   assert.equal(isTeamController("reactive_tdm"), true);
   assert.equal(requiresSharedObs("system:qwen"), true);
+});
+
+test("researcher Capture the Flag flags join their scene, events and trajectories", () => {
+  /** @param {number} teamIndex @param {Record<string, any>} [overrides] */
+  const flag = (teamIndex, overrides = {}) => ({
+    carrier_global_slot: null,
+    countdown_steps: 0,
+    home_position: [teamIndex === 0 ? 1 : 9, 5],
+    position: [teamIndex === 0 ? 1 : 9, 5],
+    state: "home",
+    team_id: teamIndex + 1,
+    team_index: teamIndex,
+    ...overrides,
+  });
+  const carried = flag(1, {
+    carrier_global_slot: 0,
+    position: [2, 1],
+    state: "carried",
+  });
+  const agentEvent = {
+    agent_global_slot: 0,
+    agent_anchor: successorZero,
+    flag_team_id: 2,
+    flag_team_index: 1,
+  };
+  const frame = researcherFrameWithEvents([
+    {
+      ...agentEvent,
+      event_type: "flag_picked_up",
+      phase_rank: 131,
+      picked_up_from: "home",
+    },
+    {
+      ...agentEvent,
+      event_type: "flag_captured",
+      phase_rank: 132,
+      previous_score: 0,
+      successor_score: 1,
+    },
+    {
+      event_type: "flag_automatically_returned",
+      phase_rank: 134,
+      flag_team_id: 1,
+      flag_team_index: 0,
+    },
+    {
+      event_type: "capture_the_flag_completed",
+      phase_rank: 140,
+      outcome: "team_a_win",
+      completion_basis: "score_threshold",
+    },
+  ]);
+  for (const event of frame.projection.incoming_events.events) {
+    event.transition_id = transitionId;
+  }
+  frame.projection.scene.capture_the_flag = {
+    capture_distance: 1.5,
+    flags: [flag(0), carried],
+    interaction_distance: 1,
+    return_steps: 30,
+  };
+  frame.projection.incoming_events.flag_trajectories = [
+    { team_index: 0, team_id: 1, transition_start: flag(0), successor: flag(0) },
+    { team_index: 1, team_id: 2, transition_start: flag(1), successor: carried },
+  ];
+  const normalized = normalizeLiveDebuggerFrameV2(structuredClone(frame));
+  assert.equal(normalized.scene.capture_the_flag.flags[1].carrier_global_slot, 0);
+  assert.deepEqual(
+    normalized.event_batch.flag_trajectories.map(
+      (/** @type {any} */ row) => row.successor.state,
+    ),
+    ["home", "carried"],
+  );
+  /** @param {RegExp} message @param {(raw: any) => void} mutate */
+  const refused = (message, mutate) => {
+    const raw = structuredClone(frame);
+    mutate(raw);
+    assert.throws(() => normalizeLiveDebuggerFrameV2(raw), message);
+  };
+  refused(/flag events need the batch's flag trajectories/, (raw) => {
+    raw.projection.incoming_events.flag_trajectories = null;
+  });
+  refused(/Capture the Flag flags or settings are invalid/, (raw) => {
+    raw.projection.scene.capture_the_flag.flags[1].position = [3, 1];
+    raw.projection.incoming_events.flag_trajectories[1].successor.position = [3, 1];
+  });
+  refused(/flag state, team or carrier is invalid/, (raw) => {
+    raw.projection.scene.capture_the_flag.flags[0].countdown_steps = 4;
+  });
+  refused(/flag event agent or facts are invalid/, (raw) => {
+    raw.projection.incoming_events.events[0].flag_team_index = 0;
+    raw.projection.incoming_events.events[0].flag_team_id = 1;
+  });
 });

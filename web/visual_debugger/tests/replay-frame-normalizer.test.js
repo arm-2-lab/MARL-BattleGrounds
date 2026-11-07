@@ -332,6 +332,7 @@ function researcherProjection(frameIndex) {
       ranges: [],
       selection: null,
       next_decision_selected_legality: null,
+      capture_the_flag: null,
       observer_visibility: [],
     },
     incoming_events:
@@ -361,6 +362,7 @@ function researcherProjection(frameIndex) {
               false,
               false,
             ],
+            flag_trajectories: null,
             agent_phase_trajectories: [
               {
                 global_slot: 0,

@@ -43,6 +43,20 @@ const RESEARCHER_EVENT_TYPES_V2 = new Set([
   "agent_respawned",
   "team_deathmatch_score_changed",
   "team_deathmatch_completed",
+  "flag_returned",
+  "flag_picked_up",
+  "flag_captured",
+  "flag_dropped",
+  "flag_automatically_returned",
+  "capture_the_flag_completed",
+]);
+const RESEARCHER_FLAG_EVENT_TYPES_V2 = new Set([
+  "flag_returned",
+  "flag_picked_up",
+  "flag_captured",
+  "flag_dropped",
+  "flag_automatically_returned",
+  "capture_the_flag_completed",
 ]);
 
 const POV_CUE_TYPES_V1 = new Set([
@@ -938,6 +952,7 @@ const RESEARCHER_SCENE_KEYS_V2 = Object.freeze([
   "audience",
   "audience_badge",
   "aura_fields",
+  "capture_the_flag",
   "class_mechanics",
   "episode_id",
   "frame_id",
@@ -953,6 +968,27 @@ const RESEARCHER_SCENE_KEYS_V2 = Object.freeze([
   "selection",
   "simulator_step_count",
   "spawn_pads",
+]);
+const RESEARCHER_CAPTURE_THE_FLAG_KEYS_V1 = Object.freeze([
+  "capture_distance",
+  "flags",
+  "interaction_distance",
+  "return_steps",
+]);
+const RESEARCHER_FLAG_TRAJECTORY_KEYS_V1 = Object.freeze([
+  "successor",
+  "team_id",
+  "team_index",
+  "transition_start",
+]);
+const RESEARCHER_FLAG_KEYS_V1 = Object.freeze([
+  "carrier_global_slot",
+  "countdown_steps",
+  "home_position",
+  "position",
+  "state",
+  "team_id",
+  "team_index",
 ]);
 const RESEARCHER_MAP_KEYS_V1 = Object.freeze(["height", "obstacles", "width"]);
 const RESEARCHER_OBSTACLE_KEYS_V1 = Object.freeze([
@@ -1103,6 +1139,7 @@ const RESEARCHER_EVENT_BATCH_KEYS_V2 = Object.freeze([
   "configured_active_by_global_slot",
   "episode_id",
   "events",
+  "flag_trajectories",
   "public_agent_id_by_global_slot",
   "schema_version",
   "start_frame_id",
@@ -1262,6 +1299,35 @@ const RESEARCHER_EVENT_SUFFIX_KEYS_V2 = Object.freeze({
     "team_index",
   ]),
   team_deathmatch_completed: Object.freeze(["completion_basis", "outcome"]),
+  flag_returned: Object.freeze([
+    "agent_anchor",
+    "agent_global_slot",
+    "flag_team_id",
+    "flag_team_index",
+  ]),
+  flag_picked_up: Object.freeze([
+    "agent_anchor",
+    "agent_global_slot",
+    "flag_team_id",
+    "flag_team_index",
+    "picked_up_from",
+  ]),
+  flag_captured: Object.freeze([
+    "agent_anchor",
+    "agent_global_slot",
+    "flag_team_id",
+    "flag_team_index",
+    "previous_score",
+    "successor_score",
+  ]),
+  flag_dropped: Object.freeze([
+    "agent_anchor",
+    "agent_global_slot",
+    "flag_team_id",
+    "flag_team_index",
+  ]),
+  flag_automatically_returned: Object.freeze(["flag_team_id", "flag_team_index"]),
+  capture_the_flag_completed: Object.freeze(["completion_basis", "outcome"]),
 });
 const RESEARCHER_EVENT_PHASE_RANK_V2 = Object.freeze({
   action_rejected: 10,
@@ -1288,6 +1354,12 @@ const RESEARCHER_EVENT_PHASE_RANK_V2 = Object.freeze({
   agent_respawned: 120,
   team_deathmatch_score_changed: 130,
   team_deathmatch_completed: 140,
+  flag_returned: 130,
+  flag_picked_up: 131,
+  flag_captured: 132,
+  flag_dropped: 133,
+  flag_automatically_returned: 134,
+  capture_the_flag_completed: 140,
 });
 
 /**
@@ -3006,6 +3078,155 @@ function normalizeResearcherRespawnWave(raw) {
 }
 
 /**
+ * Validate a researcher scene's Capture the Flag record and return it frozen, or null.
+ * raw is null in every other mode. Otherwise it holds Team A's flag, then Team B's,
+ * with positive capture and interaction reaches (map units) and positive return ticks.
+ * Each flag row follows normalizeResearcherFlag; a countdown stays within the return
+ * ticks, and a carrier is a living scene agent standing at the flag. Throw TypeError
+ * for any other shape or join. Nothing is recomputed from the rules.
+ *
+ * @param {unknown} raw @param {readonly Record<string, any>[]} agents
+ * @returns {Readonly<Record<string, any>> | null}
+ */
+function normalizeResearcherCaptureTheFlag(raw, agents) {
+  if (raw === null) {
+    return null;
+  }
+  const record = requireRecord(raw, "Researcher Capture the Flag record is invalid.");
+  requireExactKeys(
+    record,
+    RESEARCHER_CAPTURE_THE_FLAG_KEYS_V1,
+    "Researcher Capture the Flag record has unknown or missing fields.",
+  );
+  const returnSteps = requireInteger(record.return_steps, "Flag return ticks", 1);
+  const flags = requireArray(record.flags, "Researcher flags must be an array.").map(
+    (rawFlag, index) => normalizeResearcherFlag(rawFlag, index),
+  );
+  const captureDistance = requireFinite(record.capture_distance, "Capture distance");
+  const interactionDistance = requireFinite(
+    record.interaction_distance,
+    "Flag interaction distance",
+  );
+  if (
+    flags.length !== 2 ||
+    captureDistance <= 0 ||
+    interactionDistance <= 0 ||
+    flags.some((flag) => {
+      const carrier =
+        flag.carrier_global_slot === null
+          ? null
+          : agents.find((agent) => agent.global_slot === flag.carrier_global_slot);
+      return (
+        flag.countdown_steps > returnSteps ||
+        (carrier !== null &&
+          (carrier === undefined ||
+            carrier.life_state !== "alive" ||
+            !researcherPointsEqual(carrier.position, flag.position)))
+      );
+    })
+  ) {
+    throw new TypeError("Researcher Capture the Flag flags or settings are invalid.");
+  }
+  return Object.freeze({
+    capture_distance: captureDistance,
+    flags: Object.freeze(flags),
+    interaction_distance: interactionDistance,
+    return_steps: returnSteps,
+  });
+}
+
+/**
+ * Validate one researcher flag row for the team at teamIndex and return it frozen.
+ * The state follows the carrier and countdown exactly as Python's
+ * capture_the_flag_flag_state does: carried (a carrier, countdown 0), dropped (no
+ * carrier, a countdown above 0) or home (neither, at its home position). A carrier is
+ * a global slot on the enemy team. Joins to scene bodies belong to the caller. Throw
+ * TypeError for any other shape or value.
+ *
+ * @param {unknown} raw @param {number} teamIndex
+ * @returns {Readonly<Record<string, any>>}
+ */
+function normalizeResearcherFlag(raw, teamIndex) {
+  const flag = requireRecord(raw, "Invalid researcher flag row.");
+  requireExactKeys(
+    flag,
+    RESEARCHER_FLAG_KEYS_V1,
+    "Researcher flag has unknown or missing fields.",
+  );
+  const countdown = requireInteger(flag.countdown_steps, "Flag countdown");
+  const carrierSlot =
+    flag.carrier_global_slot === null
+      ? null
+      : requireResearcherEventSlot(flag.carrier_global_slot, "Flag carrier slot");
+  const position = requirePoint(flag.position, "Flag position");
+  const homePosition = requirePoint(flag.home_position, "Flag home position");
+  const state = carrierSlot !== null ? "carried" : countdown > 0 ? "dropped" : "home";
+  if (
+    flag.team_index !== teamIndex ||
+    flag.team_id !== teamIndex + 1 ||
+    flag.state !== state ||
+    (state === "carried" && countdown !== 0) ||
+    (state === "home" && !researcherPointsEqual(position, homePosition)) ||
+    (carrierSlot !== null && Math.floor(carrierSlot / 5) === teamIndex)
+  ) {
+    throw new TypeError("Researcher flag state, team or carrier is invalid.");
+  }
+  return Object.freeze({
+    carrier_global_slot: carrierSlot,
+    countdown_steps: countdown,
+    home_position: homePosition,
+    position,
+    state,
+    team_id: teamIndex + 1,
+    team_index: teamIndex,
+  });
+}
+
+/**
+ * Validate an event batch's flag trajectories and return them frozen, or null.
+ * raw is null outside Capture the Flag. Otherwise it holds Team A's flag, then Team
+ * B's, each with its start and successor rows (normalizeResearcherFlag) and one home.
+ * The caller joins the successor rows to the scene. Throw TypeError otherwise.
+ *
+ * @param {unknown} raw
+ * @returns {readonly Readonly<Record<string, any>>[] | null}
+ */
+function normalizeResearcherFlagTrajectories(raw) {
+  if (raw === null) {
+    return null;
+  }
+  const rows = requireArray(raw, "Researcher flag trajectories must be an array.").map(
+    (rawRow, index) => {
+      const row = requireRecord(rawRow, "Invalid researcher flag trajectory.");
+      requireExactKeys(
+        row,
+        RESEARCHER_FLAG_TRAJECTORY_KEYS_V1,
+        "Researcher flag trajectory has unknown or missing fields.",
+      );
+      const start = normalizeResearcherFlag(row.transition_start, index);
+      const successor = normalizeResearcherFlag(row.successor, index);
+      if (
+        row.team_index !== index ||
+        row.team_id !== index + 1 ||
+        !researcherPointsEqual(start.home_position, successor.home_position)
+      ) {
+        throw new TypeError("Researcher flag trajectory team or home is invalid.");
+      }
+      return Object.freeze({
+        successor,
+        team_id: index + 1,
+        team_index: index,
+        transition_start: start,
+      });
+    },
+  );
+  if (rows.length !== 2) {
+    throw new TypeError("Researcher flag trajectories need both flags.");
+  }
+  return Object.freeze(rows);
+}
+
+/**
  * Validate raw visibility row at index in ordered agents for normalized selection.
  * Observer must be the controlled global slot, candidate must match agents[index], and
  * visible must be boolean. Return a frozen row or throw TypeError. The recorded flag is
@@ -3813,6 +4034,50 @@ function normalizeResearcherEvent(
       }
       break;
     }
+    case "flag_returned":
+    case "flag_picked_up":
+    case "flag_captured":
+    case "flag_dropped":
+    case "flag_automatically_returned": {
+      const flagTeamIndex = requireInteger(
+        normalized.flag_team_index,
+        "Researcher flag event team index",
+      );
+      if (flagTeamIndex > 1 || normalized.flag_team_id !== flagTeamIndex + 1) {
+        throw new TypeError("Researcher flag event team identity is invalid.");
+      }
+      if (eventType === "flag_automatically_returned") {
+        break;
+      }
+      const agentSlot = eventSlot("agent_global_slot");
+      eventAnchor("agent_anchor", agentSlot, "successor");
+      const ownFlag = rosterBySlot.get(agentSlot)?.team_id === normalized.flag_team_id;
+      if (
+        ownFlag !== (eventType === "flag_returned") ||
+        (eventType === "flag_picked_up" &&
+          !["home", "ground"].includes(normalized.picked_up_from)) ||
+        (eventType === "flag_captured" &&
+          (requireResearcherSignedInt32(
+            normalized.previous_score,
+            "Researcher capture previous score",
+          ) < 0 ||
+            normalized.successor_score !== normalized.previous_score + 1))
+      ) {
+        throw new TypeError("Researcher flag event agent or facts are invalid.");
+      }
+      break;
+    }
+    case "capture_the_flag_completed": {
+      if (
+        !["team_a_win", "team_b_win", "draw"].includes(normalized.outcome) ||
+        !["score_threshold", "horizon", "score_threshold_at_horizon"].includes(
+          normalized.completion_basis,
+        )
+      ) {
+        throw new TypeError("Researcher Capture the Flag completion event is invalid.");
+      }
+      break;
+    }
     default:
       throw new TypeError("Unknown researcher event semantic variant.");
   }
@@ -3923,11 +4188,19 @@ function normalizeResearcherEventBatch(batch, frame, roster) {
   ) {
     throw new TypeError("Researcher event phase ranks must be nondecreasing.");
   }
+  const flagTrajectories = normalizeResearcherFlagTrajectories(batch.flag_trajectories);
+  if (
+    flagTrajectories === null &&
+    events.some((event) => RESEARCHER_FLAG_EVENT_TYPES_V2.has(event.event_type))
+  ) {
+    throw new TypeError("Researcher flag events need the batch's flag trajectories.");
+  }
   const authorized = Object.freeze({
     agent_phase_trajectories: Object.freeze(trajectories),
     configured_active_by_global_slot: active,
     episode_id: batch.episode_id,
     events: Object.freeze(events),
+    flag_trajectories: flagTrajectories,
     public_agent_id_by_global_slot: Object.freeze(publicIds),
     schema_version: 2,
     start_frame_id: batch.start_frame_id,
@@ -4171,6 +4444,10 @@ function normalizeResearcherProjection(projection, frame) {
     aura_fields: Object.freeze(
       auraFields.map(({ token_id: _tokenId, ...field }) => Object.freeze(field)),
     ),
+    capture_the_flag: normalizeResearcherCaptureTheFlag(
+      sourceScene.capture_the_flag,
+      authorizedAgents,
+    ),
     class_mechanics: Object.freeze(
       classMechanics.map((mechanics) =>
         Object.freeze({
@@ -4293,6 +4570,17 @@ function normalizeResearcherProjection(projection, frame) {
   const batch = requireRecord(sourceBatch, "Invalid researcher V2 event batch.");
   const normalizedBatch = normalizeResearcherEventBatch(batch, frame, authorizedAgents);
   const normalizedEvents = normalizedBatch.authorized.events;
+  const flagTrajectories = normalizedBatch.authorized.flag_trajectories;
+  const sceneFlags = scene.capture_the_flag?.flags ?? null;
+  if (
+    (flagTrajectories === null) !== (sceneFlags === null) ||
+    flagTrajectories?.some(
+      (row, index) =>
+        JSON.stringify(row.successor) !== JSON.stringify(sceneFlags?.[index]),
+    )
+  ) {
+    throw new TypeError("Researcher flag trajectories must end at the scene's flags.");
+  }
   const sceneEventIds = requireArray(
     sourceScene.incoming_event_ids,
     "Researcher V2 scene incoming event IDs must be an array.",

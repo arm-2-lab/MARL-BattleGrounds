@@ -9,7 +9,9 @@ resolved config is V1 keeps AuthorizedMapV1. Every wire object forbids extra
 properties and requires every field except named historical additions, the
 scene's optional ``team_sight`` (the Agent POV merged sight, live and
 replayed, whose ``turn_shapes`` are required; an Oracle scene carries it as
-null) and the frame's optional host facts
+null), the scene's optional ``capture_the_flag`` and the incoming summary's
+optional ``flag_trajectories`` (both null outside Capture the Flag), and the
+frame's optional host facts
 ``champion_streaks`` (Champion Streaks), ``match_honors`` (the game-over
 Honors), ``match_moments`` (the Herald Cards history), ``next_end_spots``
 (the Next Step Ghost) and ``recent_falls`` (the Fallen panel history).
@@ -575,8 +577,10 @@ def test_neutral_scene_uses_stable_opaque_keys_and_omits_legacy_roots(
         "spawn_pads",
         "respawn_waves",
         "team_sight",
+        "capture_the_flag",
     }
     assert payload["current_endpoint"]["scene"]["team_sight"] is None
+    assert payload["current_endpoint"]["scene"]["capture_the_flag"] is None
     assert "selection" not in json.dumps(payload["current_endpoint"]["scene"])
     assert "observer_visibility" not in json.dumps(payload["current_endpoint"]["scene"])
     assert "ranges" not in json.dumps(payload["current_endpoint"]["scene"])
@@ -1129,8 +1133,10 @@ def test_every_nested_wire_object_forbids_additional_properties() -> None:
             if name == "MatchTeamV1"
             else {"home_fall"}
             if name == "ReplayIncomingAgentDiedEventV1"
-            else {"team_sight"}
+            else {"team_sight", "capture_the_flag"}
             if name == "AuthorizedBattlefieldSceneV1"
+            else {"flag_trajectories"}
+            if name == "ReplayIncomingSummaryV1"
             else set()
         )
         assert properties - optional == set(cast(list[str], definition["required"])), (

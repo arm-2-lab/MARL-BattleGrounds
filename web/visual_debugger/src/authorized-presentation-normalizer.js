@@ -198,6 +198,7 @@ const PRESENTATION_KEY_PUBLIC_FIELDS = Object.freeze({
   target_presentation_key: "target_public_agent_id",
   assigned_presentation_key: "assigned_public_agent_id",
   actor_presentation_key: "actor_public_agent_id",
+  carrier_presentation_key: "carrier_public_agent_id",
 });
 
 const AGENT_FORBIDDEN_KEYS = new Set([
@@ -259,6 +260,12 @@ const ORACLE_EVENT_PHASE_RANK = Object.freeze({
   agent_respawned: 120,
   team_deathmatch_score_changed: 130,
   team_deathmatch_completed: 140,
+  flag_returned: 130,
+  flag_picked_up: 131,
+  flag_captured: 132,
+  flag_dropped: 133,
+  flag_automatically_returned: 134,
+  capture_the_flag_completed: 140,
 });
 const AGENT_VISUAL_EVENT_KINDS = new Set([
   "action_rejected",
@@ -278,6 +285,14 @@ const AGENT_VISUAL_EVENT_KINDS = new Set([
   "agent_respawned",
 ]);
 const TEAM_DEATHMATCH_OUTCOMES = new Set(["team_a_win", "team_b_win", "draw"]);
+const ORACLE_FLAG_EVENT_KINDS = new Set([
+  "flag_returned",
+  "flag_picked_up",
+  "flag_captured",
+  "flag_dropped",
+  "flag_automatically_returned",
+  "capture_the_flag_completed",
+]);
 const TEAM_DEATHMATCH_COMPLETION_BASES = new Set([
   "score_threshold",
   "horizon",
@@ -1682,6 +1697,10 @@ function oracleEventAnchors(event) {
       break;
     case "spawn_shield_expired":
     case "agent_respawned":
+    case "flag_returned":
+    case "flag_picked_up":
+    case "flag_captured":
+    case "flag_dropped":
       add("agent_anchor", "successor");
       break;
   }
@@ -2337,6 +2356,16 @@ function validateLatestEvents(latest) {
       ) {
         invalid("Oracle Team Deathmatch completion evidence is not canonical.");
       }
+      if (
+        (event.event_kind === "flag_captured" &&
+          (event.previous_score < 0 ||
+            event.successor_score !== event.previous_score + 1)) ||
+        (event.event_kind === "capture_the_flag_completed" &&
+          (!TEAM_DEATHMATCH_OUTCOMES.has(event.outcome) ||
+            !TEAM_DEATHMATCH_COMPLETION_BASES.has(event.completion_basis)))
+      ) {
+        invalid("Oracle Capture the Flag evidence is not canonical.");
+      }
       for (const { anchor, phase } of oracleEventAnchors(event)) {
         const trajectory = trajectoryByKey.get(anchor.presentation_key);
         if (
@@ -2349,6 +2378,11 @@ function validateLatestEvents(latest) {
         }
       }
     });
+    validateOracleFlagTrajectories(
+      latest.flag_trajectories,
+      oracleEvents,
+      trajectoryByKey,
+    );
     return;
   }
   const rows = /** @type {any[]} */ (latest.cues ?? latest.deltas);
@@ -2952,7 +2986,8 @@ function validateResearcherRosterFacts(roster, classMechanics, scope) {
  * spawn assignments, and timer limits. Oracle-only static facts must also agree
  * with their declared profiles. A version-2 map with a recorded Red Zone must hold
  * the exact scoring strips (validateAuthorizedRedZone); `red_zone: null` means the
- * rule was recorded with depth 0.
+ * rule was recorded with depth 0. A Capture the Flag scene's flags must follow
+ * validateAuthorizedCaptureTheFlag; `capture_the_flag: null` in every other mode.
  *
  * Returns undefined or throws TypeError. The trusted producer decides which
  * bodies may appear; this helper does not recompute geometry, visibility, or the
@@ -3138,7 +3173,128 @@ function validateAuthorizedScene(scene) {
   ) {
     invalid("Scene respawn waves do not retain the ordered two-team lifecycle.");
   }
+  validateAuthorizedCaptureTheFlag(scene.capture_the_flag, agentsByKey);
 }
+
+/**
+ * Check a schema-checked Capture the Flag record against its scene's bodies.
+ *
+ * `captureTheFlag` is null outside Capture the Flag. Otherwise it holds Team A's
+ * flag, then Team B's, with positive reaches (map units) and return ticks that are
+ * positive or null (an audience with no source for them). Each flag follows
+ * validateAuthorizedFlag, and a named carrier is one enemy agent of `agentsByKey`
+ * standing at the flag. Returns undefined or throws TypeError.
+ *
+ * @param {Record<string, any> | null} captureTheFlag
+ * @param {Map<string, any>} agentsByKey
+ */
+function validateAuthorizedCaptureTheFlag(captureTheFlag, agentsByKey) {
+  if (captureTheFlag === null) {
+    return;
+  }
+  const flags = /** @type {any[]} */ (captureTheFlag.flags);
+  const returnSteps = captureTheFlag.return_steps;
+  if (
+    flags.map((flag) => flag.team_id).join(",") !== "1,2" ||
+    captureTheFlag.capture_distance <= 0 ||
+    captureTheFlag.interaction_distance <= 0 ||
+    (returnSteps !== null && returnSteps < 1)
+  ) {
+    invalid("Scene flags must be Team A's then Team B's with positive settings.");
+  }
+  for (const flag of flags) {
+    validateAuthorizedFlag(flag, returnSteps);
+    const carrierKey = flag.carrier_presentation_key;
+    const carrier = carrierKey === null ? undefined : agentsByKey.get(carrierKey);
+    if (
+      carrierKey !== null &&
+      (!carrier ||
+        carrier.public_agent_id !== flag.carrier_public_agent_id ||
+        carrier.team_id === flag.team_id ||
+        !structurallyEqual(carrier.position, flag.position))
+    ) {
+      invalid("Scene flag does not join its carrier.");
+    }
+  }
+}
+
+/**
+ * Check one schema-checked authorized flag row on its own.
+ *
+ * The state follows the countdown as Python's capture_the_flag_flag_state decides:
+ * carried and home flags have countdown 0, a dropped flag counts down from 1 to
+ * `returnSteps` (no upper bound when null), and a home flag sits at its home. Only a
+ * carried flag may name a carrier, by key and public ID together. Joins to bodies
+ * belong to the caller. Returns undefined or throws TypeError.
+ *
+ * @param {Record<string, any>} flag @param {number | null} returnSteps
+ */
+function validateAuthorizedFlag(flag, returnSteps) {
+  const countdown = flag.countdown_steps;
+  const carrierKey = flag.carrier_presentation_key;
+  if (
+    countdown < 0 ||
+    (returnSteps !== null && countdown > returnSteps) ||
+    (flag.state === "dropped") !== countdown > 0 ||
+    (flag.state === "home" && !structurallyEqual(flag.position, flag.home_position)) ||
+    (carrierKey === null) !== (flag.carrier_public_agent_id === null) ||
+    (carrierKey !== null && flag.state !== "carried")
+  ) {
+    invalid("Flag does not follow its state.");
+  }
+}
+
+/**
+ * Check an Oracle incoming summary's flag trajectories against its events.
+ *
+ * `flagTrajectories` is null outside Capture the Flag, where no flag event may
+ * appear. Otherwise it holds Team A's flag, then Team B's, each with start and
+ * successor rows of that team that keep one home and follow validateAuthorizedFlag.
+ * A named carrier is an agent of `trajectoryByKey` whose anchor at that end sits at
+ * the flag. Returns undefined or throws TypeError.
+ *
+ * @param {Record<string, any>[] | null} flagTrajectories
+ * @param {Record<string, any>[]} oracleEvents
+ * @param {Map<string, any>} trajectoryByKey
+ */
+function validateOracleFlagTrajectories(
+  flagTrajectories,
+  oracleEvents,
+  trajectoryByKey,
+) {
+  if (flagTrajectories === null) {
+    if (oracleEvents.some((event) => ORACLE_FLAG_EVENT_KINDS.has(event.event_kind))) {
+      invalid("Oracle flag events need the incoming flag trajectories.");
+    }
+    return;
+  }
+  if (flagTrajectories.map((row) => row.team_id).join(",") !== "1,2") {
+    invalid("Oracle flag trajectories must be Team A's flag, then Team B's.");
+  }
+  for (const row of flagTrajectories) {
+    for (const phase of ["transition_start", "successor"]) {
+      const end = row[phase];
+      validateAuthorizedFlag(end, null);
+      const carrier =
+        end.carrier_presentation_key === null
+          ? null
+          : trajectoryByKey.get(end.carrier_presentation_key);
+      if (
+        end.team_id !== row.team_id ||
+        !structurallyEqual(end.home_position, row.successor.home_position) ||
+        (carrier !== null &&
+          (!carrier ||
+            carrier.agent_public_agent_id !== end.carrier_public_agent_id ||
+            !structurallyEqual(carrier[phase].position, end.position)))
+      ) {
+        invalid("Oracle flag trajectory does not keep its team, home or carrier.");
+      }
+    }
+  }
+}
+
+/**
+ * Check the drawing-only events visible to one actor across an incoming step.
 
 /**
  * Check that observed bodies use the recipient's declared actor-relative axis.
@@ -3256,6 +3412,15 @@ function validateIncomingStateMatrix(frame, source, endpoint, oracle, shared) {
     ]);
     if (!structurallyEqual(successors, current)) {
       invalid("Oracle incoming successors do not join its current scene.");
+    }
+    if (
+      !structurallyEqual(
+        events.flag_trajectories?.map((/** @type {any} */ row) => row.successor) ??
+          null,
+        endpoint.scene.capture_the_flag?.flags ?? null,
+      )
+    ) {
+      invalid("Oracle incoming flags do not end at the current scene's flags.");
     }
     for (const row of actionRows) {
       const actor = directory.find(

@@ -2958,6 +2958,7 @@ _KEY_PUBLIC_FIELD_BY_KEY_FIELD = {
     "target_presentation_key": "target_public_agent_id",
     "assigned_presentation_key": "assigned_public_agent_id",
     "actor_presentation_key": "actor_public_agent_id",
+    "carrier_presentation_key": "carrier_public_agent_id",
 }
 
 _WIRE_MODEL_MODULE_NAMES = (

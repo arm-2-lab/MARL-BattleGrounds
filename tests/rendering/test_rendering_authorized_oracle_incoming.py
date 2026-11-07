@@ -451,7 +451,7 @@ def test_neutral_summary_json_is_strict_and_contains_no_internal_slot_axis() -> 
                 cast(dict[str, object], discriminator)["mapping"],
             )
         )
-        == 24
+        == 30
     )
     identity_union = cast(dict[str, object], schema["$defs"])[
         "ReplayIncomingAgentIdentityV1"

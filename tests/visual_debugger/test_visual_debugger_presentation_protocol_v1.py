@@ -277,6 +277,7 @@ _PUBLIC_FIELD_BY_PRESENTATION_KEY_FIELD = {
     "target_presentation_key": "target_public_agent_id",
     "assigned_presentation_key": "assigned_public_agent_id",
     "actor_presentation_key": "actor_public_agent_id",
+    "carrier_presentation_key": "carrier_public_agent_id",
 }
 
 
@@ -1690,16 +1691,7 @@ def test_union_has_exactly_six_discriminated_leaves() -> None:
 def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> None:
     schema = TypeAdapter(AuthorizedPresentationFrameV1).json_schema()
     definitions = cast(dict[str, dict[str, object]], schema["$defs"])
-    key_pairs = {
-        "presentation_key": "public_agent_id",
-        "source_presentation_key": "source_public_agent_id",
-        "agent_presentation_key": "agent_public_agent_id",
-        "recipient_presentation_key": "recipient_public_agent_id",
-        "owner_presentation_key": "owner_public_agent_id",
-        "target_presentation_key": "target_public_agent_id",
-        "assigned_presentation_key": "assigned_public_agent_id",
-        "actor_presentation_key": "actor_public_agent_id",
-    }
+    key_pairs = _PUBLIC_FIELD_BY_PRESENTATION_KEY_FIELD
     encountered_key_fields: set[str] = set()
     one_of_count = 0
     # Additive researcher HUD metadata remains absent in historical presentations.
@@ -1772,8 +1764,11 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
         "root.$defs.MatchDeathV1": {"killing_team_id", "contributors", "home_fall"},
         "root.$defs.MatchTeamV1": {"display_side"},
         "root.$defs.ReplayIncomingAgentDiedEventV1": {"home_fall"},
-        # Agent POV merged team sight (live and replayed); Oracle View leaves it None.
-        "root.$defs.AuthorizedBattlefieldSceneV1": {"team_sight"},
+        # Agent POV merged team sight (live and replayed); Oracle View leaves it
+        # None. Both flags in a Capture the Flag game; None in other modes.
+        "root.$defs.AuthorizedBattlefieldSceneV1": {"team_sight", "capture_the_flag"},
+        # Both flags at both ends of the transition; None outside Capture the Flag.
+        "root.$defs.ReplayIncomingSummaryV1": {"flag_trajectories"},
     }
     team_properties = cast(
         dict[str, dict[str, object]], definitions["MatchTeamV1"]["properties"]

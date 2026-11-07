@@ -63,6 +63,26 @@ from marl_battlegrounds.evaluation.models import (
     AgentRespawnedEventV1 as EvaluationAgentRespawnedEventV1,
 )
 from marl_battlegrounds.evaluation.models import (
+    CaptureTheFlagAgentEventBaseV1,
+    CaptureTheFlagCompletedEventV1,
+    EvaluationEpisodeContext,
+    EvaluationEpisodeContextV5,
+    EvaluationEventCaptureTheFlagV1,
+    EvaluationEventV1,
+    EvaluationFrame,
+    EvaluationFrameV1,
+    EvaluationFrameV2,
+    EvaluationFrameV3,
+    EvaluationFrameV4,
+    EvaluationTransitionV1,
+    FlagAutomaticallyReturnedEventV1,
+    FlagCapturedEventV1,
+    FlagDroppedEventV1,
+    FlagPickedUpEventV1,
+    FlagReturnedEventV1,
+    evaluation_context_type,
+)
+from marl_battlegrounds.evaluation.models import (
     ChargePhaseDisplacementEventV1 as EvaluationChargePhaseDisplacementEventV1,
 )
 from marl_battlegrounds.evaluation.models import (
@@ -73,17 +93,6 @@ from marl_battlegrounds.evaluation.models import (
 )
 from marl_battlegrounds.evaluation.models import (
     CooldownStartedEventV1 as EvaluationCooldownStartedEventV1,
-)
-from marl_battlegrounds.evaluation.models import (
-    EvaluationEpisodeContext,
-    EvaluationEventCaptureTheFlagV1,
-    EvaluationEventV1,
-    EvaluationFrame,
-    EvaluationFrameV1,
-    EvaluationFrameV2,
-    EvaluationFrameV3,
-    EvaluationTransitionV1,
-    evaluation_context_type,
 )
 from marl_battlegrounds.evaluation.models import (
     HealthRegeneratedEventV1 as EvaluationHealthRegeneratedEventV1,
@@ -181,6 +190,9 @@ from marl_battlegrounds.rendering.scene import (
     AuraFieldSceneV2,
     AuraRecipientModifierSceneV2,
     BattlefieldSceneV2,
+    CaptureTheFlagCompletedEventV2,
+    CaptureTheFlagFlagSceneV1,
+    CaptureTheFlagSceneV1,
     ChargePhaseDisplacementEventV2,
     ClassAuraMechanicSceneV2,
     ClassMechanicsSceneV2,
@@ -188,6 +200,11 @@ from marl_battlegrounds.rendering.scene import (
     CombatCountdownResetEventV2,
     CooldownReadyEventV2,
     CooldownStartedEventV2,
+    FlagAutomaticallyReturnedEventV2,
+    FlagCapturedEventV2,
+    FlagDroppedEventV2,
+    FlagPickedUpEventV2,
+    FlagReturnedEventV2,
     HealthRegeneratedEventV2,
     LethalDamageContributionEventV2,
     MapSceneV1,
@@ -222,7 +239,9 @@ from marl_battlegrounds.rendering.scene import (
     VisualAgentPhaseTrajectoryV2,
     VisualEventBatchV2,
     VisualEventV2,
+    VisualFlagTrajectoryV1,
     VisualTeamAnchorV2,
+    capture_the_flag_flag_state,
 )
 from marl_battlegrounds.rendering.vocabulary import (
     status_sort_key,
@@ -1264,7 +1283,12 @@ def _validate_projection_inputs(
     for broken structural, temporal or episode joins.
     """
     evaluation_context_type(context)
-    if type(frame) not in (EvaluationFrameV1, EvaluationFrameV2, EvaluationFrameV3):
+    if type(frame) not in (
+        EvaluationFrameV1,
+        EvaluationFrameV2,
+        EvaluationFrameV3,
+        EvaluationFrameV4,
+    ):
         raise TypeError("frame must be the exact EvaluationFrameV1 root.")
     if frame.episode_id != context.identity.episode_id:
         raise ValueError("selected frame must join the context episode.")
@@ -2431,6 +2455,53 @@ def _respawn_waves(
     )
 
 
+def _capture_the_flag_scene(
+    context: EvaluationEpisodeContext,
+    frame: EvaluationFrame,
+) -> CaptureTheFlagSceneV1 | None:
+    """Copy both flags and the Capture the Flag settings into a researcher scene.
+
+    Return None for every frame but a Capture the Flag frame V4 (context V5);
+    otherwise copy the snapshot's flag positions, carriers and countdowns and
+    the config record's homes, distances and return ticks, with each state
+    decided by capture_the_flag_flag_state. Nothing is recomputed.
+    """
+    if not isinstance(frame, EvaluationFrameV4) or not isinstance(
+        context, EvaluationEpisodeContextV5
+    ):
+        return None
+    config = context.resolved_env_config
+    snapshot = frame.snapshot
+    flags = tuple(
+        CaptureTheFlagFlagSceneV1(
+            team_index=team_index,
+            team_id=team_index + 1,
+            state=capture_the_flag_flag_state(
+                carried=snapshot.capture_the_flag_flag_carrier_slots[team_index]
+                is not None,
+                countdown_steps=snapshot.capture_the_flag_dropped_flag_countdowns[
+                    team_index
+                ],
+            ),
+            position=snapshot.capture_the_flag_flag_positions[team_index],
+            home_position=config.capture_the_flag_flag_home_positions[team_index],
+            carrier_global_slot=snapshot.capture_the_flag_flag_carrier_slots[
+                team_index
+            ],
+            countdown_steps=snapshot.capture_the_flag_dropped_flag_countdowns[
+                team_index
+            ],
+        )
+        for team_index in range(2)
+    )
+    return CaptureTheFlagSceneV1(
+        flags=(flags[0], flags[1]),
+        capture_distance=config.capture_the_flag_flag_capture_distance,
+        interaction_distance=config.capture_the_flag_flag_interaction_distance,
+        return_steps=config.capture_the_flag_dropped_flag_auto_return_steps,
+    )
+
+
 def validate_oracle_scene_static_authority_v1(
     context: EvaluationEpisodeContext,
     scene: BattlefieldSceneV2,
@@ -2792,6 +2863,7 @@ def build_evaluation_battlefield_scene_v2(
         selection=selection,
         next_decision_selected_legality=legality,
         observer_visibility=_observer_visibility_projection(context, frame, state),
+        capture_the_flag=_capture_the_flag_scene(context, frame),
     )
 
 
@@ -3462,6 +3534,31 @@ def _visual_phase_trajectories_v2(
     return tuple(rows)
 
 
+def _visual_flag_trajectories_v1(
+    view: EvaluationTransitionViewV1,
+) -> tuple[VisualFlagTrajectoryV1, VisualFlagTrajectoryV1] | None:
+    """Pair each flag's start and successor records, or return None outside CTF.
+
+    view supplies both frames; _capture_the_flag_scene copies each one's flags
+    from its snapshot and the config record, so the two ends are recorded
+    facts, never a simulated path. Return Team A's flag, then Team B's.
+    """
+    start = _capture_the_flag_scene(view.context, view.start_frame)
+    successor = _capture_the_flag_scene(view.context, view.successor_frame)
+    if start is None or successor is None:
+        return None
+    team_a, team_b = (
+        VisualFlagTrajectoryV1(
+            team_index=team_index,
+            team_id=team_index + 1,
+            transition_start=start.flags[team_index],
+            successor=successor.flags[team_index],
+        )
+        for team_index in range(2)
+    )
+    return (team_a, team_b)
+
+
 class _VisualEventIdentityV2(TypedDict):
     """Type the three identity fields copied unchanged into every visual event.
 
@@ -3476,6 +3573,24 @@ class _VisualEventIdentityV2(TypedDict):
     """Canonical containing-transition string copied unchanged."""
     ordinal: int
     """Nonnegative event ordinal copied unchanged within its transition."""
+
+
+class _FlagAgentEventFieldsV2(_VisualEventIdentityV2):
+    """Type the fields shared by the four agent-anchored visual flag events.
+
+    This TypedDict describes a plain dictionary; it performs no runtime
+    validation. The flag team and agent slot are copied unchanged; agent_anchor
+    is the agent's successor anchor.
+    """
+
+    flag_team_index: int
+    """Whose flag: 0 Team A's, 1 Team B's, copied unchanged."""
+    flag_team_id: int
+    """flag_team_index + 1, copied unchanged."""
+    agent_global_slot: int
+    """The acting agent's global slot, copied unchanged."""
+    agent_anchor: VisualAgentAnchorV2
+    """The acting agent's successor anchor."""
 
 
 def _project_visual_event_v2(
@@ -3749,6 +3864,40 @@ def _project_visual_event_v2(
             outcome=event.outcome,
             completion_basis=event.completion_basis,
         )
+    if isinstance(event, CaptureTheFlagAgentEventBaseV1):
+        flag_agent: _FlagAgentEventFieldsV2 = {
+            **identity,
+            "flag_team_index": event.flag_team_index,
+            "flag_team_id": event.flag_team_id,
+            "agent_global_slot": event.agent_global_slot,
+            "agent_anchor": anchor(event.agent_global_slot, "successor"),
+        }
+        if type(event) is FlagReturnedEventV1:
+            return FlagReturnedEventV2(**flag_agent)
+        if type(event) is FlagPickedUpEventV1:
+            return FlagPickedUpEventV2(
+                **flag_agent, picked_up_from=event.picked_up_from
+            )
+        if type(event) is FlagCapturedEventV1:
+            return FlagCapturedEventV2(
+                **flag_agent,
+                previous_score=event.previous_score,
+                successor_score=event.successor_score,
+            )
+        if type(event) is FlagDroppedEventV1:
+            return FlagDroppedEventV2(**flag_agent)
+    if type(event) is FlagAutomaticallyReturnedEventV1:
+        return FlagAutomaticallyReturnedEventV2(
+            **identity,
+            flag_team_index=event.flag_team_index,
+            flag_team_id=event.flag_team_id,
+        )
+    if type(event) is CaptureTheFlagCompletedEventV1:
+        return CaptureTheFlagCompletedEventV2(
+            **identity,
+            outcome=event.outcome,
+            completion_basis=event.completion_basis,
+        )
     raise TypeError(f"unsupported canonical event type: {type(event).__name__}.")
 
 
@@ -3766,7 +3915,8 @@ def build_visual_event_batch_v2(
     -------
     VisualEventBatchV2
         Every canonical event once, in unchanged order, plus phase trajectories
-        for configured agents. Unused actor rejections remain non-spatial cues.
+        for configured agents and, in Capture the Flag, both flags' start and
+        successor records. Unused actor rejections remain non-spatial cues.
 
     Raises
     ------
@@ -3814,6 +3964,7 @@ def build_visual_event_batch_v2(
             )
             for event in view.transition.events
         ),
+        flag_trajectories=_visual_flag_trajectories_v1(view),
     )
 
 

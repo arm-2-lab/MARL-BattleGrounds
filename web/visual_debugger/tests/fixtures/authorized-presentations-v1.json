@@ -138,7 +138,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "db1fdaff06bf491631f945fe3b1c633a0070b2827430ee2de00b26d989a09c7e",
+        "authorized_endpoint_digest_sha256": "d42b64666e8fafbdc865b9a0db2f59fa0ba7d8d66f878da4ac1a1fc47ec4edaa",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:1",
@@ -439,6 +439,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -1015,6 +1016,7 @@
             "status_id": "priest_blessing_of_freedom_movement_floor"
           }
         ],
+        "flag_trajectories": null,
         "incoming_start_frame_id": "episode-001:frame:0",
         "incoming_start_simulator_step_count": 0,
         "incoming_successor_frame_id": "episode-001:frame:1",
@@ -1472,7 +1474,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 1,
-        "source_authorized_endpoint_digest_sha256": "db1fdaff06bf491631f945fe3b1c633a0070b2827430ee2de00b26d989a09c7e",
+        "source_authorized_endpoint_digest_sha256": "d42b64666e8fafbdc865b9a0db2f59fa0ba7d8d66f878da4ac1a1fc47ec4edaa",
         "source_frame_id": "episode-001:frame:1",
         "source_frame_index": 1,
         "source_kind": "live_oracle_frame",
@@ -1631,7 +1633,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "723980145da650b09e0ca965cc91152079f961ac98bf8046dca82efd8c6a643a",
+          "authorized_endpoint_digest_sha256": "026b1921e460ebaf451e1d238d876af61238b2b03671a5d3549a8fd4f3ea0f66",
           "endpoint_kind": "oracle_authorized_current",
           "episode_id": "service-shared",
           "frame_id": "service-shared:frame:1",
@@ -1912,6 +1914,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -2420,6 +2423,7 @@
           ],
           "event_count": 0,
           "events": [],
+          "flag_trajectories": null,
           "incoming_start_frame_id": "service-shared:frame:0",
           "incoming_start_simulator_step_count": 0,
           "incoming_successor_frame_id": "service-shared:frame:1",
@@ -2913,7 +2917,7 @@
           "source_artifact_digest_sha256": "521ef1ee51f67a70f468adbd0877783747b39f5219db6c7145928d1deb379de5",
           "source_artifact_id": "service-shared:replay",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "723980145da650b09e0ca965cc91152079f961ac98bf8046dca82efd8c6a643a",
+          "source_authorized_endpoint_digest_sha256": "026b1921e460ebaf451e1d238d876af61238b2b03671a5d3549a8fd4f3ea0f66",
           "source_choreography_generation": 0,
           "source_context_digest_sha256": "f6f1bb96a192b832c57dda68a8be00c7f066ffe667bde5152169605cec980ce8",
           "source_cursor_generation": 0,
@@ -3379,6 +3383,7 @@
             ],
             "episode_id": "service-shared",
             "events": [],
+            "flag_trajectories": null,
             "public_agent_id_by_global_slot": [
               "agent-slot-0",
               "agent-slot-1",
@@ -3602,6 +3607,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -4133,7 +4139,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "e785bc64b738981e247426e679b51bd766c4cf3d9a5ec1abf9bdbefacab1fdc7",
+          "authorized_endpoint_digest_sha256": "27921e07445e5917a418f9b594869fd1851b75c32497150796b3b9a74b30f083",
           "endpoint_kind": "shared_obs_authorized_current",
           "parts": {
             "agent_observation_provenance": [
@@ -4433,6 +4439,7 @@
                   "stacking_rule": "multiply_then_clamp"
                 }
               ],
+              "capture_the_flag": null,
               "class_mechanics": [
                 {
                   "aura_mechanics": [
@@ -7820,7 +7827,7 @@
         "source": {
           "episode_id": "service-shared",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "e785bc64b738981e247426e679b51bd766c4cf3d9a5ec1abf9bdbefacab1fdc7",
+          "source_authorized_endpoint_digest_sha256": "27921e07445e5917a418f9b594869fd1851b75c32497150796b3b9a74b30f083",
           "source_final_frame_index": 2,
           "source_frame_index": 1,
           "source_kind": "replay_shared_obs_visual_union_frame",
@@ -8256,7 +8263,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "8bbf2ebb186fd892fed6ec2051aed968a0b2934dbd817cd6f5aee4fcdd0b7033",
+          "authorized_endpoint_digest_sha256": "81a590e4e55ddc165d7ef8cdafcc94473f93e86edebc4562d0d85f759736b15c",
           "endpoint_kind": "no_shared_obs_authorized_current",
           "parts": {
             "next_decision_action_mask": {
@@ -8515,6 +8522,7 @@
                   "stacking_rule": "multiply_then_clamp"
                 }
               ],
+              "capture_the_flag": null,
               "class_mechanics": [
                 {
                   "aura_mechanics": [
@@ -10955,7 +10963,7 @@
         "source": {
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "8bbf2ebb186fd892fed6ec2051aed968a0b2934dbd817cd6f5aee4fcdd0b7033",
+          "source_authorized_endpoint_digest_sha256": "81a590e4e55ddc165d7ef8cdafcc94473f93e86edebc4562d0d85f759736b15c",
           "source_frame_index": 0,
           "source_kind": "live_no_shared_obs_frame",
           "source_recipient_frame_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2:actor-pov:0:frame:0",
@@ -11808,7 +11816,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "58471fc7cb55aa9a8b80fa07921ea74c9557975e628efb7349c4ed3623921067",
+          "authorized_endpoint_digest_sha256": "7476415aa19e4bcec52984220843a2fc7c2b6f2d41144ecf57d6893d20d91328",
           "endpoint_kind": "oracle_authorized_current",
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
           "frame_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2:frame:0",
@@ -12301,6 +12309,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -13181,7 +13190,7 @@
         "source": {
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "58471fc7cb55aa9a8b80fa07921ea74c9557975e628efb7349c4ed3623921067",
+          "source_authorized_endpoint_digest_sha256": "7476415aa19e4bcec52984220843a2fc7c2b6f2d41144ecf57d6893d20d91328",
           "source_frame_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2:frame:0",
           "source_frame_index": 0,
           "source_kind": "live_oracle_frame",
@@ -14026,6 +14035,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -14679,7 +14689,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "1e9d9bc57c3fec0411a1137bd11049cbca3b759496581ee879b0be18993aaa51",
+          "authorized_endpoint_digest_sha256": "c1e2e7fd7d84a41f63749725e62559a3392eb070958efd8fe60c60875d92a85b",
           "endpoint_kind": "shared_obs_authorized_current",
           "parts": {
             "agent_observation_provenance": [
@@ -15140,6 +15150,7 @@
                   "stacking_rule": "multiply_then_clamp"
                 }
               ],
+              "capture_the_flag": null,
               "class_mechanics": [
                 {
                   "aura_mechanics": [
@@ -18801,7 +18812,7 @@
         "source": {
           "episode_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e",
           "source_authority_epoch": 1,
-          "source_authorized_endpoint_digest_sha256": "1e9d9bc57c3fec0411a1137bd11049cbca3b759496581ee879b0be18993aaa51",
+          "source_authorized_endpoint_digest_sha256": "c1e2e7fd7d84a41f63749725e62559a3392eb070958efd8fe60c60875d92a85b",
           "source_frame_index": 1,
           "source_kind": "live_shared_obs_visual_union_frame",
           "source_recipient_frame_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:frame:1",
@@ -19156,7 +19167,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "1375767ae782b8ee45a706d6d1944cb283d0dea7a98f269a2498468f7f128f5a",
+          "authorized_endpoint_digest_sha256": "4d375d75f3fbad76deab9932adf7d69265ba519c9ada8eb7602e525aede563fb",
           "endpoint_kind": "no_shared_obs_authorized_current",
           "parts": {
             "next_decision_action_mask": {
@@ -19374,6 +19385,7 @@
                   "stacking_rule": "multiply_then_clamp"
                 }
               ],
+              "capture_the_flag": null,
               "class_mechanics": [
                 {
                   "aura_mechanics": [
@@ -22171,7 +22183,7 @@
         "source": {
           "episode_id": "service-complete",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "1375767ae782b8ee45a706d6d1944cb283d0dea7a98f269a2498468f7f128f5a",
+          "source_authorized_endpoint_digest_sha256": "4d375d75f3fbad76deab9932adf7d69265ba519c9ada8eb7602e525aede563fb",
           "source_final_frame_index": 2,
           "source_frame_index": 1,
           "source_kind": "replay_no_shared_obs_frame",
@@ -22890,7 +22902,7 @@
         "champion_streaks": [],
         "current_endpoint": {
           "action_axis": null,
-          "authorized_endpoint_digest_sha256": "f6b1dd1a6f0e3bce8475d4b8cfffa69942ea124db87a084c7b5241eb40924803",
+          "authorized_endpoint_digest_sha256": "ba6e9cbcd6d4db67953ec5c35b4625aeb354ca530bde482481b832f2054a4065",
           "endpoint_kind": "oracle_authorized_current",
           "episode_id": "service-complete",
           "frame_id": "service-complete:frame:1",
@@ -23171,6 +23183,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -23679,6 +23692,7 @@
           ],
           "event_count": 0,
           "events": [],
+          "flag_trajectories": null,
           "incoming_start_frame_id": "service-complete:frame:0",
           "incoming_start_simulator_step_count": 0,
           "incoming_successor_frame_id": "service-complete:frame:1",
@@ -23951,7 +23965,7 @@
           "source_artifact_digest_sha256": "b499991f67a065cd8d95df715ab404369fcc2761cdabfdb8f393ee7220f437eb",
           "source_artifact_id": "service-complete:replay",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "f6b1dd1a6f0e3bce8475d4b8cfffa69942ea124db87a084c7b5241eb40924803",
+          "source_authorized_endpoint_digest_sha256": "ba6e9cbcd6d4db67953ec5c35b4625aeb354ca530bde482481b832f2054a4065",
           "source_choreography_generation": 0,
           "source_context_digest_sha256": "0e1eaea6182918b956c17d834d32ebd51135aaec220cde433f44b9c302394caa",
           "source_cursor_generation": 0,
@@ -24417,6 +24431,7 @@
             ],
             "episode_id": "service-complete",
             "events": [],
+            "flag_trajectories": null,
             "public_agent_id_by_global_slot": [
               "agent-slot-0",
               "agent-slot-1",
@@ -24640,6 +24655,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -25163,7 +25179,7 @@
               }
             ]
           },
-          "authorized_endpoint_digest_sha256": "bbfb59a24648c40144a5bde02eebe08f66792078fc89294e9af75f0293498ff4",
+          "authorized_endpoint_digest_sha256": "3a50786742b090dfde6aee03f78b3073a9579eee643642df77db9afc21cfefdf",
           "endpoint_kind": "shared_obs_authorized_current",
           "parts": {
             "agent_observation_provenance": [
@@ -25463,6 +25479,7 @@
                   "stacking_rule": "multiply_then_clamp"
                 }
               ],
+              "capture_the_flag": null,
               "class_mechanics": [
                 {
                   "aura_mechanics": [
@@ -28850,7 +28867,7 @@
         "source": {
           "episode_id": "service-shared",
           "source_authority_epoch": 0,
-          "source_authorized_endpoint_digest_sha256": "bbfb59a24648c40144a5bde02eebe08f66792078fc89294e9af75f0293498ff4",
+          "source_authorized_endpoint_digest_sha256": "3a50786742b090dfde6aee03f78b3073a9579eee643642df77db9afc21cfefdf",
           "source_final_frame_index": 2,
           "source_frame_index": 1,
           "source_kind": "replay_shared_obs_visual_union_frame",
@@ -29281,7 +29298,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "3b0bdb3370c95c054d4eedc0eed522d342131d1ca3a4677a7e2c79bcffeef286",
+        "authorized_endpoint_digest_sha256": "36831aba602211c16efef8b2e8887df36361926681b9167808bdd0fe37ea441e",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -29514,6 +29531,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -31082,7 +31100,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 1,
-        "source_authorized_endpoint_digest_sha256": "3b0bdb3370c95c054d4eedc0eed522d342131d1ca3a4677a7e2c79bcffeef286",
+        "source_authorized_endpoint_digest_sha256": "36831aba602211c16efef8b2e8887df36361926681b9167808bdd0fe37ea441e",
         "source_frame_index": 1,
         "source_kind": "live_no_shared_obs_frame",
         "source_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:1",
@@ -31405,7 +31423,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "da83d1269cb926bb05d458b9d0d918bbe9aafcc9fae7adacb74b9fb57c4ef8b7",
+        "authorized_endpoint_digest_sha256": "54ccf71d0c3ccc6d792cae0a1e274dd478f396363255fea7619178c873199378",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:1",
@@ -31706,6 +31724,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -32314,6 +32333,7 @@
             "status_id": "priest_blessing_of_freedom_movement_floor"
           }
         ],
+        "flag_trajectories": null,
         "incoming_start_frame_id": "episode-001:frame:0",
         "incoming_start_simulator_step_count": 0,
         "incoming_successor_frame_id": "episode-001:frame:1",
@@ -32771,7 +32791,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 1,
-        "source_authorized_endpoint_digest_sha256": "da83d1269cb926bb05d458b9d0d918bbe9aafcc9fae7adacb74b9fb57c4ef8b7",
+        "source_authorized_endpoint_digest_sha256": "54ccf71d0c3ccc6d792cae0a1e274dd478f396363255fea7619178c873199378",
         "source_frame_id": "episode-001:frame:1",
         "source_frame_index": 1,
         "source_kind": "live_oracle_frame",
@@ -32931,7 +32951,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "1e9d9bc57c3fec0411a1137bd11049cbca3b759496581ee879b0be18993aaa51",
+        "authorized_endpoint_digest_sha256": "c1e2e7fd7d84a41f63749725e62559a3392eb070958efd8fe60c60875d92a85b",
         "endpoint_kind": "shared_obs_authorized_current",
         "parts": {
           "agent_observation_provenance": [
@@ -33392,6 +33412,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -37053,7 +37074,7 @@
       "source": {
         "episode_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e",
         "source_authority_epoch": 1,
-        "source_authorized_endpoint_digest_sha256": "1e9d9bc57c3fec0411a1137bd11049cbca3b759496581ee879b0be18993aaa51",
+        "source_authorized_endpoint_digest_sha256": "c1e2e7fd7d84a41f63749725e62559a3392eb070958efd8fe60c60875d92a85b",
         "source_frame_index": 1,
         "source_kind": "live_shared_obs_visual_union_frame",
         "source_recipient_frame_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e:shared-obs-visual-union:0:frame:1",
@@ -37348,7 +37369,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "93034cc9ddc4fa13e004adbfe2b8f748fc82babaaea254620a79cd37b2149f72",
+        "authorized_endpoint_digest_sha256": "834cbb6134357e57059bb87cd938539b45b6fb509e3f6a0f5081cabab7cef733",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -37581,6 +37602,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -39040,7 +39062,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 1,
-        "source_authorized_endpoint_digest_sha256": "93034cc9ddc4fa13e004adbfe2b8f748fc82babaaea254620a79cd37b2149f72",
+        "source_authorized_endpoint_digest_sha256": "834cbb6134357e57059bb87cd938539b45b6fb509e3f6a0f5081cabab7cef733",
         "source_final_frame_index": 3,
         "source_frame_index": 1,
         "source_kind": "replay_no_shared_obs_frame",
@@ -39403,7 +39425,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "da83d1269cb926bb05d458b9d0d918bbe9aafcc9fae7adacb74b9fb57c4ef8b7",
+        "authorized_endpoint_digest_sha256": "54ccf71d0c3ccc6d792cae0a1e274dd478f396363255fea7619178c873199378",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:1",
@@ -39704,6 +39726,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -40311,6 +40334,7 @@
             "status_id": "priest_blessing_of_freedom_movement_floor"
           }
         ],
+        "flag_trajectories": null,
         "incoming_start_frame_id": "episode-001:frame:0",
         "incoming_start_simulator_step_count": 0,
         "incoming_successor_frame_id": "episode-001:frame:1",
@@ -40770,7 +40794,7 @@
         "source_artifact_digest_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "source_artifact_id": "episode-001:replay",
         "source_authority_epoch": 11,
-        "source_authorized_endpoint_digest_sha256": "da83d1269cb926bb05d458b9d0d918bbe9aafcc9fae7adacb74b9fb57c4ef8b7",
+        "source_authorized_endpoint_digest_sha256": "54ccf71d0c3ccc6d792cae0a1e274dd478f396363255fea7619178c873199378",
         "source_choreography_generation": 1,
         "source_context_digest_sha256": "9c55f6fa2bcc33b2c349240e4da0c9c2dcd4ec70289a67bf524883a124f97899",
         "source_cursor_generation": 1,
@@ -41084,7 +41108,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "05be3cab1f06ae1bdf8acdb1a7e0279929e4fd66a68ce733ace0a10a776a67c5",
+        "authorized_endpoint_digest_sha256": "0f78f8c6fd72392bb8285d93f69978561db592fb23961945117cf6b9d07e5ad7",
         "endpoint_kind": "shared_obs_authorized_current",
         "parts": {
           "agent_observation_provenance": [
@@ -41399,6 +41423,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -42854,7 +42879,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 1,
-        "source_authorized_endpoint_digest_sha256": "05be3cab1f06ae1bdf8acdb1a7e0279929e4fd66a68ce733ace0a10a776a67c5",
+        "source_authorized_endpoint_digest_sha256": "0f78f8c6fd72392bb8285d93f69978561db592fb23961945117cf6b9d07e5ad7",
         "source_final_frame_index": 3,
         "source_frame_index": 1,
         "source_kind": "replay_shared_obs_visual_union_frame",
@@ -43219,7 +43244,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "ae8992aa53df5deb0a827aed9767b3c61382032300a13acfd17d50b6f3d734c8",
+        "authorized_endpoint_digest_sha256": "10d743b2dea74ec58bb487a892866b63d4538fc532aad5cc7a64c8f19e948324",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:b274df166df96a6611a3e1b2079e443f76166f24feebe035c6713d419657761a",
         "frame_id": "debugger-episode:b274df166df96a6611a3e1b2079e443f76166f24feebe035c6713d419657761a:frame:0",
@@ -43500,6 +43525,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -44225,7 +44251,7 @@
       "source": {
         "episode_id": "debugger-episode:b274df166df96a6611a3e1b2079e443f76166f24feebe035c6713d419657761a",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "ae8992aa53df5deb0a827aed9767b3c61382032300a13acfd17d50b6f3d734c8",
+        "source_authorized_endpoint_digest_sha256": "10d743b2dea74ec58bb487a892866b63d4538fc532aad5cc7a64c8f19e948324",
         "source_frame_id": "debugger-episode:b274df166df96a6611a3e1b2079e443f76166f24feebe035c6713d419657761a:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -44381,7 +44407,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "ddc4d9bbf4b0401b2f0575f93a46fa2db98acf36d9c408992a2f0e2a9cccec38",
+        "authorized_endpoint_digest_sha256": "3319c57dcd51872458ab58a5937578c0898e071d05bb0faadc46794a5d89f7c4",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:83a50d2cca5d19cd27dba32964aca8a0e23e0b258ed026403f101a37fe61d593",
         "frame_id": "debugger-episode:83a50d2cca5d19cd27dba32964aca8a0e23e0b258ed026403f101a37fe61d593:frame:0",
@@ -44662,6 +44688,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -45387,7 +45414,7 @@
       "source": {
         "episode_id": "debugger-episode:83a50d2cca5d19cd27dba32964aca8a0e23e0b258ed026403f101a37fe61d593",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "ddc4d9bbf4b0401b2f0575f93a46fa2db98acf36d9c408992a2f0e2a9cccec38",
+        "source_authorized_endpoint_digest_sha256": "3319c57dcd51872458ab58a5937578c0898e071d05bb0faadc46794a5d89f7c4",
         "source_frame_id": "debugger-episode:83a50d2cca5d19cd27dba32964aca8a0e23e0b258ed026403f101a37fe61d593:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -45543,7 +45570,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "ac10d0d1850316bf9864e05044231176508c5563a306152c1a66e0730f447cd0",
+        "authorized_endpoint_digest_sha256": "7e48c7e9fab28f488e2e75a019fc47ea0adc657d3b3a2d4bb571de3eb73fff87",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:227843c5c2bfc06a4d31adb2afcebc4c44b13f2faf4374060214dbc701e0b95b",
         "frame_id": "debugger-episode:227843c5c2bfc06a4d31adb2afcebc4c44b13f2faf4374060214dbc701e0b95b:frame:0",
@@ -45824,6 +45851,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -46539,7 +46567,7 @@
       "source": {
         "episode_id": "debugger-episode:227843c5c2bfc06a4d31adb2afcebc4c44b13f2faf4374060214dbc701e0b95b",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "ac10d0d1850316bf9864e05044231176508c5563a306152c1a66e0730f447cd0",
+        "source_authorized_endpoint_digest_sha256": "7e48c7e9fab28f488e2e75a019fc47ea0adc657d3b3a2d4bb571de3eb73fff87",
         "source_frame_id": "debugger-episode:227843c5c2bfc06a4d31adb2afcebc4c44b13f2faf4374060214dbc701e0b95b:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -46695,7 +46723,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "528a6df50190ad2ac63956bf9da4b955a391b81f34680726731dca5ee191a177",
+        "authorized_endpoint_digest_sha256": "626f773ba5fe3f1b23e7510e99d8e14915ad5c3926bdeb5779279971d14b56ef",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:c9b6872091ffd5ad66c1efd2ceac2ffe25048bcc77837afd0d00da4eb6170ae9",
         "frame_id": "debugger-episode:c9b6872091ffd5ad66c1efd2ceac2ffe25048bcc77837afd0d00da4eb6170ae9:frame:0",
@@ -46976,6 +47004,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -47701,7 +47730,7 @@
       "source": {
         "episode_id": "debugger-episode:c9b6872091ffd5ad66c1efd2ceac2ffe25048bcc77837afd0d00da4eb6170ae9",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "528a6df50190ad2ac63956bf9da4b955a391b81f34680726731dca5ee191a177",
+        "source_authorized_endpoint_digest_sha256": "626f773ba5fe3f1b23e7510e99d8e14915ad5c3926bdeb5779279971d14b56ef",
         "source_frame_id": "debugger-episode:c9b6872091ffd5ad66c1efd2ceac2ffe25048bcc77837afd0d00da4eb6170ae9:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -47857,7 +47886,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "4e71a42823c956dfec731df4ce95d341a3bf2f3605955d473be89faf1e986fe3",
+        "authorized_endpoint_digest_sha256": "3452210c9a854686e79db6bb3c5a188a3b1b7ee2749f770d94a0337edb891d19",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:602cc75561a67c52ad0d3e8eb1f5f25479f684a06ad0e8ee06189ccac373ea22",
         "frame_id": "debugger-episode:602cc75561a67c52ad0d3e8eb1f5f25479f684a06ad0e8ee06189ccac373ea22:frame:0",
@@ -48138,6 +48167,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -48863,7 +48893,7 @@
       "source": {
         "episode_id": "debugger-episode:602cc75561a67c52ad0d3e8eb1f5f25479f684a06ad0e8ee06189ccac373ea22",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "4e71a42823c956dfec731df4ce95d341a3bf2f3605955d473be89faf1e986fe3",
+        "source_authorized_endpoint_digest_sha256": "3452210c9a854686e79db6bb3c5a188a3b1b7ee2749f770d94a0337edb891d19",
         "source_frame_id": "debugger-episode:602cc75561a67c52ad0d3e8eb1f5f25479f684a06ad0e8ee06189ccac373ea22:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -49019,7 +49049,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "d15c94d249d299f389a5ba2ad670dc7b9856dfb8448f9312d34f270671b3abab",
+        "authorized_endpoint_digest_sha256": "89d1f96ad20f10bdb28df530a1185fed469103f41784f7ad8ae43b41c44dad7e",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:1b03d07a43b717c7d83b8ae8aa9da6c14657146c6996f563bea23e32e7f31bbe",
         "frame_id": "debugger-episode:1b03d07a43b717c7d83b8ae8aa9da6c14657146c6996f563bea23e32e7f31bbe:frame:0",
@@ -49300,6 +49330,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -50025,7 +50056,7 @@
       "source": {
         "episode_id": "debugger-episode:1b03d07a43b717c7d83b8ae8aa9da6c14657146c6996f563bea23e32e7f31bbe",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "d15c94d249d299f389a5ba2ad670dc7b9856dfb8448f9312d34f270671b3abab",
+        "source_authorized_endpoint_digest_sha256": "89d1f96ad20f10bdb28df530a1185fed469103f41784f7ad8ae43b41c44dad7e",
         "source_frame_id": "debugger-episode:1b03d07a43b717c7d83b8ae8aa9da6c14657146c6996f563bea23e32e7f31bbe:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -50181,7 +50212,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "390bddc2b00108776fc897559bc4e635fa20fd689a41702737f03dd0c7b115f1",
+        "authorized_endpoint_digest_sha256": "146d3f7221d87d786dcaa77c256b27fab593b80c0292187c6fff17c12d46cdf5",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:27a5dbae4cddebe0906a5d58781f127aeb9b18a73a32f15520eaffa6e4152fce",
         "frame_id": "debugger-episode:27a5dbae4cddebe0906a5d58781f127aeb9b18a73a32f15520eaffa6e4152fce:frame:0",
@@ -50462,6 +50493,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -51187,7 +51219,7 @@
       "source": {
         "episode_id": "debugger-episode:27a5dbae4cddebe0906a5d58781f127aeb9b18a73a32f15520eaffa6e4152fce",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "390bddc2b00108776fc897559bc4e635fa20fd689a41702737f03dd0c7b115f1",
+        "source_authorized_endpoint_digest_sha256": "146d3f7221d87d786dcaa77c256b27fab593b80c0292187c6fff17c12d46cdf5",
         "source_frame_id": "debugger-episode:27a5dbae4cddebe0906a5d58781f127aeb9b18a73a32f15520eaffa6e4152fce:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -51343,7 +51375,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "2b77359a11bfe773de8623285c7819e4d9f0aceeeadbc598a3a75a5603ed25e9",
+        "authorized_endpoint_digest_sha256": "dbc82fdde1d14db3793e840a2fe983acb6d598fa914f92b672f1d65388f187c0",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:29123366bbed07eed1205bc15b3f5c530316168541ac2091f6500b798ec4b536",
         "frame_id": "debugger-episode:29123366bbed07eed1205bc15b3f5c530316168541ac2091f6500b798ec4b536:frame:0",
@@ -51624,6 +51656,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -52349,7 +52382,7 @@
       "source": {
         "episode_id": "debugger-episode:29123366bbed07eed1205bc15b3f5c530316168541ac2091f6500b798ec4b536",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "2b77359a11bfe773de8623285c7819e4d9f0aceeeadbc598a3a75a5603ed25e9",
+        "source_authorized_endpoint_digest_sha256": "dbc82fdde1d14db3793e840a2fe983acb6d598fa914f92b672f1d65388f187c0",
         "source_frame_id": "debugger-episode:29123366bbed07eed1205bc15b3f5c530316168541ac2091f6500b798ec4b536:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -52505,7 +52538,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "3269f8cbf156022b02d65680f9e1204ec9e766c281c1953cc4faae9e1c6fbbdc",
+        "authorized_endpoint_digest_sha256": "3842b0fba6d0c745894b72496d4857556ef3c7534a85e6a5ad0db426bb8b4f94",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:4fd9577afdb11a6f6b2d0cb67855e4dfd9223cce08e92e90f4a96c530f24a95c",
         "frame_id": "debugger-episode:4fd9577afdb11a6f6b2d0cb67855e4dfd9223cce08e92e90f4a96c530f24a95c:frame:0",
@@ -52786,6 +52819,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -53511,7 +53545,7 @@
       "source": {
         "episode_id": "debugger-episode:4fd9577afdb11a6f6b2d0cb67855e4dfd9223cce08e92e90f4a96c530f24a95c",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "3269f8cbf156022b02d65680f9e1204ec9e766c281c1953cc4faae9e1c6fbbdc",
+        "source_authorized_endpoint_digest_sha256": "3842b0fba6d0c745894b72496d4857556ef3c7534a85e6a5ad0db426bb8b4f94",
         "source_frame_id": "debugger-episode:4fd9577afdb11a6f6b2d0cb67855e4dfd9223cce08e92e90f4a96c530f24a95c:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -53667,7 +53701,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "1fb727623299de8ec13ab8b2e88d01838aab43448587748e2b0be89aee662c6d",
+        "authorized_endpoint_digest_sha256": "994053c8d847f68c1448bba83593b38331ad2d08ae7d59f631030309d89018e8",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:8b7be34962a57a2597a7af51dd599d543945925b8de9cf04c825b74fd4f4aa52",
         "frame_id": "debugger-episode:8b7be34962a57a2597a7af51dd599d543945925b8de9cf04c825b74fd4f4aa52:frame:0",
@@ -53948,6 +53982,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -54698,7 +54733,7 @@
       "source": {
         "episode_id": "debugger-episode:8b7be34962a57a2597a7af51dd599d543945925b8de9cf04c825b74fd4f4aa52",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "1fb727623299de8ec13ab8b2e88d01838aab43448587748e2b0be89aee662c6d",
+        "source_authorized_endpoint_digest_sha256": "994053c8d847f68c1448bba83593b38331ad2d08ae7d59f631030309d89018e8",
         "source_frame_id": "debugger-episode:8b7be34962a57a2597a7af51dd599d543945925b8de9cf04c825b74fd4f4aa52:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -54854,7 +54889,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "140472bcfb93dfb1a3209e800b0b889bb12847c74b2d086cee46eba59b91246b",
+        "authorized_endpoint_digest_sha256": "ee53e670f95c6256e0599b3c50c743103b7394ddbb151a231609c07457d30b3a",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:ec37347c2e616c64ece80f79034691b6e7fc3808bfe167e64af973e1894ccbb4",
         "frame_id": "debugger-episode:ec37347c2e616c64ece80f79034691b6e7fc3808bfe167e64af973e1894ccbb4:frame:0",
@@ -55135,6 +55170,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -55860,7 +55896,7 @@
       "source": {
         "episode_id": "debugger-episode:ec37347c2e616c64ece80f79034691b6e7fc3808bfe167e64af973e1894ccbb4",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "140472bcfb93dfb1a3209e800b0b889bb12847c74b2d086cee46eba59b91246b",
+        "source_authorized_endpoint_digest_sha256": "ee53e670f95c6256e0599b3c50c743103b7394ddbb151a231609c07457d30b3a",
         "source_frame_id": "debugger-episode:ec37347c2e616c64ece80f79034691b6e7fc3808bfe167e64af973e1894ccbb4:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -56016,7 +56052,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "c46fe1f840d8c6ded7c9af3ad66c8339c4d72a231c66338a5559134e4ae4d510",
+        "authorized_endpoint_digest_sha256": "be1d53d1e97b76d095043f144384edb91183f8f6a5baa845a8298777c186d9c3",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "debugger-episode:6265bef9df469fa000e965cb21b16d309a1ac5c210815b66bd154de460197478",
         "frame_id": "debugger-episode:6265bef9df469fa000e965cb21b16d309a1ac5c210815b66bd154de460197478:frame:0",
@@ -56297,6 +56333,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -57022,7 +57059,7 @@
       "source": {
         "episode_id": "debugger-episode:6265bef9df469fa000e965cb21b16d309a1ac5c210815b66bd154de460197478",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "c46fe1f840d8c6ded7c9af3ad66c8339c4d72a231c66338a5559134e4ae4d510",
+        "source_authorized_endpoint_digest_sha256": "be1d53d1e97b76d095043f144384edb91183f8f6a5baa845a8298777c186d9c3",
         "source_frame_id": "debugger-episode:6265bef9df469fa000e965cb21b16d309a1ac5c210815b66bd154de460197478:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -57182,7 +57219,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "442e034bcff7ad20fa89415b8c7a1fc587b8526129542bb1c6adf7ccaf0e1e21",
+        "authorized_endpoint_digest_sha256": "38a8c6e187bbf0bc99d3a60a791d0b77223d73f2752d191ea347712996168714",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -57400,6 +57437,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -60209,7 +60247,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "442e034bcff7ad20fa89415b8c7a1fc587b8526129542bb1c6adf7ccaf0e1e21",
+        "source_authorized_endpoint_digest_sha256": "38a8c6e187bbf0bc99d3a60a791d0b77223d73f2752d191ea347712996168714",
         "source_final_frame_index": 2,
         "source_frame_index": 1,
         "source_kind": "replay_no_shared_obs_frame",
@@ -60365,7 +60403,7 @@
       "champion_streaks": [],
       "current_endpoint": {
         "action_axis": null,
-        "authorized_endpoint_digest_sha256": "25aa1136912e393db93b02f9f11f4abbe51fa7d32fedb4b821a4b7be82cc7703",
+        "authorized_endpoint_digest_sha256": "c00c4f25faa4fc9e1f4166d537aa2913a9f2a3b1c222592688e64eba2c72c09a",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:1",
@@ -60646,6 +60684,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -61166,6 +61205,7 @@
         ],
         "event_count": 0,
         "events": [],
+        "flag_trajectories": null,
         "incoming_start_frame_id": "episode-001:frame:0",
         "incoming_start_simulator_step_count": 0,
         "incoming_successor_frame_id": "episode-001:frame:1",
@@ -61438,7 +61478,7 @@
         "source_artifact_digest_sha256": "f23de526bf8ae63a3bb4aec557cf26782e467a2c88b190e4884938b9479cb6e3",
         "source_artifact_id": "episode-001:replay",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "25aa1136912e393db93b02f9f11f4abbe51fa7d32fedb4b821a4b7be82cc7703",
+        "source_authorized_endpoint_digest_sha256": "c00c4f25faa4fc9e1f4166d537aa2913a9f2a3b1c222592688e64eba2c72c09a",
         "source_choreography_generation": 0,
         "source_context_digest_sha256": "790d4f8b96b0eee0cc784f58f64aa28afacf3781a0a41503ac8fdf3323e3fbb4",
         "source_cursor_generation": 0,
@@ -61752,7 +61792,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "bdcb4716a256a842f44737841dd90f98c6f80cee4ce117aaf79ad9552f2806e4",
+        "authorized_endpoint_digest_sha256": "dadfc9fbc94e574522bfc977e0a8e0acbf6727712471cf0b0ccf5fd197d28a74",
         "endpoint_kind": "shared_obs_authorized_current",
         "parts": {
           "agent_observation_provenance": [
@@ -62052,6 +62092,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -65451,7 +65492,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "bdcb4716a256a842f44737841dd90f98c6f80cee4ce117aaf79ad9552f2806e4",
+        "source_authorized_endpoint_digest_sha256": "dadfc9fbc94e574522bfc977e0a8e0acbf6727712471cf0b0ccf5fd197d28a74",
         "source_final_frame_index": 2,
         "source_frame_index": 1,
         "source_kind": "replay_shared_obs_visual_union_frame",
@@ -66046,7 +66087,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "42bbe3f035d24ad217d89ed30774e899d8f8a6ede868325180075980071c9ff9",
+        "authorized_endpoint_digest_sha256": "ba0990ab81f185a799b426346d0f9dd5758b4f778994aebbd2dcdbaa8bc35fc9",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -66305,6 +66346,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -68792,7 +68834,7 @@
       "source": {
         "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "42bbe3f035d24ad217d89ed30774e899d8f8a6ede868325180075980071c9ff9",
+        "source_authorized_endpoint_digest_sha256": "ba0990ab81f185a799b426346d0f9dd5758b4f778994aebbd2dcdbaa8bc35fc9",
         "source_frame_index": 0,
         "source_kind": "live_no_shared_obs_frame",
         "source_recipient_frame_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2:actor-pov:0:frame:0",
@@ -68954,7 +68996,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "95c00f0d9903af2d245d8ef56411bc4f10c7f4cc44d99f3c2e4f6075e420c528",
+        "authorized_endpoint_digest_sha256": "253c05873618fab5b8431a323a0bea61bfe5164f0e63e50bbb3b73945d6adc5f",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -69172,6 +69214,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -70424,7 +70467,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "95c00f0d9903af2d245d8ef56411bc4f10c7f4cc44d99f3c2e4f6075e420c528",
+        "source_authorized_endpoint_digest_sha256": "253c05873618fab5b8431a323a0bea61bfe5164f0e63e50bbb3b73945d6adc5f",
         "source_frame_index": 0,
         "source_kind": "live_no_shared_obs_frame",
         "source_recipient_frame_id": "episode-001:actor-pov:agent-slot-0:frame:0",
@@ -70582,7 +70625,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "44b48fc50d94c270740e068eb5df875256e067796de37f3eef963349ede3c8d1",
+        "authorized_endpoint_digest_sha256": "e0972ec73f9334d78219c14ed101d68df770e3b6d7956407138bd181b4674e70",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:0",
@@ -70863,6 +70906,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -71504,7 +71548,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "44b48fc50d94c270740e068eb5df875256e067796de37f3eef963349ede3c8d1",
+        "source_authorized_endpoint_digest_sha256": "e0972ec73f9334d78219c14ed101d68df770e3b6d7956407138bd181b4674e70",
         "source_frame_id": "episode-001:frame:0",
         "source_frame_index": 0,
         "source_kind": "live_oracle_frame",
@@ -71664,7 +71708,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "6e8c80eb17ffb45577032bc21c0007213dcd0d97fa0dcb32cde8c4f18ac8f414",
+        "authorized_endpoint_digest_sha256": "e0bb9edf236b3032c345ebe86064ced410a4630070ac2eb65338d36be869a9ff",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -71897,6 +71941,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -73050,7 +73095,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 7,
-        "source_authorized_endpoint_digest_sha256": "6e8c80eb17ffb45577032bc21c0007213dcd0d97fa0dcb32cde8c4f18ac8f414",
+        "source_authorized_endpoint_digest_sha256": "e0bb9edf236b3032c345ebe86064ced410a4630070ac2eb65338d36be869a9ff",
         "source_final_frame_index": 3,
         "source_frame_index": 3,
         "source_kind": "replay_no_shared_obs_frame",
@@ -73311,7 +73356,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "6e8c80eb17ffb45577032bc21c0007213dcd0d97fa0dcb32cde8c4f18ac8f414",
+        "authorized_endpoint_digest_sha256": "e0bb9edf236b3032c345ebe86064ced410a4630070ac2eb65338d36be869a9ff",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -73544,6 +73589,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -74697,7 +74743,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 7,
-        "source_authorized_endpoint_digest_sha256": "6e8c80eb17ffb45577032bc21c0007213dcd0d97fa0dcb32cde8c4f18ac8f414",
+        "source_authorized_endpoint_digest_sha256": "e0bb9edf236b3032c345ebe86064ced410a4630070ac2eb65338d36be869a9ff",
         "source_final_frame_index": 3,
         "source_frame_index": 3,
         "source_kind": "replay_no_shared_obs_frame",
@@ -74991,7 +75037,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "3b717cee9d7256afd563e6d8ab2245c2b941e8783810651ffcd00861f03b35d6",
+        "authorized_endpoint_digest_sha256": "a28aac5b57f651c6fedeb4346fa6b305fc1c69d06f15a551d1f760484cd4604a",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -75209,6 +75255,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -77176,7 +77223,7 @@
       "source": {
         "episode_id": "browser-corpse-overlay-no_shared_obs",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "3b717cee9d7256afd563e6d8ab2245c2b941e8783810651ffcd00861f03b35d6",
+        "source_authorized_endpoint_digest_sha256": "a28aac5b57f651c6fedeb4346fa6b305fc1c69d06f15a551d1f760484cd4604a",
         "source_final_frame_index": 1,
         "source_frame_index": 0,
         "source_kind": "replay_no_shared_obs_frame",
@@ -77378,7 +77425,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "6e8c80eb17ffb45577032bc21c0007213dcd0d97fa0dcb32cde8c4f18ac8f414",
+        "authorized_endpoint_digest_sha256": "e0bb9edf236b3032c345ebe86064ced410a4630070ac2eb65338d36be869a9ff",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -77611,6 +77658,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -78764,7 +78812,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 7,
-        "source_authorized_endpoint_digest_sha256": "6e8c80eb17ffb45577032bc21c0007213dcd0d97fa0dcb32cde8c4f18ac8f414",
+        "source_authorized_endpoint_digest_sha256": "e0bb9edf236b3032c345ebe86064ced410a4630070ac2eb65338d36be869a9ff",
         "source_final_frame_index": 3,
         "source_frame_index": 3,
         "source_kind": "replay_no_shared_obs_frame",
@@ -79013,7 +79061,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "01d43898f3af3b53a09009940eca28e90b1db2b6befae8ff2e4c7ef5e662d9c1",
+        "authorized_endpoint_digest_sha256": "4c073af439a5fff8b37e4931fd7906c8aadbb4ca11e928cefe9a52cc53fa8725",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -79231,6 +79279,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -80374,7 +80423,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 7,
-        "source_authorized_endpoint_digest_sha256": "01d43898f3af3b53a09009940eca28e90b1db2b6befae8ff2e4c7ef5e662d9c1",
+        "source_authorized_endpoint_digest_sha256": "4c073af439a5fff8b37e4931fd7906c8aadbb4ca11e928cefe9a52cc53fa8725",
         "source_final_frame_index": 3,
         "source_frame_index": 0,
         "source_kind": "replay_no_shared_obs_frame",
@@ -80576,7 +80625,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "5e8b94aadd4340d729f2c40082ac25c8917c4d3d2d3f94b5cade105447a44d01",
+        "authorized_endpoint_digest_sha256": "2a29992aa15e52f1bc925edb15430715832d3ef4c07a2b9a437a79ad3917cccb",
         "endpoint_kind": "no_shared_obs_authorized_current",
         "parts": {
           "next_decision_action_mask": {
@@ -80794,6 +80843,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -83271,7 +83321,7 @@
       "source": {
         "episode_id": "browser-corpse-overlay-no_shared_obs",
         "source_authority_epoch": 0,
-        "source_authorized_endpoint_digest_sha256": "5e8b94aadd4340d729f2c40082ac25c8917c4d3d2d3f94b5cade105447a44d01",
+        "source_authorized_endpoint_digest_sha256": "2a29992aa15e52f1bc925edb15430715832d3ef4c07a2b9a437a79ad3917cccb",
         "source_final_frame_index": 1,
         "source_frame_index": 1,
         "source_kind": "replay_no_shared_obs_frame",
@@ -83516,7 +83566,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "e150b85cc0d56b6e8835ea32575d1f23a37b759aff4a701d62b5987db461ee20",
+        "authorized_endpoint_digest_sha256": "0c941b4a6cdfa5d82cab22e590fc504db64d2deddcaf50bf269efc1224b1c27a",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:3",
@@ -83817,6 +83867,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -84353,6 +84404,7 @@
             }
           }
         ],
+        "flag_trajectories": null,
         "incoming_start_frame_id": "episode-001:frame:2",
         "incoming_start_simulator_step_count": 2,
         "incoming_successor_frame_id": "episode-001:frame:3",
@@ -84585,7 +84637,7 @@
         "source_artifact_digest_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "source_artifact_id": "episode-001:replay",
         "source_authority_epoch": 13,
-        "source_authorized_endpoint_digest_sha256": "e150b85cc0d56b6e8835ea32575d1f23a37b759aff4a701d62b5987db461ee20",
+        "source_authorized_endpoint_digest_sha256": "0c941b4a6cdfa5d82cab22e590fc504db64d2deddcaf50bf269efc1224b1c27a",
         "source_choreography_generation": 3,
         "source_context_digest_sha256": "9c55f6fa2bcc33b2c349240e4da0c9c2dcd4ec70289a67bf524883a124f97899",
         "source_cursor_generation": 3,
@@ -84620,7 +84672,7 @@
       "champion_streaks": null,
       "current_endpoint": {
         "action_axis": null,
-        "authorized_endpoint_digest_sha256": "04b04a1efa797f2150e30305c98b8ddcd252144b2bf18093dc5788a7fe3033a4",
+        "authorized_endpoint_digest_sha256": "89fac17087a7727a1a821d1e28a76cf0412a7ae0cf98f5bc80ba23fb0305abc5",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:3",
@@ -84921,6 +84973,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -85457,6 +85510,7 @@
             }
           }
         ],
+        "flag_trajectories": null,
         "incoming_start_frame_id": "episode-001:frame:2",
         "incoming_start_simulator_step_count": 2,
         "incoming_successor_frame_id": "episode-001:frame:3",
@@ -85689,7 +85743,7 @@
         "source_artifact_digest_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "source_artifact_id": "episode-001:replay",
         "source_authority_epoch": 13,
-        "source_authorized_endpoint_digest_sha256": "04b04a1efa797f2150e30305c98b8ddcd252144b2bf18093dc5788a7fe3033a4",
+        "source_authorized_endpoint_digest_sha256": "89fac17087a7727a1a821d1e28a76cf0412a7ae0cf98f5bc80ba23fb0305abc5",
         "source_choreography_generation": 3,
         "source_context_digest_sha256": "9c55f6fa2bcc33b2c349240e4da0c9c2dcd4ec70289a67bf524883a124f97899",
         "source_cursor_generation": 3,
@@ -85853,7 +85907,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "e0fcff6c2c91a8ba4950ef411ad0851e5dfc5f2f39c0cc4bcd11782193365893",
+        "authorized_endpoint_digest_sha256": "788f6403f3349b7e7362a6afeb66ff4919723bbeb2b3a7bac98ba7c80065a4ee",
         "endpoint_kind": "oracle_authorized_current",
         "episode_id": "episode-001",
         "frame_id": "episode-001:frame:0",
@@ -86134,6 +86188,7 @@
               "stacking_rule": "multiply_then_clamp"
             }
           ],
+          "capture_the_flag": null,
           "class_mechanics": [
             {
               "aura_mechanics": [
@@ -86776,7 +86831,7 @@
         "source_artifact_digest_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "source_artifact_id": "episode-001:replay",
         "source_authority_epoch": 10,
-        "source_authorized_endpoint_digest_sha256": "e0fcff6c2c91a8ba4950ef411ad0851e5dfc5f2f39c0cc4bcd11782193365893",
+        "source_authorized_endpoint_digest_sha256": "788f6403f3349b7e7362a6afeb66ff4919723bbeb2b3a7bac98ba7c80065a4ee",
         "source_choreography_generation": 0,
         "source_context_digest_sha256": "9c55f6fa2bcc33b2c349240e4da0c9c2dcd4ec70289a67bf524883a124f97899",
         "source_cursor_generation": 0,
@@ -87090,7 +87145,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "4e7d2f4a1d0e5cddde8fd924dd51b7bbdb87e9a978b1d2a1b4a642581685af46",
+        "authorized_endpoint_digest_sha256": "07e2523f3d7a4c51595533ae2db4b3b30afecb198768dc073171f1a5beafa7b7",
         "endpoint_kind": "shared_obs_authorized_current",
         "parts": {
           "agent_observation_provenance": [
@@ -87405,6 +87460,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -88515,7 +88571,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 7,
-        "source_authorized_endpoint_digest_sha256": "4e7d2f4a1d0e5cddde8fd924dd51b7bbdb87e9a978b1d2a1b4a642581685af46",
+        "source_authorized_endpoint_digest_sha256": "07e2523f3d7a4c51595533ae2db4b3b30afecb198768dc073171f1a5beafa7b7",
         "source_final_frame_index": 3,
         "source_frame_index": 3,
         "source_kind": "replay_shared_obs_visual_union_frame",
@@ -88764,7 +88820,7 @@
             }
           ]
         },
-        "authorized_endpoint_digest_sha256": "f7c5c53ca823f2afd12ba309e6527b49ac4abcfada3a0d1fa55fe0d79adb9a85",
+        "authorized_endpoint_digest_sha256": "9ed92d82ccdef22e91b2fc51b796b3d23a67aa646468cd8cb032f91e72794dd9",
         "endpoint_kind": "shared_obs_authorized_current",
         "parts": {
           "agent_observation_provenance": [
@@ -89064,6 +89120,7 @@
                 "stacking_rule": "multiply_then_clamp"
               }
             ],
+            "capture_the_flag": null,
             "class_mechanics": [
               {
                 "aura_mechanics": [
@@ -90209,7 +90266,7 @@
       "source": {
         "episode_id": "episode-001",
         "source_authority_epoch": 7,
-        "source_authorized_endpoint_digest_sha256": "f7c5c53ca823f2afd12ba309e6527b49ac4abcfada3a0d1fa55fe0d79adb9a85",
+        "source_authorized_endpoint_digest_sha256": "9ed92d82ccdef22e91b2fc51b796b3d23a67aa646468cd8cb032f91e72794dd9",
         "source_final_frame_index": 3,
         "source_frame_index": 0,
         "source_kind": "replay_shared_obs_visual_union_frame",

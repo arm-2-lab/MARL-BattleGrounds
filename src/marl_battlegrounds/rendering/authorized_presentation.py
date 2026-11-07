@@ -19,7 +19,10 @@ that audience saw. An Agent POV scene, live or replayed, carries
 AuthorizedTeamSightV1: the merged floor the viewing team sees, with the shapes
 the veil passes through while the incoming turn plays
 (AuthorizedTeamSightTurnShapeV1). rendering.team_sight computes it; Oracle View
-scenes leave it None.
+scenes leave it None. A Capture the Flag Oracle scene carries
+AuthorizedCaptureTheFlagV1 (both flags, a carrier named only by its key), and
+its incoming summary both flags at each end of the transition; no flag event
+reaches an Agent POV.
 Class docstrings also feed Pydantic schema descriptions; the compact browser
 schema strips that prose.
 """
@@ -67,6 +70,9 @@ from marl_battlegrounds.rendering.scene import (
     AgentSceneV2,
     AuraRecipientModifierSceneV2,
     BattlefieldSceneV2,
+    CaptureTheFlagCompletedEventV2,
+    CaptureTheFlagFlagSceneV1,
+    CaptureTheFlagFlagState,
     ChargePhaseDisplacementEventV2,
     ClassAuraMechanicSceneV2,
     ClassMechanicsSceneV2,
@@ -74,6 +80,12 @@ from marl_battlegrounds.rendering.scene import (
     CombatCountdownResetEventV2,
     CooldownReadyEventV2,
     CooldownStartedEventV2,
+    FlagAgentVisualEventBaseV2,
+    FlagAutomaticallyReturnedEventV2,
+    FlagCapturedEventV2,
+    FlagDroppedEventV2,
+    FlagPickedUpEventV2,
+    FlagReturnedEventV2,
     HealthRegeneratedEventV2,
     LethalDamageContributionEventV2,
     MapSceneV1,
@@ -98,6 +110,7 @@ from marl_battlegrounds.rendering.scene import (
     VisualAnchorPhaseV2,
     VisualEventBatchV2,
     VisualEventV2,
+    capture_the_flag_flag_state,
 )
 from marl_battlegrounds.rendering.vocabulary import CATALOG_STATUS_ID_BY_CHANNEL
 
@@ -152,6 +165,12 @@ type ReplayIncomingEventKindV1 = Literal[
     "agent_respawned",
     "team_deathmatch_score_changed",
     "team_deathmatch_completed",
+    "flag_returned",
+    "flag_picked_up",
+    "flag_captured",
+    "flag_dropped",
+    "flag_automatically_returned",
+    "capture_the_flag_completed",
 ]
 
 _REPLAY_INCOMING_EVENT_KINDS_V1 = frozenset(
@@ -180,6 +199,12 @@ _REPLAY_INCOMING_EVENT_KINDS_V1 = frozenset(
         "agent_respawned",
         "team_deathmatch_score_changed",
         "team_deathmatch_completed",
+        "flag_returned",
+        "flag_picked_up",
+        "flag_captured",
+        "flag_dropped",
+        "flag_automatically_returned",
+        "capture_the_flag_completed",
     )
 )
 _CANONICAL_CLASS_NAME_BY_ID_V1 = {
@@ -2665,14 +2690,162 @@ class AuthorizedTeamSightV1:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class AuthorizedCaptureTheFlagFlagV1:
+    """Store one team's flag as an audience may see it.
+
+    The carrier's key and public ID appear together, and only while the flag
+    is carried and the audience may name the carrier: always in Oracle View,
+    and in Agent POV only when the actor's rows name a body the view holds.
+    All constructor fields are required keyword arguments; instances are frozen.
+
+    Attributes
+    ----------
+    team_id : int
+        Whose flag: 1 for Team A's, 2 for Team B's.
+    state : CaptureTheFlagFlagState
+        "home", "carried" or "dropped".
+    position : Point2D
+        Where the flag is now, in world units.
+    home_position : Point2D
+        The flag's home, in world units.
+    carrier_presentation_key : str | None
+        The carrier's audience-scoped key, or None (not carried, or an unseen
+        carrier in Agent POV).
+    carrier_public_agent_id : str | None
+        Matching public ID, present exactly when the carrier key is present.
+    countdown_steps : int
+        Ticks before a dropped flag goes home by itself; 0 unless dropped.
+
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    __pydantic_config__: ClassVar[ConfigDict] = _STRICT_WIRE_DATACLASS_CONFIG
+    """Strict Pydantic wire settings: forbid extra fields, nonfinite numbers, and
+    coercion."""
+
+    team_id: int
+    """Whose flag: 1 for Team A's, 2 for Team B's."""
+    state: CaptureTheFlagFlagState
+    """"home", "carried" or "dropped"."""
+    position: Point2D
+    """Where the flag is now, in world units."""
+    home_position: Point2D
+    """The flag's home, in world units."""
+    carrier_presentation_key: str | None
+    """The carrier's audience-scoped key, or None."""
+    carrier_public_agent_id: str | None
+    """Matching public ID, present exactly when the carrier key is present."""
+    countdown_steps: int
+    """Ticks before a dropped flag goes home by itself; 0 unless dropped."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        _require_python_int(self.team_id, name="team_id", minimum=1)
+        if self.team_id not in (1, 2):
+            raise ValueError("team_id must be one or two.")
+        _require_point(self.position, name="position")
+        _require_point(self.home_position, name="home_position")
+        _require_python_int(self.countdown_steps, name="countdown_steps")
+        if self.state not in ("home", "carried", "dropped"):
+            raise ValueError("flag state must be home, carried or dropped.")
+        if self.state != capture_the_flag_flag_state(
+            carried=self.state == "carried", countdown_steps=self.countdown_steps
+        ):
+            raise ValueError("flag countdown must follow its state.")
+        if (self.carrier_presentation_key is None) != (
+            self.carrier_public_agent_id is None
+        ):
+            raise ValueError("flag carrier identity must be present as a pair.")
+        if (
+            self.carrier_presentation_key is not None
+            and self.carrier_public_agent_id is not None
+        ):
+            if self.state != "carried":
+                raise ValueError("only a carried flag names a carrier.")
+            _require_text(
+                self.carrier_presentation_key, name="carrier_presentation_key"
+            )
+            _require_text(self.carrier_public_agent_id, name="carrier_public_agent_id")
+        if self.state == "home" and self.position != self.home_position:
+            raise ValueError("a flag at home must sit at its home position.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AuthorizedCaptureTheFlagV1:
+    """Store both flags and the Capture the Flag settings an audience may see.
+
+    All constructor fields are required keyword arguments; instances are frozen.
+
+    Attributes
+    ----------
+    flags : tuple[AuthorizedCaptureTheFlagFlagV1, AuthorizedCaptureTheFlagFlagV1]
+        Team A's flag, then Team B's.
+    capture_distance : float
+        Positive reach of a home for a capture, in map units.
+    interaction_distance : float
+        Positive reach for a pickup or a return, in map units.
+    return_steps : int | None
+        Positive ticks a dropped flag waits before going home by itself; None
+        where the audience has no source for it (Agent POV, until he decides
+        whether the setting is public there).
+
+    Raises
+    ------
+    ValueError
+        The flags are not Team A's then Team B's, or a setting is invalid.
+    """
+
+    __pydantic_config__: ClassVar[ConfigDict] = _STRICT_WIRE_DATACLASS_CONFIG
+    """Strict Pydantic wire settings: forbid extra fields, nonfinite numbers, and
+    coercion."""
+
+    flags: tuple[AuthorizedCaptureTheFlagFlagV1, AuthorizedCaptureTheFlagFlagV1]
+    """Team A's flag, then Team B's."""
+    capture_distance: float
+    """Positive reach of a home for a capture, in map units."""
+    interaction_distance: float
+    """Positive reach for a pickup or a return, in map units."""
+    return_steps: int | None
+    """Positive ticks a dropped flag waits before going home, or None."""
+
+    def __post_init__(self) -> None:
+        """Validate this record after construction.
+
+        Raises
+        ------
+        ValueError
+            A required type, value, order, or bound is invalid.
+        """
+        if tuple(flag.team_id for flag in self.flags) != (1, 2):
+            raise ValueError("flags must be Team A's flag, then Team B's.")
+        for name in ("capture_distance", "interaction_distance"):
+            _require_finite(getattr(self, name), name=name)
+            if getattr(self, name) <= 0.0:
+                raise ValueError(f"{name} must be positive.")
+        if self.return_steps is not None:
+            _require_python_int(self.return_steps, name="return_steps", minimum=1)
+            if any(flag.countdown_steps > self.return_steps for flag in self.flags):
+                raise ValueError("a countdown cannot exceed the return ticks.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AuthorizedBattlefieldSceneV1:
     """Join authorized bodies, mechanics, and lifecycle facts into one scene.
     Check exact row types, unique identities, represented class/status/aura
     axes, source/assignee joins, shield bounds, and ordered team waves. Oracle
     static values match catalog values exactly or their exact float32 encoding;
     non-Oracle per-slot static overrides remain allowed.
-    Constructor fields are keyword arguments, required except team_sight;
-    instances are frozen.
+    Constructor fields are keyword arguments, required except team_sight and
+    capture_the_flag; instances are frozen.
     Attributes
     ----------
     schema_version : Literal[1]
@@ -2699,6 +2872,9 @@ class AuthorizedBattlefieldSceneV1:
         The merged floor the viewing team sees now, with the turn's shapes, for
         the Agent POV Night Veil (live and replayed); None in Oracle View and
         from older producers.
+    capture_the_flag : AuthorizedCaptureTheFlagV1 | None, default None
+        Both flags in a Capture the Flag game, each carrier one enemy agent of
+        this scene at the flag's position; None in every other mode.
     Raises
     ------
     ValueError
@@ -2727,6 +2903,8 @@ class AuthorizedBattlefieldSceneV1:
     respawn_waves: tuple[AuthorizedRespawnWaveV1, ...]
     """Team A then Team B lifecycle countdowns."""
     team_sight: AuthorizedTeamSightV1 | None = None
+    capture_the_flag: AuthorizedCaptureTheFlagV1 | None = None
+    """Both flags in a Capture the Flag game; None in every other mode."""
     """Agent POV merged team sight for the Night Veil, else None."""
 
     def __post_init__(self) -> None:
@@ -2792,6 +2970,24 @@ class AuthorizedBattlefieldSceneV1:
         if len(keys) != len(set(keys)) or len(public_ids) != len(set(public_ids)):
             raise ValueError("authorized agents require unique keys and public IDs.")
         agent_by_key = {row.presentation_key: row for row in self.agents}
+        if self.capture_the_flag is not None:
+            if type(self.capture_the_flag) is not AuthorizedCaptureTheFlagV1:
+                raise ValueError(
+                    "capture_the_flag must be an exact AuthorizedCaptureTheFlagV1."
+                )
+            for flag in self.capture_the_flag.flags:
+                if flag.carrier_presentation_key is None:
+                    continue
+                carrier = agent_by_key.get(flag.carrier_presentation_key)
+                if (
+                    carrier is None
+                    or carrier.public_agent_id != flag.carrier_public_agent_id
+                    or carrier.team_id == flag.team_id
+                    or carrier.position != flag.position
+                ):
+                    raise ValueError(
+                        "a flag's carrier must be one enemy agent at the flag."
+                    )
         mechanics_ids = tuple(row.class_id for row in self.class_mechanics)
         represented_class_ids = tuple(sorted({row.class_id for row in self.agents}))
         if mechanics_ids != represented_class_ids:
@@ -4854,6 +5050,393 @@ class ReplayIncomingTeamDeathmatchCompletedEventV1(_ReplayIncomingEventBaseV1):
             raise ValueError("unknown Team Deathmatch completion basis.")
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingFlagTrajectoryV1:
+    """Store one flag as Oracle View saw it at both ends of a transition.
+    Both ends are this team's AuthorizedCaptureTheFlagFlagV1 rows with the same
+    home; a carrier appears by presentation key, never by slot.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Attributes
+    ----------
+    team_id : int
+        Whose flag: 1 for Team A's, 2 for Team B's.
+    transition_start : AuthorizedCaptureTheFlagFlagV1
+        The flag before the transition.
+    successor : AuthorizedCaptureTheFlagFlagV1
+        The flag after the transition.
+    Raises
+    ------
+    ValueError
+        An end is not this team's exact flag row, or the ends' homes differ.
+    """
+
+    __pydantic_config__: ClassVar[ConfigDict] = _STRICT_WIRE_DATACLASS_CONFIG
+    """Strict Pydantic wire settings: forbid extra fields, nonfinite numbers, and
+    coercion."""
+
+    team_id: int
+    """Whose flag: 1 for Team A's, 2 for Team B's."""
+    transition_start: AuthorizedCaptureTheFlagFlagV1
+    """The flag before the transition."""
+    successor: AuthorizedCaptureTheFlagFlagV1
+    """The flag after the transition."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            An end is not this team's exact flag row, or the ends' homes differ.
+        """
+        for end in (self.transition_start, self.successor):
+            if type(end) is not AuthorizedCaptureTheFlagFlagV1 or (
+                end.team_id != self.team_id
+            ):
+                raise ValueError("flag trajectory ends must be this team's flag.")
+        if self.transition_start.home_position != self.successor.home_position:
+            raise ValueError("a flag's home cannot move during a transition.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _ReplayIncomingFlagEventBaseV1(_ReplayIncomingEventBaseV1):
+    """Share whose-flag identity across the incoming Capture the Flag events.
+    Concrete subclasses call _validate_flag with their exact kind and rank.
+    This base is not a complete event variant.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingEventBaseV1.
+    Attributes
+    ----------
+    flag_team_id : int
+        Whose flag: 1 for Team A's, 2 for Team B's.
+    """
+
+    flag_team_id: int
+    """Whose flag: 1 for Team A's, 2 for Team B's."""
+
+    def _validate_flag(
+        self,
+        *,
+        event_kind: ReplayIncomingEventKindV1,
+        expected_kind: ReplayIncomingEventKindV1,
+        expected_phase_rank: int,
+    ) -> None:
+        """Validate the shared identity, order and flag team.
+        Parameters
+        ----------
+        event_kind : ReplayIncomingEventKindV1
+            Actual concrete event discriminator.
+        expected_kind : ReplayIncomingEventKindV1
+            Required discriminator for the concrete event type.
+        expected_phase_rank : int
+            Canonical scientific ordering rank required by the event type.
+        Returns
+        -------
+        None
+        Raises
+        ------
+        ValueError
+            The identity, kind, rank or flag team is invalid.
+        """
+        self._validate_base(
+            event_kind=event_kind,
+            expected_kind=expected_kind,
+            expected_phase_rank=expected_phase_rank,
+        )
+        _require_python_int(self.flag_team_id, name="flag_team_id", minimum=1)
+        if self.flag_team_id not in (1, 2):
+            raise ValueError("flag_team_id must be one or two.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _ReplayIncomingFlagAgentEventBaseV1(_ReplayIncomingFlagEventBaseV1):
+    """Add the acting agent to an incoming flag event.
+    The agent returned, picked up, captured or dropped the flag; its anchor is
+    where it ended the tick. This base is not a complete event variant.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingFlagEventBaseV1.
+    Attributes
+    ----------
+    agent_anchor : ReplayIncomingAgentAnchorV1
+        The acting agent's authorized identity and position at successor.
+    """
+
+    agent_anchor: ReplayIncomingAgentAnchorV1
+    """The acting agent's authorized identity and position at successor."""
+
+    def _validate_flag_agent(
+        self,
+        *,
+        event_kind: ReplayIncomingEventKindV1,
+        expected_kind: ReplayIncomingEventKindV1,
+        expected_phase_rank: int,
+    ) -> None:
+        """Validate the shared flag fields and the successor agent anchor.
+        Parameters
+        ----------
+        event_kind : ReplayIncomingEventKindV1
+            Actual concrete event discriminator.
+        expected_kind : ReplayIncomingEventKindV1
+            Required discriminator for the concrete event type.
+        expected_phase_rank : int
+            Canonical scientific ordering rank required by the event type.
+        Returns
+        -------
+        None
+        Raises
+        ------
+        ValueError
+            A shared field or the successor anchor is invalid.
+        """
+        self._validate_flag(
+            event_kind=event_kind,
+            expected_kind=expected_kind,
+            expected_phase_rank=expected_phase_rank,
+        )
+        _require_incoming_anchor(
+            self.agent_anchor,
+            name="agent_anchor",
+            phase="successor",
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingFlagReturnedEventV1(_ReplayIncomingFlagAgentEventBaseV1):
+    """Record an agent touching its own dropped flag and sending it home.
+    Require the canonical event kind and phase rank 130.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingFlagAgentEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['flag_returned']
+        Exact event discriminator for this concrete row type.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["flag_returned"]
+    """Exact event discriminator for this concrete row type."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_flag_agent(
+            event_kind=self.event_kind,
+            expected_kind="flag_returned",
+            expected_phase_rank=130,
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingFlagPickedUpEventV1(_ReplayIncomingFlagAgentEventBaseV1):
+    """Record an agent picking up the enemy's flag.
+    Require the canonical event kind and phase rank 131.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingFlagAgentEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['flag_picked_up']
+        Exact event discriminator for this concrete row type.
+    picked_up_from : Literal['home', 'ground']
+        Where the flag lay: on its home, or on the ground after a drop.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["flag_picked_up"]
+    """Exact event discriminator for this concrete row type."""
+    picked_up_from: Literal["home", "ground"]
+    """Where the flag lay: on its home, or on the ground after a drop."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_flag_agent(
+            event_kind=self.event_kind,
+            expected_kind="flag_picked_up",
+            expected_phase_rank=131,
+        )
+        if self.picked_up_from not in ("home", "ground"):
+            raise ValueError("a flag is picked up from home or the ground.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingFlagCapturedEventV1(_ReplayIncomingFlagAgentEventBaseV1):
+    """Record a carrier bringing the enemy's flag home for one capture.
+    Require the canonical event kind and phase rank 132, and scores that step up
+    by exactly one.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingFlagAgentEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['flag_captured']
+        Exact event discriminator for this concrete row type.
+    previous_score : int
+        The capturing team's nonnegative captures before the tick.
+    successor_score : int
+        previous_score plus one.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["flag_captured"]
+    """Exact event discriminator for this concrete row type."""
+    previous_score: int
+    """The capturing team's nonnegative captures before the tick."""
+    successor_score: int
+    """previous_score plus one."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_flag_agent(
+            event_kind=self.event_kind,
+            expected_kind="flag_captured",
+            expected_phase_rank=132,
+        )
+        _require_python_int(self.previous_score, name="previous_score", minimum=0)
+        _require_python_int(self.successor_score, name="successor_score", minimum=1)
+        if self.successor_score != self.previous_score + 1:
+            raise ValueError("a capture raises its team's captures by exactly one.")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingFlagDroppedEventV1(_ReplayIncomingFlagAgentEventBaseV1):
+    """Record a carrier dying and dropping the enemy's flag where it fell.
+    Require the canonical event kind and phase rank 133.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingFlagAgentEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['flag_dropped']
+        Exact event discriminator for this concrete row type.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["flag_dropped"]
+    """Exact event discriminator for this concrete row type."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_flag_agent(
+            event_kind=self.event_kind,
+            expected_kind="flag_dropped",
+            expected_phase_rank=133,
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingFlagAutomaticallyReturnedEventV1(_ReplayIncomingFlagEventBaseV1):
+    """Record a dropped flag going home when its countdown ran out.
+    Require the canonical event kind and phase rank 134. No agent acts.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingFlagEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['flag_automatically_returned']
+        Exact event discriminator for this concrete row type.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["flag_automatically_returned"]
+    """Exact event discriminator for this concrete row type."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_flag(
+            event_kind=self.event_kind,
+            expected_kind="flag_automatically_returned",
+            expected_phase_rank=134,
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplayIncomingCaptureTheFlagCompletedEventV1(_ReplayIncomingEventBaseV1):
+    """Record the global Capture the Flag result and completion reason.
+    Require the canonical event kind and phase rank 140, a known outcome and a
+    known completion basis.
+    All constructor fields are required keyword arguments; instances are frozen.
+    Inherited fields are documented on _ReplayIncomingEventBaseV1.
+    Attributes
+    ----------
+    event_kind : Literal['capture_the_flag_completed']
+        Exact event discriminator for this concrete row type.
+    outcome : Literal['team_a_win', 'team_b_win', 'draw']
+        team_a_win, team_b_win, or draw.
+    completion_basis : str
+        Allowed values: 'score_threshold', 'horizon', 'score_threshold_at_horizon'.
+    Raises
+    ------
+    ValueError
+        A field or cross-field invariant described above is invalid.
+    """
+
+    event_kind: Literal["capture_the_flag_completed"]
+    """Exact event discriminator for this concrete row type."""
+    outcome: Literal["team_a_win", "team_b_win", "draw"]
+    """team_a_win, team_b_win, or draw."""
+    completion_basis: Literal[
+        "score_threshold",
+        "horizon",
+        "score_threshold_at_horizon",
+    ]
+    """Allowed values: 'score_threshold', 'horizon', 'score_threshold_at_horizon'."""
+
+    def __post_init__(self) -> None:
+        """Validate this row after construction.
+        Raises
+        ------
+        ValueError
+            A required type, value, identity, or relationship is invalid.
+        """
+        self._validate_base(
+            event_kind=self.event_kind,
+            expected_kind="capture_the_flag_completed",
+            expected_phase_rank=140,
+        )
+        if self.outcome not in ("team_a_win", "team_b_win", "draw"):
+            raise ValueError("unknown Capture the Flag outcome.")
+        if self.completion_basis not in (
+            "score_threshold",
+            "horizon",
+            "score_threshold_at_horizon",
+        ):
+            raise ValueError("unknown Capture the Flag completion basis.")
+
+
 type ReplayIncomingEventV1 = Annotated[
     ReplayIncomingActionRejectedEventV1
     | ReplayIncomingAbilityActivatedEventV1
@@ -4878,7 +5461,13 @@ type ReplayIncomingEventV1 = Annotated[
     | ReplayIncomingRespawnWaveOccurredEventV1
     | ReplayIncomingAgentRespawnedEventV1
     | ReplayIncomingTeamDeathmatchScoreChangedEventV1
-    | ReplayIncomingTeamDeathmatchCompletedEventV1,
+    | ReplayIncomingTeamDeathmatchCompletedEventV1
+    | ReplayIncomingFlagReturnedEventV1
+    | ReplayIncomingFlagPickedUpEventV1
+    | ReplayIncomingFlagCapturedEventV1
+    | ReplayIncomingFlagDroppedEventV1
+    | ReplayIncomingFlagAutomaticallyReturnedEventV1
+    | ReplayIncomingCaptureTheFlagCompletedEventV1,
     Field(discriminator="event_kind"),
 ]
 
@@ -4908,6 +5497,20 @@ _REPLAY_INCOMING_EVENT_TYPES_V1: tuple[type[object], ...] = (
     ReplayIncomingAgentRespawnedEventV1,
     ReplayIncomingTeamDeathmatchScoreChangedEventV1,
     ReplayIncomingTeamDeathmatchCompletedEventV1,
+    ReplayIncomingFlagReturnedEventV1,
+    ReplayIncomingFlagPickedUpEventV1,
+    ReplayIncomingFlagCapturedEventV1,
+    ReplayIncomingFlagDroppedEventV1,
+    ReplayIncomingFlagAutomaticallyReturnedEventV1,
+    ReplayIncomingCaptureTheFlagCompletedEventV1,
+)
+_REPLAY_INCOMING_FLAG_EVENT_TYPES_V1 = (
+    ReplayIncomingFlagReturnedEventV1,
+    ReplayIncomingFlagPickedUpEventV1,
+    ReplayIncomingFlagCapturedEventV1,
+    ReplayIncomingFlagDroppedEventV1,
+    ReplayIncomingFlagAutomaticallyReturnedEventV1,
+    ReplayIncomingCaptureTheFlagCompletedEventV1,
 )
 
 
@@ -5009,10 +5612,14 @@ def _incoming_event_agent_anchors(
             event,
         )
         return (status_event.recipient_anchor,)
+    if isinstance(event, _ReplayIncomingFlagAgentEventBaseV1):
+        return (event.agent_anchor,)
     if type(event) in (
         ReplayIncomingRespawnWaveOccurredEventV1,
         ReplayIncomingTeamDeathmatchScoreChangedEventV1,
         ReplayIncomingTeamDeathmatchCompletedEventV1,
+        ReplayIncomingFlagAutomaticallyReturnedEventV1,
+        ReplayIncomingCaptureTheFlagCompletedEventV1,
     ):
         return ()
     raise TypeError("unknown replay incoming neutral event variant.")
@@ -5051,6 +5658,10 @@ class ReplayIncomingSummaryV1:
         Concrete typed event rows in nondecreasing scientific phase order.
     event_count : int
         Nonnegative count equal to the ID, kind, and payload tuple lengths.
+    flag_trajectories : tuple of two ReplayIncomingFlagTrajectoryV1, or None
+        Team A's flag, then Team B's, at both ends in a Capture the Flag game;
+        None (the default) in every other mode, where no flag event appears.
+        A named carrier joins one of agent_phase_trajectories.
     Raises
     ------
     ValueError
@@ -5085,12 +5696,17 @@ class ReplayIncomingSummaryV1:
     """Concrete typed event rows in nondecreasing scientific phase order."""
     event_count: int
     """Nonnegative count equal to the ID, kind, and payload tuple lengths."""
+    flag_trajectories: (
+        tuple[ReplayIncomingFlagTrajectoryV1, ReplayIncomingFlagTrajectoryV1] | None
+    ) = None
+    """Both flags at both ends in a Capture the Flag game; None in other modes."""
 
     def __post_init__(self) -> None:
         """Validate this row after construction.
         Join canonical episode/frame/transition IDs, adjacent ticks, dense event
         order, unique trajectories, and every anchor. Covering aura emitters retain
-        trajectory order.
+        trajectory order. Flag events need flag trajectories, whose carriers join
+        the agent trajectories.
         Raises
         ------
         ValueError
@@ -5215,6 +5831,32 @@ class ReplayIncomingSummaryV1:
                         raise ValueError(
                             "incoming aura emitters must preserve trajectory order."
                         )
+        if self.flag_trajectories is None:
+            if any(
+                isinstance(event, _REPLAY_INCOMING_FLAG_EVENT_TYPES_V1)
+                for event in self.events
+            ):
+                raise ValueError("incoming flag events need the flag trajectories.")
+            return
+        if (
+            type(self.flag_trajectories) is not tuple
+            or any(
+                type(row) is not ReplayIncomingFlagTrajectoryV1
+                for row in self.flag_trajectories
+            )
+            or tuple(row.team_id for row in self.flag_trajectories) != (1, 2)
+        ):
+            raise ValueError("flag trajectories must be Team A's flag, then Team B's.")
+        for row in self.flag_trajectories:
+            for end in (row.transition_start, row.successor):
+                if end.carrier_presentation_key is None:
+                    continue
+                trajectory = trajectory_by_key.get(end.carrier_presentation_key)
+                if (
+                    trajectory is None
+                    or trajectory.agent_public_agent_id != end.carrier_public_agent_id
+                ):
+                    raise ValueError("a flag carrier must join its agent trajectory.")
 
 
 type AgentPovVisualIncomingEventKindV1 = Literal[
@@ -6744,8 +7386,68 @@ def _authorized_scene(
             respawn_waves=tuple(
                 _authorized_respawn_wave(row) for row in scene.respawn_waves
             ),
+            capture_the_flag=_oracle_capture_the_flag(
+                scene, key_by_internal_slot=key_by_internal_slot
+            ),
         ),
         key_by_internal_slot,
+    )
+
+
+def _oracle_flag(
+    flag: CaptureTheFlagFlagSceneV1,
+    *,
+    key_by_internal_slot: dict[int, str],
+    public_id_by_slot: dict[int, str],
+) -> AuthorizedCaptureTheFlagFlagV1:
+    """Copy one researcher flag into Oracle View, naming its carrier by key.
+
+    key_by_internal_slot and public_id_by_slot map a carrier's global slot to
+    its Oracle presentation key and public ID; no slot leaves this function.
+    Raise KeyError if a carrier slot has no key, which a joined scene prevents.
+    """
+    carrier = flag.carrier_global_slot
+    return AuthorizedCaptureTheFlagFlagV1(
+        team_id=flag.team_id,
+        state=flag.state,
+        position=flag.position,
+        home_position=flag.home_position,
+        carrier_presentation_key=(
+            None if carrier is None else key_by_internal_slot[carrier]
+        ),
+        carrier_public_agent_id=None if carrier is None else public_id_by_slot[carrier],
+        countdown_steps=flag.countdown_steps,
+    )
+
+
+def _oracle_capture_the_flag(
+    scene: BattlefieldSceneV2, *, key_by_internal_slot: dict[int, str]
+) -> AuthorizedCaptureTheFlagV1 | None:
+    """Copy the researcher scene's flags into Oracle View, keying each carrier.
+
+    Return None when the scene has no flags (every mode but Capture the
+    Flag). A carrier's global slot becomes its Oracle presentation key and
+    public ID through key_by_internal_slot; no slot leaves this function.
+    """
+    source = scene.capture_the_flag
+    if source is None:
+        return None
+    public_id_by_slot = {
+        agent.global_slot: agent.public_agent_id for agent in scene.agents
+    }
+    flags = tuple(
+        _oracle_flag(
+            flag,
+            key_by_internal_slot=key_by_internal_slot,
+            public_id_by_slot=public_id_by_slot,
+        )
+        for flag in source.flags
+    )
+    return AuthorizedCaptureTheFlagV1(
+        flags=(flags[0], flags[1]),
+        capture_distance=source.capture_distance,
+        interaction_distance=source.interaction_distance,
+        return_steps=source.return_steps,
     )
 
 
@@ -7414,6 +8116,66 @@ def _replay_incoming_event(
             outcome=event.outcome,
             completion_basis=event.completion_basis,
         )
+    if isinstance(event, FlagAgentVisualEventBaseV2):
+        agent_anchor = _replay_incoming_anchor(
+            event.agent_anchor, key_by_internal_slot=key_by_internal_slot
+        )
+        if type(event) is FlagReturnedEventV2:
+            return ReplayIncomingFlagReturnedEventV1(
+                event_id=event.event_id,
+                ordinal=event.ordinal,
+                phase_rank=event.phase_rank,
+                event_kind=event.event_type,
+                flag_team_id=event.flag_team_id,
+                agent_anchor=agent_anchor,
+            )
+        if type(event) is FlagPickedUpEventV2:
+            return ReplayIncomingFlagPickedUpEventV1(
+                event_id=event.event_id,
+                ordinal=event.ordinal,
+                phase_rank=event.phase_rank,
+                event_kind=event.event_type,
+                flag_team_id=event.flag_team_id,
+                agent_anchor=agent_anchor,
+                picked_up_from=event.picked_up_from,
+            )
+        if type(event) is FlagCapturedEventV2:
+            return ReplayIncomingFlagCapturedEventV1(
+                event_id=event.event_id,
+                ordinal=event.ordinal,
+                phase_rank=event.phase_rank,
+                event_kind=event.event_type,
+                flag_team_id=event.flag_team_id,
+                agent_anchor=agent_anchor,
+                previous_score=event.previous_score,
+                successor_score=event.successor_score,
+            )
+        if type(event) is FlagDroppedEventV2:
+            return ReplayIncomingFlagDroppedEventV1(
+                event_id=event.event_id,
+                ordinal=event.ordinal,
+                phase_rank=event.phase_rank,
+                event_kind=event.event_type,
+                flag_team_id=event.flag_team_id,
+                agent_anchor=agent_anchor,
+            )
+    if type(event) is FlagAutomaticallyReturnedEventV2:
+        return ReplayIncomingFlagAutomaticallyReturnedEventV1(
+            event_id=event.event_id,
+            ordinal=event.ordinal,
+            phase_rank=event.phase_rank,
+            event_kind=event.event_type,
+            flag_team_id=event.flag_team_id,
+        )
+    if type(event) is CaptureTheFlagCompletedEventV2:
+        return ReplayIncomingCaptureTheFlagCompletedEventV1(
+            event_id=event.event_id,
+            ordinal=event.ordinal,
+            phase_rank=event.phase_rank,
+            event_kind=event.event_type,
+            outcome=event.outcome,
+            completion_basis=event.completion_basis,
+        )
     raise TypeError("unsupported canonical V2 event kind.")
 
 
@@ -7592,6 +8354,12 @@ def _agent_pov_visual_event_is_authorized(
         LethalDamageContributionEventV2,
         TeamDeathmatchScoreChangedEventV2,
         TeamDeathmatchCompletedEventV2,
+        FlagReturnedEventV2,
+        FlagPickedUpEventV2,
+        FlagCapturedEventV2,
+        FlagDroppedEventV2,
+        FlagAutomaticallyReturnedEventV2,
+        CaptureTheFlagCompletedEventV2,
     ):
         return False
     if type(event) is ActionRejectedEventV2 and (
@@ -8215,6 +8983,27 @@ def _project_replay_incoming_summary_v1(
         )
         for event in incoming_events.events
     )
+    public_id_by_slot = dict(enumerate(incoming_events.public_agent_id_by_global_slot))
+    flag_trajectories = (
+        None
+        if incoming_events.flag_trajectories is None
+        else tuple(
+            ReplayIncomingFlagTrajectoryV1(
+                team_id=row.team_id,
+                transition_start=_oracle_flag(
+                    row.transition_start,
+                    key_by_internal_slot=key_by_internal_slot,
+                    public_id_by_slot=public_id_by_slot,
+                ),
+                successor=_oracle_flag(
+                    row.successor,
+                    key_by_internal_slot=key_by_internal_slot,
+                    public_id_by_slot=public_id_by_slot,
+                ),
+            )
+            for row in incoming_events.flag_trajectories
+        )
+    )
     return ReplayIncomingSummaryV1(
         summary_kind="replay_incoming_inventory",
         incoming_transition_index=incoming_events.transition_index,
@@ -8232,6 +9021,11 @@ def _project_replay_incoming_summary_v1(
         ordered_event_kinds=tuple(event.event_type for event in incoming_events.events),
         events=events,
         event_count=len(incoming_events.events),
+        flag_trajectories=(
+            None
+            if flag_trajectories is None
+            else (flag_trajectories[0], flag_trajectories[1])
+        ),
     )
 
 
