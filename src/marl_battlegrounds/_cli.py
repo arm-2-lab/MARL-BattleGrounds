@@ -494,12 +494,20 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
         help="Write a starter entry in a new folder and make it a Git repository",
     )
-    starter.add_argument("path", help="The new folder for your entry")
+    starter.add_argument(
+        "path",
+        metavar="NAME",
+        help=(
+            "The new folder for your entry. Its name is your method's name "
+            "unless --name gives another"
+        ),
+    )
     starter.add_argument(
         "--name",
         help=(
-            "Your entry's name; it becomes the submission issue's title "
-            "(default: the folder's name)"
+            "Your method's name: the submission's title and the end of its "
+            "Hugging Face repo name, tdm-season-<N>-<name> (default: the "
+            "folder's name)"
         ),
     )
     check = entry_actions.add_parser(
@@ -630,10 +638,9 @@ def _download_names(
     -----
     Prints, for each name, ``<name>: <exact saved address>`` and then
     ``Local File: <file>`` for a model or ``Local Folder: <folder>`` for a
-    training-opponent pool, in Hugging Face's standard cache. ``entry check``
-    reads these lines. Errors from released_models propagate to main, which
-    prints them and returns 1. Afterwards the files load with
-    ``HF_HUB_OFFLINE=1``.
+    training-opponent pool, in Hugging Face's standard cache. Errors from
+    released_models propagate to main, which prints them and returns 1.
+    Afterwards the files load with ``HF_HUB_OFFLINE=1``.
     """
     from marl_battlegrounds.released_models import (
         _download,  # pyright: ignore[reportPrivateUsage]

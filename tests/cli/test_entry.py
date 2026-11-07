@@ -5,35 +5,63 @@ marl-battlegrounds version with the CUDA 13 build on Linux only,
 .python-version is 3.14, .gitignore keeps runs/ out, my_entry defines load,
 and entry.yaml passes the same validation entry check uses. Its train line
 composes through the packaged Hydra configs into the released Recurrent MAPPO
-recipe (250,675,200 steps, 512 games, every actor kept), validating on the
-maps entry.yaml declares. Without uv it prints the uv install line, then the
-note that an installer ERROR about ~/.config still leaves uv installed, and
-stops before locking. entry.yaml refuses maps outside 0-46 and models without a
-SHA-256. A released training-opponent pool is listed by its 40-character
-commit instead (a SHA-256 for it is refused), and step 4 passes it only when
-the address ``models download`` prints carries that commit.
+recipe (250,675,200 steps, 512 games, every actor kept), and its README states
+that budget. new_entry prints the method's Hugging Face repo name. Without uv
+it prints the uv install line and the note that an installer ERROR about
+~/.config still leaves uv installed, and writes no uv.lock.
+
+entry.yaml's name is the method name, and its repo part is the name in
+lowercase with every other run of characters made one hyphen ("My_MAPPO" gives
+"my-mappo"); an empty or over-64-character part is refused. starting_models
+lists downloads as strings, released names or hf:// addresses with a full
+commit; 1.0.3's {model, sha256} and {model, commit} items are read by model
+alone, paths inside the repository are left out (a released name is kept even
+when a folder of that name exists), and 1.0.3's training_maps and config keys
+are accepted. Anything else in the list, a bad step suffix, an address without
+a full commit, an unknown key, a load that is not module:function and a file
+that is not valid YAML are refused with ValueError.
 
 Step 4 accepts a uv.lock only when every marl-battlegrounds in it is a release
 from PyPI's index, with each file that version's own file on PyPI's file
 server; any released version passes, older or newer (1.0.0, 1.0.1, 1.2.0). It
 refuses a missing package, a Git, folder or other-index source, and a file
 elsewhere or of another package. A missing or bad uv.lock fails step 4 before
-anything is installed.
+anything is installed. uv sync runs behind sandbox(clone, True). A released
+name downloads through the entry's own models download into the check's
+HF_HOME, behind sandbox(clone, True) with the caller's offline settings
+removed, then once more offline behind sandbox(clone, False). An outside
+hf:// address downloads in a child of the check's own isolated Python, behind
+no sandbox, and that child's code fails a path with no files. A failed
+download fails step 4, and so does running past step 4's hour. Children in
+steps 5 to 9 run behind sandbox(clone, False) with HF_HOME and HF_HUB_OFFLINE
+kept, and step 7's sealed export writes inside the clone before the check
+moves it to the work folder's model.zip.
+
+After step 5 the waiting rule holds: a run stopped at its time limit with
+nothing saved to enter (an empty own-loop output folder, or a built-in run
+without a choice) makes steps 6, 7 and 9 wait and step 8 "not measured"; a run
+that ended by itself with nothing saved fails step 6; a saved run makes step 8
+pass even when loading fails; an error in step 9 fails step 9 instead of
+crashing the check. Step 9 passes or fails only a reading on an RTX 5090 that
+reports its memory; a reading on another GPU, one without memory, and a CPU
+are "not measured".
 
 check_entry sorts steps 1-7 as must pass and 8-9 as measured here: a failed
 measured step never fails the check, a failed must-pass step does. A dirty
 tree fails step 1, skips the rest and saves no record. With install, training
 and the later steps stubbed (no uv, no training), a clean commit really
 clones, validates entry.yaml and saves its record under .git, where
-submit_entry reads it.
+submit_entry reads it. keep_folder keeps the clone and refuses a folder that
+already exists. The machine label says no GPU is visible when
+CUDA_VISIBLE_DEVICES hides them all.
 
-submit_entry refuses uncommitted changes, a commit on no remote branch and a
-commit without a passing check. A user name or token inside the remote's
-address never reaches the link. Its link fills exactly the form's text fields
-other than team (read from .github/ISSUE_TEMPLATE/leaderboard_submission.yml)
-plus the title; a link over the length limit falls back to the title alone
-and prints the values. play_limits plays 2 self-play games on the CPU through
-the real evaluate path and reports them as not a GPU measurement.
+submit_entry refuses a repository with no commit, uncommitted changes, the
+starter's unchanged train command, a commit on no remote branch and a commit
+without a passing check. A user name or token inside the remote's address
+never reaches the link. Its link fills exactly the form's text fields (read
+from .github/ISSUE_TEMPLATE/leaderboard_submission.yml) plus the title.
+play_limits plays 2 self-play games on the CPU through the real evaluate path,
+reports them as not a GPU measurement, and refuses an odd number of games.
 
 While entry check runs, SIGTERM and SIGHUP raise KeyboardInterrupt like Ctrl-C,
 the running child's whole process group is killed, and the old signal handlers
@@ -50,10 +78,15 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
+import time
 import tomllib
 import urllib.parse
+import zipfile
+from collections.abc import Sequence
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -62,12 +95,42 @@ from marl_battlegrounds import entry
 
 FORM = Path(__file__).parents[2] / ".github/ISSUE_TEMPLATE/leaderboard_submission.yml"
 POOL = "MARL-BattleGrounds/tdm-season-0-results/training-opponents"
+QMIX = "MARL-BattleGrounds/tdm-season-0-qmix@final"
+OUTSIDE = f"hf://someone/big-model@{'c' * 40}/weights"
+LOCK = """\
+version = 1
+[[package]]
+name = "marl-battlegrounds"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/p/marl_battlegrounds-1.0.1.tar.gz" }
+[[package]]
+name = "jax-cuda13-plugin"
+version = "0.8.0"
+"""
 
 
 def _git(folder: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=folder, capture_output=True, text=True, check=True
     ).stdout.strip()
+
+
+def _write_entry(folder: Path, **change: object) -> None:
+    path = folder / "entry.yaml"
+    path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **change}))
+
+
+def _checker(folder: Path, sandbox: entry.Sandbox | None = None) -> entry._Checker:
+    checker = entry._Checker(str(folder), None, folder.parent, 0.05, None, sandbox)
+    checker.clone, checker.entry = folder, entry._read_entry(folder)
+    checker.hf_home = folder / ".entry-check-hf"
+    return checker
+
+
+def _form_text_fields() -> set[str]:
+    body = yaml.safe_load(FORM.read_text())["body"]
+    return {f["id"] for f in body if f["type"] in ("input", "textarea")}
 
 
 @pytest.fixture
@@ -85,10 +148,12 @@ def starter(
 
     monkeypatch.setattr(entry.shutil, "which", which_without_uv)
     monkeypatch.setattr(entry, "_machine", lambda: "Test GPU")
-    folder = entry.new_entry(tmp_path / "my-entry", name="Test Team MAPPO")
+    folder = entry.new_entry(tmp_path / "my-entry", name="Test MAPPO")
     printed = capsys.readouterr().out
     assert entry.UV_INSTALL in printed
     assert entry.UV_INSTALL_NOTE in printed
+    assert "tdm-season-<N>-test-mappo" in printed
+    assert not (folder / "uv.lock").exists()
     _git(folder, "add", "-A")
     _git(folder, "commit", "--quiet", "-m", "Start my entry")
     return folder
@@ -107,12 +172,12 @@ def test_starter_files_parse_and_match_the_recipe(starter: Path) -> None:
     module = ast.parse((starter / "my_entry/__init__.py").read_text())
     assert "load" in {n.name for n in module.body if isinstance(n, ast.FunctionDef)}
     settings = entry._read_entry(starter)
-    assert (settings.name, settings.load, settings.output) == (
-        "Test Team MAPPO",
+    assert (settings.name, settings.repo, settings.load, settings.output) == (
+        "Test MAPPO",
+        "test-mappo",
         "my_entry:load",
         "runs/entry",
     )
-    assert settings.training_maps == tuple(range(42))
     assert settings.starting_models == ()
     words = shlex.split(settings.train)
     launcher = "uv run python -m marl_battlegrounds.experiments.train"
@@ -125,48 +190,68 @@ def test_starter_files_parse_and_match_the_recipe(starter: Path) -> None:
         recipe = compose("train", overrides=words[5:])
     assert recipe.total_env_steps == 250_675_200 and recipe.num_envs == 512
     assert recipe.retain_all_actors and recipe.output_dir == settings.output
-    assert tuple(recipe.validation_maps) == settings.validation_maps
     assert "250,675,200" in (starter / "README.md").read_text()
+
+
+@pytest.mark.parametrize(
+    ("name", "repo"),
+    [
+        ("My_MAPPO", "my-mappo"),
+        ("My Team's MAPPO", "my-team-s-mappo"),
+        ("hydra-mappo-2", "hydra-mappo-2"),
+        ("a" * 64, "a" * 64),
+    ],
+)
+def test_a_method_name_gives_its_repo_name(name: str, repo: str) -> None:
+    assert entry._repo_name(name) == repo
+
+
+def test_entry_yaml_reads_downloads_and_accepts_1_0_3_files(starter: Path) -> None:
+    (starter / "weights.bin").write_bytes(b"small weights")
+    (starter / POOL).mkdir(parents=True)
+    listed = [
+        QMIX,
+        {"model": "MARL-BattleGrounds/tdm-season-0-pqn-vdn@100M", "sha256": "a" * 64},
+        {"model": POOL, "commit": "b" * 40},
+        OUTSIDE,
+        {"model": "weights.bin", "sha256": "d" * 64},
+        "my_entry",
+    ]
+    old = {"training_maps": {"training": ["0-41"], "validation": [42]}, "config": "x"}
+    _write_entry(starter, starting_models=listed, **old)
+    assert entry._read_entry(starter).starting_models == (
+        QMIX,
+        "MARL-BattleGrounds/tdm-season-0-pqn-vdn@100M",
+        POOL,
+        OUTSIDE,
+    )
 
 
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        ({"training_maps": {"training": ["0-47"], "validation": []}}, "Rule 3.4"),
-        ({"starting_models": [{"model": "a.zip", "sha256": "abc"}]}, "sha256"),
-        ({"starting_models": [{"model": POOL, "sha256": "a" * 64}]}, "commit"),
+        ({"name": "!!!"}, "1 to 64"),
+        ({"name": "a" * 65}, "1 to 64"),
         ({"load": "my_entry.load"}, "module:function"),
+        ({"seed": 7}, "unknown seed"),
+        ({"starting_models": ["a.zip"]}, "not a released name"),
+        ({"starting_models": [{"sha256": "a" * 64}]}, "a released name or"),
+        ({"starting_models": ["hf://someone/model@main/w.bin"]}, "40-character"),
+        ({"starting_models": ["MARL-BattleGrounds/tdm-season-0-qmix@main"]}, "@ must"),
     ],
 )
 def test_entry_yaml_refuses_bad_settings(
     starter: Path, change: dict[str, object], message: str
 ) -> None:
-    path = starter / "entry.yaml"
-    path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **change}))
+    _write_entry(starter, **change)
     with pytest.raises(ValueError, match=message):
         entry._read_entry(starter)
 
 
-def test_an_opponent_pool_is_listed_and_checked_by_its_commit(
-    starter: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    commit = "a" * 40
-    path = starter / "entry.yaml"
-    listed = {"starting_models": [{"model": POOL, "commit": commit}]}
-    path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **listed}))
-    checker = entry._Checker(str(starter), None, starter.parent, 1.0, None)
-    checker.clone, checker.entry = starter, entry._read_entry(starter)
-    assert checker.entry.starting_models == ((POOL, commit),)
-    address = f"hf://datasets/{POOL.rpartition('/')[0]}@{commit}/training-opponents"
-    printed = f"{POOL}: {address}\nLocal Folder: /cache/training-opponents\n"
-
-    def downloaded(*args: object, **kwargs: object) -> tuple[int, str, str]:
-        return 0, printed, ""
-
-    monkeypatch.setattr(entry, "_run", downloaded)
-    checker.fetch(POOL, commit)
-    with pytest.raises(entry._StepFailedError, match="its commit is not"):
-        checker.fetch(POOL, "b" * 40)
+def test_entry_yaml_that_is_not_yaml_is_a_value_error(starter: Path) -> None:
+    (starter / "entry.yaml").write_text("name: [never closed\n")
+    with pytest.raises(ValueError, match="not valid YAML"):
+        entry._read_entry(starter)
 
 
 PYPI_FILES = "https://files.pythonhosted.org/packages/89/5d/0d"
@@ -224,8 +309,7 @@ def test_step_4_refuses_a_bad_lock_before_installing(
 
     monkeypatch.setattr(entry.shutil, "which", found)
     monkeypatch.setattr(entry, "_run", no_install)
-    checker = entry._Checker(str(starter), None, starter.parent, 1.0, None)
-    checker.clone, checker.entry = starter, entry._read_entry(starter)
+    checker = _checker(starter)
     with pytest.raises(entry._StepFailedError, match=r"No uv\.lock"):
         checker.step_4()
     lines = "\n".join(
@@ -242,13 +326,191 @@ def test_step_4_refuses_a_bad_lock_before_installing(
         checker.step_4()
 
 
+def test_downloads_and_children_run_behind_the_sandbox(
+    starter: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], Path, dict[str, str], float]] = []
+    reply: list[tuple[int | None, str, str]] = [(0, '{"exported": true}', "")]
+
+    def run(
+        command: Sequence[str], *, cwd: Path, env: dict[str, str], timeout: float
+    ) -> tuple[int | None, str, str]:
+        calls.append((list(command), cwd, env, timeout))
+        if command[-1].endswith("model.zip"):
+            with zipfile.ZipFile(command[-1], "w") as model:
+                model.writestr("model.json", "{}")
+        return reply[0]
+
+    def sandbox(folder: Path, online: bool) -> list[str]:
+        assert folder == starter
+        return ["sealed", "online" if online else "offline"]
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+
+    def found(name: str) -> str:
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(entry.shutil, "which", found)
+    monkeypatch.setattr(entry, "_run", run)
+    _write_entry(starter, starting_models=[QMIX, OUTSIDE])
+    (starter / "uv.lock").write_text(LOCK)
+    checker = _checker(starter, sandbox=sandbox)
+    assert "2 starting models downloaded" in checker.step_4()
+    (sync, _, _, _), online, offline, outside = calls
+    assert sync == ["sealed", "online", "uv", "sync", "--locked"]
+    for (command, cwd, env, timeout), sealed in (
+        (online, "online"),
+        (offline, "offline"),
+    ):
+        assert command[:2] == ["sealed", sealed] and command[-2:] == ["download", QMIX]
+        assert cwd == starter and env["HF_HOME"] == str(checker.hf_home)
+        assert ("HF_HUB_OFFLINE" in env) == (sealed == "offline")
+        assert 0 < timeout <= 3600
+    command, cwd, env, _ = outside
+    assert command == [sys.executable, "-I", "-c", entry._FETCH_CODE, OUTSIDE]
+    assert cwd == starter.parent and "HF_HUB_OFFLINE" not in env
+    assert env["HF_HOME"] == str(checker.hf_home)
+    calls.clear()
+    assert "Exported" in checker.step_7()
+    command, _, env, _ = calls[-1]
+    assert command[:4] == ["sealed", "offline", "uv", "run"]
+    exported = starter / ".entry-check-model.zip"
+    assert Path(command[-1]) == exported
+    assert (starter.parent / "model.zip").read_bytes() == exported.read_bytes()
+    assert env["HF_HUB_OFFLINE"] == "1" and env["HF_HOME"] == str(checker.hf_home)
+    reply[0] = (1, "", "no such model")
+    with pytest.raises(entry._StepFailedError, match="no such model"):
+        checker.fetch(QMIX, time.monotonic() + 60)
+    reply[0] = (None, "", "")
+    with pytest.raises(entry._StepFailedError, match="more than 1 hour"):
+        checker.fetch(QMIX, time.monotonic() + 60)
+
+
+def test_an_outside_path_with_no_files_fails_its_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import huggingface_hub
+
+    (tmp_path / "weights").mkdir()
+
+    def downloaded(repo: str, **options: object) -> str:
+        assert repo == "someone/big-model" and options["token"] is False
+        return str(tmp_path)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", downloaded)
+    for address, finds in ((OUTSIDE, True), (OUTSIDE + "x", False)):
+        monkeypatch.setattr(sys, "argv", ["-c", address])
+        if finds:
+            exec(entry._FETCH_CODE, {})
+        else:
+            with pytest.raises(SystemExit, match="has no file or folder weightsx"):
+                exec(entry._FETCH_CODE, {})
+
+
+def test_a_run_with_nothing_saved_waits_only_when_stopped(
+    starter: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def sandbox(folder: Path, online: bool) -> list[str]:
+        assert not online
+        return ["env", "MARL_BGS_TEST_SEALED=yes"]
+
+    _write_entry(starter, train="echo $MARL_BGS_TEST_SEALED > sealed.txt; sleep 30")
+    stopped = _checker(starter, sandbox=sandbox)
+    assert "then stopped" in stopped.step_5()
+    assert stopped.stopped and (starter / "sealed.txt").read_text() == "yes\n"
+    stopped.after_training()
+    statuses = ["skipped", "skipped", "not measured", "skipped"]
+    assert [stopped.steps[n].status for n in (6, 7, 8, 9)] == statuses
+    assert "Our run trains for up to 8 hours" in stopped.steps[8].detail
+
+    _write_entry(starter, train="true")
+    ended = _checker(starter)
+    assert "ended by itself" in ended.step_5() and not ended.stopped
+    ended.after_training()
+    assert ended.steps[6].status == "failed"
+    assert "with nothing saved to enter in runs/entry" in ended.steps[6].detail
+
+    def builtin_without_choice(checker: entry._Checker) -> None:
+        checker.builtin_run, checker.choice = True, None
+
+    monkeypatch.setattr(entry._Checker, "find_choice", builtin_without_choice)
+    stopped.steps.clear()
+    stopped.after_training()
+    assert [stopped.steps[n].status for n in (6, 7, 8, 9)] == statuses
+
+
+def test_a_saved_run_passes_step_8_and_a_step_9_error_fails_step_9(
+    starter: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (starter / "runs/entry").mkdir(parents=True)
+    (starter / "runs/entry/model.zip").write_bytes(b"saved")
+
+    def slow(*args: object, **kwargs: object) -> tuple[None, None, str]:
+        return None, None, ""
+
+    monkeypatch.setattr(entry._Checker, "python", slow)
+    checker = _checker(starter)
+    checker.after_training()
+    assert checker.steps[6].detail == "Loading took more than 10 minutes."
+    assert checker.steps[8].status == "passed"
+    assert "runs/entry holds the run's saves" in checker.steps[8].detail
+
+    def done(checker: entry._Checker) -> str:
+        return "Done."
+
+    def no_passt(checker: entry._Checker) -> tuple[str, str]:
+        raise RuntimeError("install passt")
+
+    monkeypatch.setattr(entry._Checker, "step_6", done)
+    monkeypatch.setattr(entry._Checker, "step_7", done)
+    monkeypatch.setattr(entry._Checker, "step_9", no_passt)
+    checker = _checker(starter)
+    checker.after_training()
+    assert checker.steps[9].status == "failed"
+    assert checker.steps[9].detail == "RuntimeError: install passt"
+
+
+@pytest.mark.parametrize(
+    ("device", "peak", "status"),
+    [
+        ("cpu", None, "not measured"),
+        ("NVIDIA GeForce RTX 4090", 10**9, "not measured"),
+        ("NVIDIA GeForce RTX 5090", None, "not measured"),
+        ("NVIDIA GeForce RTX 5090", 10**9, "passed"),
+        ("NVIDIA GeForce RTX 5090", 11 * 10**9, "failed"),
+    ],
+)
+def test_step_9_decides_only_on_an_rtx_5090(
+    starter: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    device: str,
+    peak: int | None,
+    status: str,
+) -> None:
+    reading = {
+        "reference": "model.zip",
+        "device": device,
+        "on_gpu": device != "cpu",
+        "games": 2048,
+        "game_steps": 600_000,
+        "seconds": 10.0,
+        "warmup_seconds": 30.0,
+        "peak_memory_bytes": peak,
+    }
+
+    def played(*args: object, **kwargs: object) -> tuple[int, dict[str, Any], str]:
+        assert args[2] == str(starter / ".entry-check-model.zip")
+        return 0, reading, ""
+
+    monkeypatch.setattr(entry._Checker, "python", played)
+    assert _checker(starter).step_9()[0] == status
+
+
 def test_steps_sort_into_must_pass_and_measured_here() -> None:
     def result(failed: int) -> entry.EntryCheck:
         steps = tuple(
-            entry.CheckStep(n, rules, name, group, "passed", "")
-            if n != failed
-            else entry.CheckStep(n, rules, name, group, "failed", "")
-            for n, rules, name, group in entry._STEPS
+            entry.CheckStep(n, name, group, "failed" if n == failed else "passed", "")
+            for n, name, group in entry._STEPS
         )
         return entry.EntryCheck("repo", "0" * 40, "GPU", "now", "1", steps)
 
@@ -259,24 +521,11 @@ def test_steps_sort_into_must_pass_and_measured_here() -> None:
     assert result(failed=8).passed and not result(failed=3).passed
 
 
-def test_check_and_submit(
-    starter: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    (starter / "notes.txt").write_text("not committed\n")
-    with pytest.raises(ValueError, match="uncommitted"):
-        entry.submit_entry(starter, open_browser=False)
-    dirty = entry.check_entry(starter)
-    assert not dirty.passed and dirty.record is None
-    assert [s.status for s in dirty.steps] == ["failed"] + ["skipped"] * 8
-    (starter / "notes.txt").unlink()
-
-    def later_steps(checker: entry._Checker, machine: str) -> None:
+def _stub_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    def later_steps(checker: entry._Checker) -> None:
         checker.record(6, "passed", "Loaded.")
         checker.record(7, "passed", "Exported.")
-        checker.record(8, "failed", f"On {machine}: no choice yet.")
+        checker.record(8, "not measured", "Nothing saved yet.")
         checker.record(9, "not measured", "No GPU here.")
 
     def installed(checker: entry._Checker) -> str:
@@ -285,14 +534,42 @@ def test_check_and_submit(
     monkeypatch.setattr(entry._Checker, "step_4", installed)
     monkeypatch.setattr(entry._Checker, "step_5", installed)
     monkeypatch.setattr(entry._Checker, "after_training", later_steps)
+
+
+def test_check_and_submit(
+    starter: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, "init", "--quiet")
+    with pytest.raises(ValueError, match="no commit yet"):
+        entry.submit_entry(empty, open_browser=False)
+    (starter / "notes.txt").write_text("not committed\n")
+    with pytest.raises(ValueError, match="uncommitted"):
+        entry.submit_entry(starter, open_browser=False)
+    dirty = entry.check_entry(starter)
+    assert not dirty.passed and dirty.record is None
+    assert [s.status for s in dirty.steps] == ["failed"] + ["skipped"] * 8
+    (starter / "notes.txt").unlink()
+
+    _stub_steps(monkeypatch)
     check = entry.check_entry(starter)
     commit = _git(starter, "rev-parse", "HEAD")
     assert check.passed and check.commit == commit
-    assert check.steps[2].detail == "Name 'Test Team MAPPO'; load my_entry:load."
+    assert check.steps[2].detail == (
+        "Method 'Test MAPPO' (Hugging Face repo tdm-season-<N>-test-mappo); "
+        "load my_entry:load."
+    )
     record = Path(str(check.record))
     assert record == starter / f".git/marl-bgs-entry-check/{commit}.json"
     assert json.loads(record.read_text())["passed"] is True
+    with pytest.raises(ValueError, match="This is the starter"):
+        entry.submit_entry(starter, open_browser=False)
 
+    _write_entry(starter, train=entry._STARTER_TRAIN + " seed=7")
+    _git(starter, "commit", "--quiet", "-am", "Change the method")
+    commit = _git(starter, "rev-parse", "HEAD")
+    assert entry.check_entry(starter).passed
     with pytest.raises(ValueError, match="no remote branch"):
         entry.submit_entry(starter, open_browser=False)
     _git(tmp_path, "init", "--quiet", "--bare", "remote.git")
@@ -301,17 +578,9 @@ def test_check_and_submit(
     link = urllib.parse.urlsplit(entry.submit_entry(starter, open_browser=False))
     values = dict(urllib.parse.parse_qsl(link.query))
     assert link.geturl().startswith(entry.FORM_URL + "?")
-    assert set(values) == {"template", "title", *entry.FORM_FIELDS}
-    assert values["template"] == entry.FORM_TEMPLATE
-    assert (values["commit"], values["lock-file"]) == (commit, "uv.lock")
-    assert values["starting-models"] == "none"
-    assert "Training maps: 0-41" in values["config-and-maps"]
-
-    monkeypatch.setattr(entry, "MAX_LINK_LENGTH", 100)
-    capsys.readouterr()
-    short = urllib.parse.urlsplit(entry.submit_entry(starter, open_browser=False))
-    assert set(dict(urllib.parse.parse_qsl(short.query))) == {"template", "title"}
-    assert f"train-command:\n{values['train-command']}" in capsys.readouterr().out
+    assert set(values) == {"template", "title", *_form_text_fields()}
+    assert (values["template"], values["title"]) == (entry.FORM_TEMPLATE, "Test MAPPO")
+    assert values["commit"] == commit
 
     (starter / "README.md").write_text("Changed.\n")
     _git(starter, "commit", "--quiet", "-am", "Change the README")
@@ -322,10 +591,25 @@ def test_check_and_submit(
     assert entry._remote_url(starter, commit) == "https://github.com/t/e"
 
 
-def test_form_fields_are_the_form_files_text_fields() -> None:
-    body = yaml.safe_load(FORM.read_text())["body"]
-    text = {f["id"] for f in body if f["type"] in ("input", "textarea")}
-    assert set(entry.FORM_FIELDS) == text - {"team"}
+def test_a_kept_folder_keeps_the_clone(
+    starter: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_steps(monkeypatch)
+    kept = tmp_path / "official" / "run"
+    assert entry.check_entry(starter, keep_folder=kept).passed
+    commit = _git(starter, "rev-parse", "HEAD")
+    assert _git(kept / "entry", "rev-parse", "HEAD") == commit
+    assert (kept / "entry/entry.yaml").is_file()
+    with pytest.raises(ValueError, match="already exists"):
+        entry.check_entry(starter, keep_folder=kept)
+
+
+@pytest.mark.parametrize("visible", ["", "-1", "-1,0"])
+def test_the_machine_label_names_no_hidden_gpu(
+    visible: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", visible)
+    assert entry._machine() == "No GPU visible"
 
 
 def test_play_limits_plays_on_the_cpu() -> None:
