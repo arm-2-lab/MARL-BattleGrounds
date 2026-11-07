@@ -12,7 +12,9 @@ early history capture and keeps the first-update actor outside rotating slots.
 Stable capture IDs own exposure rows; a child can resize storage without
 renaming a copy, clearing counters or replacing a live game. Custom rewards
 keep exact producing states and the round clock, preserve native results, skip
-disabled facts/callback work, and remain separate in real and padded rows.
+disabled facts/callback work, and remain separate in real and padded rows. A
+custom reward that declares discount receives the learner's discount, and its
+record says so.
 """
 
 from __future__ import annotations
@@ -2100,3 +2102,43 @@ def test_named_reward_totals_survive_split_collection_without_replay_fields(
     assert "components" not in rollout.transitions._fields
     assert context[0].reward_identity is not None
     assert context[0].reward_identity["component_keys"] == ["configured"]
+
+
+def test_custom_reward_receives_the_learner_discount(
+    prepared: PreparedTrainingContent,
+) -> None:
+    actor = _actor()
+
+    def reward(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        discount: Array,
+    ) -> Array:
+        del facts, after, progress
+        return before.alive_mask.astype(jnp.float32) * 0 + discount
+
+    context = _synthetic(
+        init_training_collection(
+            actor,
+            actor.variables,
+            schedule=make_training_schedule(total_env_steps=4, num_envs=2),
+            prepared=prepared,
+            metrics="none",
+            keep_past=0,
+            history_capture_capacity=0,
+            discount=0.9,
+            reward=reward,
+            reward_identity={"reference": "tests:discounted"},
+        )
+    )
+    _, rollout = _scan(context, length=2)
+    custom = rollout.transitions.custom_rewards
+    assert custom is not None
+    np.testing.assert_array_equal(custom, np.float32(0.9))
+    assert context[0].reward_identity is not None
+    assert context[0].reward_identity["discount_contract"] == (
+        "learner_discount_keyword_v1"
+    )

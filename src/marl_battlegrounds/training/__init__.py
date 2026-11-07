@@ -115,6 +115,18 @@ if TYPE_CHECKING:
     from marl_battlegrounds.training.reward_recipes import (
         combat_support_team_reward as combat_support_team_reward,
     )
+    from marl_battlegrounds.training.reward_recipes import (
+        ctf_objective_reward as ctf_objective_reward,
+    )
+    from marl_battlegrounds.training.reward_recipes import (
+        ctf_objective_route_reward as ctf_objective_route_reward,
+    )
+    from marl_battlegrounds.training.reward_recipes import (
+        ctf_objective_route_team_reward as ctf_objective_route_team_reward,
+    )
+    from marl_battlegrounds.training.reward_recipes import (
+        ctf_objective_team_reward as ctf_objective_team_reward,
+    )
     from marl_battlegrounds.training.runner import TrainResult as TrainResult
     from marl_battlegrounds.training.runner import extend_training as extend_training
     from marl_battlegrounds.training.runner import load_run as load_run
@@ -156,6 +168,10 @@ _OWNERS = {
     "load_study_data": "analysis",
     "load_run": "runner",
     "RewardOutput": "shaping",
+    "ctf_objective_route_reward": "reward_recipes",
+    "ctf_objective_route_team_reward": "reward_recipes",
+    "ctf_objective_reward": "reward_recipes",
+    "ctf_objective_team_reward": "reward_recipes",
     "combat_support_reward": "reward_recipes",
     "combat_support_team_reward": "reward_recipes",
     "TrainConfig": "config",
@@ -234,6 +250,10 @@ __all__ = [
     "combat_support_reward",
     "combat_support_team_reward",
     "create_panel",
+    "ctf_objective_reward",
+    "ctf_objective_route_reward",
+    "ctf_objective_route_team_reward",
+    "ctf_objective_team_reward",
     "current_choice",
     "export_actor",
     "export_study_data",

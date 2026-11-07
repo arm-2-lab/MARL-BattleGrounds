@@ -9,8 +9,11 @@ scoring: in Team Deathmatch with a positive Red Zone depth, a Red Zone death
 moves a team's score, and this feedback, by 2 instead of 1. There is no
 separate Red Zone reward. These pure adjustments belong to learner feedback,
 never actor inputs or official benchmark scores. Custom reward_adjustments
-uses selected Core facts and the existing training-round clock. validate_reward
-checks its scalar output before collection; learners own runtime finite checks.
+uses selected Core facts and the existing training-round clock. A reward may
+also declare keyword-only config (the producing game's settings) and discount
+(the learner's discount per transition, which potential-based feedback needs).
+validate_reward checks its scalar output before collection; learners own
+runtime finite checks.
 resolve_reward loads a declared callback once and records available code evidence.
 """
 
@@ -54,36 +57,39 @@ class RewardOutput(NamedTuple):
 type RewardFunction = Callable[..., Array | RewardOutput]
 
 
-def _reward_config_parameter(reward: RewardFunction) -> tuple[bool, bool]:
-    """Inspect the optional keyword-only config contract during host setup.
+def _reward_keyword(reward: RewardFunction, name: str) -> tuple[bool, bool]:
+    """Inspect one optional keyword-only reward argument during host setup.
 
-    Return whether config is accepted and whether it is required. A named
-    config argument must be keyword-only; **kwargs alone does not opt in.
-    Signature errors propagate before training. No callback is executed.
+    name is "config" or "discount". Return whether the reward accepts that
+    argument and whether it is required. A named argument must be
+    keyword-only; **kwargs alone does not opt in. Signature errors propagate
+    before training. No callback is executed.
     """
     import inspect
 
-    parameter = inspect.signature(reward).parameters.get("config")
+    parameter = inspect.signature(reward).parameters.get(name)
     if parameter is None:
         return False, False
     if parameter.kind is not inspect.Parameter.KEYWORD_ONLY:
-        raise TypeError("A reward's config argument must be keyword-only")
+        raise TypeError(f"A reward's {name} argument must be keyword-only")
     return True, parameter.default is inspect.Parameter.empty
 
 
 def _prepare_reward(reward: RewardFunction) -> RewardFunction:
     """Bind argument routing once for collection, without calling the reward.
 
-    Prepared callbacks accept optional config. Old callbacks receive exactly
-    their four positional arguments. Declared config users receive the supplied
-    producing configuration; a missing required config raises ValueError.
-    A private marker avoids repeated inspection during numerical tracing.
+    Prepared callbacks accept optional config and discount. Old callbacks
+    receive exactly their four positional arguments. A reward that declares
+    config or discount receives the supplied value; a missing required one
+    raises ValueError. A private marker avoids repeated inspection during
+    numerical tracing.
     """
     if not callable(reward):
         raise TypeError("reward must be a pure JAX callable")
     if getattr(reward, "_marl_prepared_reward", False):
         return reward
-    accepts_config, requires_config = _reward_config_parameter(reward)
+    accepts_config, requires_config = _reward_keyword(reward, "config")
+    accepts_discount, requires_discount = _reward_keyword(reward, "discount")
 
     @wraps(reward)
     def prepared(
@@ -93,13 +99,19 @@ def _prepare_reward(reward: RewardFunction) -> RewardFunction:
         progress: Array,
         *,
         config: EnvConfig | None = None,
+        discount: Array | None = None,
     ) -> Array | RewardOutput:
         """Call the original reward once with its declared argument contract."""
+        keywords: dict[str, EnvConfig | Array] = {}
         if accepts_config and config is not None:
-            return reward(before, facts, after, progress, config=config)
-        if requires_config:
+            keywords["config"] = config
+        elif requires_config:
             raise ValueError("This reward requires the producing config")
-        return reward(before, facts, after, progress)
+        if accepts_discount and discount is not None:
+            keywords["discount"] = discount
+        elif requires_discount:
+            raise ValueError("This reward requires the learner's discount")
+        return reward(before, facts, after, progress, **keywords)
 
     setattr(prepared, "_marl_prepared_reward", True)  # noqa: B010
     return prepared
@@ -123,7 +135,9 @@ def resolve_reward(
     tuple[callable or None, dict or None]
         The callable and its JSON-ready declaration. The record includes the
         reference, existing bytecode/default evidence, the defining module's
-        source hash when readable, and the completed-rounds progress clock.
+        source hash when readable, and the completed-rounds progress clock,
+        plus ``call_contract`` when the reward declares config and
+        ``discount_contract`` when it declares discount.
         A reward function that carries a ``reward_identity`` attribute (a
         dict that survives a JSON round trip) declares its own record
         instead: the result is the reference followed by a copy of that dict,
@@ -184,7 +198,8 @@ def resolve_reward(
         )
     except (OSError, TypeError):
         source_digest = None
-    accepts_config, _ = _reward_config_parameter(reward)
+    accepts_config, _ = _reward_keyword(reward, "config")
+    accepts_discount, _ = _reward_keyword(reward, "discount")
     identity: dict[str, object] = {
         "reference": reference,
         "callable": _callable_evidence(reward),
@@ -196,6 +211,8 @@ def resolve_reward(
     }
     if accepts_config:
         identity["call_contract"] = "producing_config_keyword_v1"
+    if accepts_discount:
+        identity["discount_contract"] = "learner_discount_keyword_v1"
     if hasattr(reward, "__wrapped__"):
         from marl_battlegrounds._method_loading import (
             _reference_identity,  # pyright: ignore[reportPrivateUsage]
@@ -215,6 +232,7 @@ def reward_adjustments(
     progress: Array,
     *,
     config: EnvConfig | None = None,
+    discount: Array | None = None,
 ) -> Array:
     """Apply one custom training reward to one producing transition.
 
@@ -224,8 +242,8 @@ def reward_adjustments(
         Pure JAX function reward(before, facts, after, progress). Return one
         float32 (10,) adjustment in global slot order, or RewardOutput with
         fixed named parts. The function owns how dead/inactive agents are
-        treated. It may explicitly accept keyword-only config. Old callbacks
-        receive only the original four arguments.
+        treated. It may explicitly accept keyword-only config and discount.
+        Old callbacks receive only the original four arguments.
     before, after : EnvState
         Exact public Environment.training_state views before and after the same
         action. Pass the producing successor, never an AutoReset replacement.
@@ -244,6 +262,13 @@ def reward_adjustments(
         Producing scalar configuration, from before.config. Required only by
         callbacks that declare a required keyword-only config argument. Keep
         it as a dynamic JAX value when batching or changing ordinary settings.
+    discount : Array or None, default=None
+        The learner's discount per real transition, a float32 scalar from 0
+        to 1, such as PPO's gamma. Collection passes the value it already uses
+        for built-in potential shaping. Required only by callbacks that
+        declare a required keyword-only discount argument, which
+        potential-based feedback needs: it pays discount * phi(after) -
+        phi(before). A change of value reuses the compiled program.
 
     Returns
     -------
@@ -269,7 +294,9 @@ def reward_adjustments(
     function inside vmap. Disabled collectors must skip this helper entirely.
     Arbitrary custom feedback need not preserve the native training objective.
     """
-    return _reward_output(reward, before, facts, after, progress, config).adjustments
+    return _reward_output(
+        reward, before, facts, after, progress, config, discount
+    ).adjustments
 
 
 def _reward_output(
@@ -279,6 +306,7 @@ def _reward_output(
     after: EnvState,
     progress: Array,
     config: EnvConfig | None = None,
+    discount: Array | None = None,
 ) -> RewardOutput:
     """Call and normalize one reward, sharing validation with public helpers.
 
@@ -296,12 +324,15 @@ def _reward_output(
     for name, value, dtype in (
         ("facts.has_transition", facts.has_transition, jnp.bool_),
         ("progress", progress, jnp.int32),
+        *(() if discount is None else (("discount", discount, jnp.float32),)),
     ):
         if np.shape(value) != ():
             raise ValueError(f"{name} must be a scalar")
         if getattr(value, "dtype", None) != dtype:
             raise TypeError(f"{name} must have {jnp.dtype(dtype)} dtype")
-    result = _prepare_reward(reward)(before, facts, after, progress, config=config)
+    result = _prepare_reward(reward)(
+        before, facts, after, progress, config=config, discount=discount
+    )
     adjustment = result.adjustments if isinstance(result, RewardOutput) else result
     components: Mapping[str, Array] = (
         result.components if isinstance(result, RewardOutput) else {}
@@ -348,6 +379,7 @@ def validate_reward(
     progress: Array,
     *,
     config: EnvConfig | None = None,
+    discount: Array | None = None,
 ) -> None:
     """Trace a custom reward's scalar contract before collection starts.
 
@@ -359,6 +391,9 @@ def validate_reward(
         Actual input values are not inspected; tracing checks shapes and dtypes.
     config : EnvConfig or None, default=None
         Producing scalar configuration for callbacks that explicitly accept it.
+    discount : Array or None, default=None
+        Float32 scalar learner discount for callbacks that explicitly accept
+        it, as in reward_adjustments.
 
     Returns
     -------
@@ -385,6 +420,7 @@ def validate_reward(
         after,
         progress,
         config,
+        discount,
     )
 
 

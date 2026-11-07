@@ -12,7 +12,10 @@ follows points, so a Red Zone death (two points) moves it by twice the
 coefficient, for or against the team. Custom callbacks check scalar shape/dtype,
 round-based fades, per-agent values, padding and visible nonfinite failures.
 Callback resolution skips disabled work, records available code/source evidence,
-and leaves opaque configuration unknown without executing the reward.
+and leaves opaque configuration unknown without executing the reward. A callback
+may declare keyword-only config or discount: each arrives as a dynamic value with
+no retrace, a positional one is refused, and resolution records the discount
+keyword only when the callback declares it.
 """
 
 # Private seams check one-call accounting without a training run.
@@ -774,7 +777,7 @@ def test_config_reward_keeps_old_arguments_and_reuses_dynamic_values(
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("A prepared reward must not inspect its signature again")
 
-    monkeypatch.setattr(shaping, "_reward_config_parameter", forbidden)
+    monkeypatch.setattr(shaping, "_reward_keyword", forbidden)
     apply = cast(Callable[..., Array], jax.jit(partial(reward_adjustments, prepared)))
     first = apply(*one, jnp.int32(0), config=config)
     second = apply(
@@ -785,6 +788,94 @@ def test_config_reward_keeps_old_arguments_and_reuses_dynamic_values(
     np.testing.assert_array_equal(first, 0)
     np.testing.assert_array_equal(second, 3)
     assert len(calls) == 1
+
+
+def test_discount_reward_receives_the_learner_discount_without_retracing(
+    reward_inputs: tuple[EnvState, TrainingFacts, EnvState],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds.training import shaping
+    from marl_battlegrounds.training.shaping import _prepare_reward
+
+    one = (
+        _row(reward_inputs[0], 0),
+        _row(reward_inputs[1], 0),
+        _row(reward_inputs[2], 0),
+    )
+    calls: list[int] = []
+
+    def feedback(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        discount: Array,
+    ) -> Array:
+        calls.append(1)
+        del before, facts, after, progress
+        return jnp.full(10, discount, jnp.float32)
+
+    def positional(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        discount: Array,
+    ) -> Array:
+        del before, facts, after, progress
+        return jnp.full(10, discount, jnp.float32)
+
+    with pytest.raises(TypeError, match="discount argument must be keyword-only"):
+        _prepare_reward(positional)
+    prepared = _prepare_reward(feedback)
+    with pytest.raises(ValueError, match="learner's discount"):
+        reward_adjustments(prepared, *one, jnp.int32(0))
+    with pytest.raises(TypeError, match="discount must have float32"):
+        reward_adjustments(prepared, *one, jnp.int32(0), discount=jnp.int32(1))
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("A prepared reward must not inspect its signature again")
+
+    monkeypatch.setattr(shaping, "_reward_keyword", forbidden)
+    calls.clear()
+    apply = cast(Callable[..., Array], jax.jit(partial(reward_adjustments, prepared)))
+    first = apply(*one, jnp.int32(0), discount=jnp.float32(0.99))
+    second = apply(*one, jnp.int32(0), discount=jnp.float32(0.5))
+    np.testing.assert_array_equal(first, np.float32(0.99))
+    np.testing.assert_array_equal(second, np.float32(0.5))
+    assert len(calls) == 1
+
+
+def test_reward_resolution_records_the_discount_keyword_only_when_declared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marl_battlegrounds import _method_loading
+    from marl_battlegrounds.training.shaping import resolve_reward
+
+    def feedback(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: Array,
+        *,
+        discount: Array,
+    ) -> Array:
+        del before, facts, after, progress
+        return jnp.full(10, discount, jnp.float32)
+
+    rewards = {"researcher:discounted": feedback, "researcher:plain": _custom_reward}
+
+    def installed(reference: str) -> RewardFunction:
+        return cast(RewardFunction, rewards[reference])
+
+    monkeypatch.setattr(_method_loading, "installed_callable", installed)
+    discounted = resolve_reward("researcher:discounted")[1]
+    plain = resolve_reward("researcher:plain")[1]
+    assert discounted is not None and plain is not None
+    assert discounted["discount_contract"] == "learner_discount_keyword_v1"
+    assert "call_contract" not in discounted
+    assert "discount_contract" not in plain
 
 
 @pytest.mark.parametrize(

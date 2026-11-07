@@ -132,7 +132,7 @@ from marl_battlegrounds.training.shaping import (
     _add_reward_totals,
     _empty_reward_totals,
     _prepare_reward,
-    _reward_config_parameter,
+    _reward_keyword,
     _reward_output,
     _RewardTotals,
     _validate_reward_totals,
@@ -1481,10 +1481,11 @@ def _prepare_collection_reward(
 ) -> tuple[RewardFunction | None, dict[str, object] | None, tuple[str, ...]]:
     """Trace one scalar reward and bind its fixed component schema at setup.
 
-    carry and successor may contain values or shape-only leaves. Config comes
-    from the producing carry. Empty components preserve legacy identities and
-    allocate no counter state. Declared saved keys must match the traced keys;
-    a changed schema fails before training or recovery writes.
+    carry and successor may contain values or shape-only leaves. Config and
+    the learner's discount come from the producing carry. Empty components
+    preserve legacy identities and allocate no counter state. Declared saved
+    keys must match the traced keys; a changed schema fails before training or
+    recovery writes.
     """
     if reward is None:
         return None, None, ()
@@ -1492,7 +1493,8 @@ def _prepare_collection_reward(
     from marl_battlegrounds.training._checkpoint_metadata import _reward_component_keys
 
     saved_keys = _reward_component_keys(identity)
-    accepts_config, _ = _reward_config_parameter(reward)
+    accepts_config, _ = _reward_keyword(reward, "config")
+    accepts_discount, _ = _reward_keyword(reward, "discount")
     prepared = _prepare_reward(reward)
 
     def scalar(value: Array | jax.ShapeDtypeStruct) -> jax.ShapeDtypeStruct:
@@ -1506,6 +1508,7 @@ def _prepare_collection_reward(
         jax.tree.map(scalar, successor.core_state),
         carry.progress.rounds,
         jax.tree.map(scalar, carry.state.config),
+        carry.discount,
     )
     keys = tuple(output.components)
     checked = dict(identity)
@@ -1513,6 +1516,8 @@ def _prepare_collection_reward(
         raise ValueError("Reward component keys differ from the saved declaration")
     if accepts_config:
         checked["call_contract"] = "producing_config_keyword_v1"
+    if accepts_discount:
+        checked["discount_contract"] = "learner_discount_keyword_v1"
     if keys:
         checked.update(component_schema=1, component_keys=list(keys))
     return prepared, checked, keys
@@ -2637,13 +2642,14 @@ def _real_step(
         assert info.training_facts is not None
         output = jax.vmap(
             partial(_reward_output, collection.reward),
-            in_axes=(0, 0, 0, None, 0),
+            in_axes=(0, 0, 0, None, 0, None),
         )(
             before.core_state,
             info.training_facts,
             state.core_state,
             carry.progress.rounds,
             before.config,
+            carry.discount,
         )
         custom = output.adjustments[:, :5]
         if collection.reward_component_keys:
