@@ -3,10 +3,11 @@
 Records use immutable Python tuples with frozen versioned schemas. Ten global
 slots are Team A 0-4 then Team B 5-9; policy relation rows remain actor-relative.
 Context V4, frame V3 and resolved config V2 describe current records, including
-the Team Deathmatch Red Zone depth (context column 19). Older versions remain
-readable with their original meanings: context V3 with frame V2 describes
-relative actor inputs before Red Zone, and a record without a depth means
-one point per death.
+the Team Deathmatch Red Zone depth (context column 19). Resolved config V3
+records a Capture the Flag config; no episode context holds it yet. Older
+versions remain readable with their original meanings: context V3 with frame
+V2 describes relative actor inputs before Red Zone, and a record without a
+depth means one point per death.
 
 This module also owns the host (JAX-free) copy of the Red Zone side and strip
 rules: red_zone_team_on_right decides a spawn bank's side exactly, and
@@ -1264,7 +1265,7 @@ type ResolvedEnvConfig = ResolvedEnvConfigV1 | ResolvedEnvConfigV2
 def _validate_resolved_config_fields(
     config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2,
 ) -> None:
-    """Check threshold rules, fixed row order, pad count and digest for V1 and V2.
+    """Check threshold rules, then fixed row order, pad count and digest, for V1 and V2.
 
     Require TDM's positive threshold and neutral mode's zero threshold. Raise
     ValueError with the same messages for both versions. Recorded structure
@@ -1277,6 +1278,18 @@ def _validate_resolved_config_fields(
         raise ValueError(
             "non-Team-Deathmatch modes require a zero Team Deathmatch threshold"
         )
+    _validate_resolved_config_structure(config)
+
+
+def _validate_resolved_config_structure(
+    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | ResolvedCaptureTheFlagConfigV3,
+) -> None:
+    """Check the fixed row order, pad count and digest every version shares.
+
+    Raise ValueError, in this order, for obstacle or slot rows out of order, a
+    team without exactly five spawn-pad rows, or a digest that is not the
+    SHA-256 of every other field. Recorded structure only.
+    """
     if tuple(row.obstacle_slot for row in config.obstacle_slots) != tuple(
         range(MAX_OBSTACLE_SLOTS)
     ):
@@ -1296,6 +1309,105 @@ def _validate_resolved_config_fields(
     )
     if config.canonical_digest_sha256 != expected_digest:
         raise ValueError("resolved environment config canonical digest mismatch")
+
+
+class ResolvedCaptureTheFlagConfigV3(EvaluationModel):
+    """Store one Capture the Flag config's resolved values: the shared ones and its own.
+
+    Attributes
+    ----------
+    schema_id : Literal['marl_battlegrounds.evaluation.resolved_env_config']
+        Fixed resolved-config identifier, the same as V1's and V2's.
+    schema_version : Literal[3]
+        Version 3; the default.
+    canonical_digest_sha256 : _Sha256Hex
+        SHA-256 of all other fields.
+    task_mode : Literal[3]
+        Capture the Flag.
+    capture_the_flag_score_threshold : Annotated[int, Field(ge=1, le=2 ** 24)]
+        Captures a team needs to win, 1 to 2**24.
+    capture_the_flag_flag_home_positions : tuple[tuple[float, float],
+    tuple[float, float]]
+        Shape (2, 2): each team's flag home as a nonnegative (x, y) in world
+        units, Team A's first, as configured, so a spawn-exchanged config
+        records exchanged homes, as V2 records exchanged pads.
+    capture_the_flag_flag_interaction_distance : _PositiveFloat
+        Largest distance, in map units, from an agent's center to a flag for a
+        pickup or a return, as configured.
+    capture_the_flag_flag_capture_distance : _PositiveFloat
+        Largest distance, in map units, from a carrier's center to its own
+        flag's home for a capture, as configured.
+    capture_the_flag_dropped_flag_auto_return_steps : Annotated[int,
+    Field(ge=1, le=2 ** 31 - 1)]
+        Ticks a dropped flag waits before going home, 1 to 2**31 - 1.
+    maximum_episode_steps, map_width, map_height, obstacle_slots,
+    slot_mechanics, ordinary_movement_distance_scale, team_spawn_pad_positions,
+    spawn_shield_duration_steps, spawn_shield_movement_speed,
+    team_respawn_wave_period_steps
+        Same meaning and shapes as in ResolvedEnvConfigV2.
+
+    Notes
+    -----
+    It mirrors V2: V2 holds the shared settings plus Team Deathmatch's two,
+    and this record the same shared settings plus Capture the Flag's five,
+    under EnvConfig's names. It holds no Team Deathmatch or King of the Hills
+    field. Core requires those to keep their neutral values in Capture the
+    Flag, so a left-out field can never hide a difference between two rule
+    sets. A separate class, like V2, so a field typed with one version never
+    accepts another. Each mode's record moves to the next free version on its
+    own; catalog.build_resolved_env_config names each mode's current one. No
+    episode context holds this record yet. Structure only; Core owns full
+    validity.
+    """
+
+    schema_id: Literal["marl_battlegrounds.evaluation.resolved_env_config"] = (
+        RESOLVED_ENV_CONFIG_SCHEMA_ID
+    )
+    schema_version: Literal[3] = 3
+    canonical_digest_sha256: _Sha256Hex
+    task_mode: Literal[3]
+    capture_the_flag_score_threshold: Annotated[int, Field(ge=1, le=2**24)]
+    capture_the_flag_flag_home_positions: tuple[
+        tuple[_NonNegativeFloat, _NonNegativeFloat],
+        tuple[_NonNegativeFloat, _NonNegativeFloat],
+    ]
+    capture_the_flag_flag_interaction_distance: _PositiveFloat
+    capture_the_flag_flag_capture_distance: _PositiveFloat
+    capture_the_flag_dropped_flag_auto_return_steps: Annotated[
+        int, Field(ge=1, le=2**31 - 1)
+    ]
+    maximum_episode_steps: Annotated[int, Field(gt=0, le=2**24)]
+    map_width: _PositiveFloat
+    map_height: _PositiveFloat
+    obstacle_slots: Annotated[
+        tuple[ResolvedObstacleV1, ...],
+        Field(min_length=MAX_OBSTACLE_SLOTS, max_length=MAX_OBSTACLE_SLOTS),
+    ]
+    slot_mechanics: Annotated[
+        tuple[ResolvedSlotMechanicsV1, ...],
+        Field(min_length=MAX_AGENT_SLOTS, max_length=MAX_AGENT_SLOTS),
+    ]
+    ordinary_movement_distance_scale: _NonNegativeFloat
+    team_spawn_pad_positions: Annotated[
+        tuple[tuple[tuple[float, float], ...], ...],
+        Field(min_length=NUM_TEAMS, max_length=NUM_TEAMS),
+    ]
+    spawn_shield_duration_steps: _NonNegativeInt
+    spawn_shield_movement_speed: _NonNegativeFloat
+    team_respawn_wave_period_steps: Annotated[
+        tuple[_PositiveInt, ...],
+        Field(min_length=NUM_TEAMS, max_length=NUM_TEAMS),
+    ]
+
+    @model_validator(mode="after")
+    def _validate_resolved_config(self) -> ResolvedCaptureTheFlagConfigV3:
+        """Check the shared row order, pad count and digest.
+
+        Raise ValueError on rows out of order, a wrong pad count or a digest
+        mismatch, with V1's and V2's messages.
+        """
+        _validate_resolved_config_structure(self)
+        return self
 
 
 class RosterSlotV1(EvaluationModel):
@@ -4760,6 +4872,7 @@ __all__ = [
     "PreviousTimestepActionObservationV1",
     "RecipientHealthResolutionEventV1",
     "RegenerationTransitionFactsV1",
+    "ResolvedCaptureTheFlagConfigV3",
     "ResolvedEnvConfig",
     "ResolvedEnvConfigV1",
     "ResolvedEnvConfigV2",

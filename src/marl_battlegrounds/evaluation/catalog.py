@@ -85,6 +85,7 @@ from marl_battlegrounds.core.types import (
     OBSTACLE_FEATURE_X,
     OBSTACLE_FEATURE_Y,
     OBSTACLE_FEATURES,
+    TASK_MODE_CTF,
     TASK_MODE_NEUTRAL,
     TASK_MODE_TDM,
     EnvConfig,
@@ -126,6 +127,7 @@ from marl_battlegrounds.evaluation.models import (
     ExecutionInformationMode,
     PolicyAssignmentSlotV1,
     PolicyAssignmentSlotV2,
+    ResolvedCaptureTheFlagConfigV3,
     ResolvedEnvConfigV1,
     ResolvedEnvConfigV2,
     ResolvedObstacleV1,
@@ -537,7 +539,9 @@ def build_resolved_env_config_v1(config: EnvConfig) -> ResolvedEnvConfigV1:
             "ResolvedEnvConfigV1 cannot record a Red Zone depth; "
             "use build_resolved_env_config_v2"
         )
-    return ResolvedEnvConfigV1.model_validate(_resolved_config_payload(config))
+    payload = _team_deathmatch_payload(config)
+    payload["canonical_digest_sha256"] = canonical_digest_sha256(payload)
+    return ResolvedEnvConfigV1.model_validate(payload)
 
 
 def build_resolved_env_config_v2(config: EnvConfig) -> ResolvedEnvConfigV2:
@@ -560,7 +564,8 @@ def build_resolved_env_config_v2(config: EnvConfig) -> ResolvedEnvConfigV2:
         A config field has an unsupported host type or array dtype.
     ValueError
         Core configuration validation or strict record validation fails, or the
-        config is a Capture the Flag config, whose settings V2 cannot record.
+        config is a Capture the Flag config, whose settings V2 cannot record
+        (build_resolved_env_config_v3 records it).
 
     Notes
     -----
@@ -569,17 +574,122 @@ def build_resolved_env_config_v2(config: EnvConfig) -> ResolvedEnvConfigV2:
     scenario and training identity. V1 and V2 record only Team Deathmatch and
     neutral configs, whose Capture the Flag and King of the Hills settings are
     always neutral, so no Capture the Flag rule set gets an identity that
-    ignores its own settings.
+    ignores its own settings. build_resolved_env_config picks V2 or V3 by mode.
     """
     run_config_check(validate_env_config, config)
-    payload = _resolved_config_payload(config)
+    payload = _team_deathmatch_payload(config)
     payload["schema_version"] = 2
     payload["team_deathmatch_red_zone_depth"] = float(
         config.team_deathmatch_red_zone_depth
     )
-    del payload["canonical_digest_sha256"]
     payload["canonical_digest_sha256"] = canonical_digest_sha256(payload)
     return ResolvedEnvConfigV2.model_validate(payload)
+
+
+def build_resolved_env_config_v3(
+    config: EnvConfig,
+) -> ResolvedCaptureTheFlagConfigV3:
+    """Validate one scalar Capture the Flag config and record its resolved values.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        Unbatched Capture the Flag EnvConfig (task_mode 3) accepted by Core's
+        host validator.
+
+    Returns
+    -------
+    ResolvedCaptureTheFlagConfigV3
+        V2's shared settings plus the five Capture the Flag settings, with a
+        SHA-256 digest of those recorded values. It holds no Team Deathmatch
+        or King of the Hills field.
+
+    Raises
+    ------
+    TypeError
+        A config field has an unsupported host type or array dtype.
+    ValueError
+        Core configuration validation or strict record validation fails,
+        including a Team Deathmatch or King of the Hills setting that is not
+        neutral, or the config is a Team Deathmatch or neutral config, which
+        V2 records.
+
+    Notes
+    -----
+    Host boundary, not a JIT operation; array conversion can synchronize
+    device data. Core's check runs first and requires every left-out field to
+    hold its neutral value, so two different Capture the Flag rule sets never
+    share a digest. The flag homes are read as float32, the storage Core
+    checks, and the two distances are recorded as given, so the record names
+    the exact EnvConfig.
+    """
+    run_config_check(validate_env_config, config)
+    if config.task_mode != TASK_MODE_CTF:
+        raise ValueError(
+            "Team Deathmatch and neutral configs record ResolvedEnvConfigV2, not V3"
+        )
+    homes = np.asarray(config.capture_the_flag_flag_home_positions, dtype=np.float32)
+    payload: dict[str, object] = {
+        "schema_id": RESOLVED_ENV_CONFIG_SCHEMA_ID,
+        "schema_version": 3,
+        "task_mode": config.task_mode,
+        "capture_the_flag_score_threshold": config.capture_the_flag_score_threshold,
+        "capture_the_flag_flag_home_positions": tuple(
+            (float(x), float(y)) for x, y in homes
+        ),
+        "capture_the_flag_flag_interaction_distance": float(
+            config.capture_the_flag_flag_interaction_distance
+        ),
+        "capture_the_flag_flag_capture_distance": float(
+            config.capture_the_flag_flag_capture_distance
+        ),
+        "capture_the_flag_dropped_flag_auto_return_steps": (
+            config.capture_the_flag_dropped_flag_auto_return_steps
+        ),
+        **_shared_payload(config),
+    }
+    payload["canonical_digest_sha256"] = canonical_digest_sha256(payload)
+    return ResolvedCaptureTheFlagConfigV3.model_validate(payload)
+
+
+def build_resolved_env_config(
+    config: EnvConfig,
+) -> ResolvedEnvConfigV2 | ResolvedCaptureTheFlagConfigV3:
+    """Record one scalar config with its mode's current resolved-config version.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        Unbatched EnvConfig of any available mode, accepted by Core's host
+        validator.
+
+    Returns
+    -------
+    ResolvedEnvConfigV2 | ResolvedCaptureTheFlagConfigV3
+        ResolvedEnvConfigV2 for a Team Deathmatch or neutral config, the same
+        record build_resolved_env_config_v2 returns, and
+        ResolvedCaptureTheFlagConfigV3 for a Capture the Flag config. Read
+        ``schema_version`` and ``canonical_digest_sha256`` to name the record
+        without knowing its mode.
+
+    Raises
+    ------
+    TypeError, ValueError
+        As the chosen builder raises them. A batched config, whose task_mode
+        is not a Python int, goes to the V3 builder, whose Core check names
+        the problem.
+
+    Notes
+    -----
+    The one table of each mode's current version, so callers never choose a
+    version by mode. Host boundary, not a JIT operation.
+    """
+    if type(config.task_mode) is int and config.task_mode in (
+        TASK_MODE_NEUTRAL,
+        TASK_MODE_TDM,
+    ):
+        return build_resolved_env_config_v2(config)
+    return build_resolved_env_config_v3(config)
 
 
 def _build_resolved_env_config_for(
@@ -598,26 +708,38 @@ def _build_resolved_env_config_for(
     return build_resolved_env_config_v1(config)
 
 
-def _resolved_config_payload(config: EnvConfig) -> dict[str, object]:
-    """Build the V1 record payload (with its digest) from a validated config.
+def _team_deathmatch_payload(config: EnvConfig) -> dict[str, object]:
+    """Build the V1 record payload, without its digest, from a validated config.
 
-    Shared by the V1 and V2 builders so both record the same values. Host
-    arrays are read once; the input is not changed. Raise ValueError for a
-    mode other than neutral and Team Deathmatch, whose settings neither record
-    holds.
+    Shared by the V1 and V2 builders so both record the same values; each adds
+    its own fields and then the digest. Raise ValueError for a mode other than
+    neutral and Team Deathmatch, whose settings neither record holds.
     """
     if config.task_mode not in (TASK_MODE_NEUTRAL, TASK_MODE_TDM):
         raise ValueError(
             "ResolvedEnvConfigV1 and V2 record only Team Deathmatch and neutral "
             f"configs, not task_mode {config.task_mode}"
         )
-    pads = np.asarray(config.team_spawn_pad_positions, dtype=np.float32)
-    periods = np.asarray(config.team_respawn_wave_period_step_count, dtype=np.int32)
-    payload: dict[str, object] = {
+    return {
         "schema_id": RESOLVED_ENV_CONFIG_SCHEMA_ID,
         "schema_version": RESOLVED_ENV_CONFIG_SCHEMA_VERSION,
         "task_mode": config.task_mode,
-        "team_deathmatch_score_threshold": (config.team_deathmatch_score_threshold),
+        "team_deathmatch_score_threshold": config.team_deathmatch_score_threshold,
+        **_shared_payload(config),
+    }
+
+
+def _shared_payload(config: EnvConfig) -> dict[str, object]:
+    """Read the settings every resolved-config version records, under V1's names.
+
+    config is a validated scalar EnvConfig of any mode; it is not changed. Host
+    arrays are read once. Returns the geometry, slot mechanics, movement,
+    spawn-pad, shield and wave fields, without schema, mode, mode settings or
+    digest.
+    """
+    pads = np.asarray(config.team_spawn_pad_positions, dtype=np.float32)
+    periods = np.asarray(config.team_respawn_wave_period_step_count, dtype=np.int32)
+    return {
         "maximum_episode_steps": config.max_steps,
         "map_width": float(config.map_width),
         "map_height": float(config.map_height),
@@ -637,8 +759,6 @@ def _resolved_config_payload(config: EnvConfig) -> dict[str, object]:
         "spawn_shield_movement_speed": float(config.spawn_shield_movement_speed),
         "team_respawn_wave_period_steps": tuple(int(value) for value in periods),
     }
-    payload["canonical_digest_sha256"] = canonical_digest_sha256(payload)
-    return payload
 
 
 def build_roster_v1(
@@ -1570,8 +1690,10 @@ __all__ = [
     "build_evaluation_episode_context_v3",
     "build_evaluation_episode_context_v4",
     "build_evaluation_seed_protocol_v1",
+    "build_resolved_env_config",
     "build_resolved_env_config_v1",
     "build_resolved_env_config_v2",
+    "build_resolved_env_config_v3",
     "build_roster_v1",
     "build_static_mechanics_catalog_v1",
     "default_schema_versions_v1",
