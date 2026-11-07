@@ -25,6 +25,7 @@ from marl_battlegrounds.evaluation._replays.replay import ReplayArtifactReferenc
 from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactReferenceV2
 from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactReferenceV3
 from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactReferenceV4
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactReferenceV5
 from marl_battlegrounds.rendering.evaluation_adapter import (
     SharedObsSourceMaterialProjection,
     SharedObsSourceMaterialProjectionV1,
@@ -199,6 +200,7 @@ class ReplayArtifactSummaryV1(_ReplayProtocolModel):
         | ReplayArtifactReferenceV2
         | ReplayArtifactReferenceV3
         | ReplayArtifactReferenceV4
+        | ReplayArtifactReferenceV5
     )
     expected_transition_count: _PositiveInt
     recorded_transition_count: _NonNegativeInt
@@ -220,6 +222,7 @@ class ReplayArtifactSummaryV1(_ReplayProtocolModel):
             ReplayArtifactReferenceV2,
             ReplayArtifactReferenceV3,
             ReplayArtifactReferenceV4,
+            ReplayArtifactReferenceV5,
         ):
             raise ValueError(
                 "replay_reference must be an exact supported replay reference."

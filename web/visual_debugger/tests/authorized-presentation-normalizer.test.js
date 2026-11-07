@@ -2331,7 +2331,7 @@ test("every coherent raw identity tuple mismatch is a retryable race before endp
   assert.equal(readCount(), 0, "replay_oracle: choreography generation");
 
   const wrongReplaySchema = clone(replayOracle.transport);
-  wrongReplaySchema.artifact_summary.replay_reference.replay_schema_version = 5;
+  wrongReplaySchema.artifact_summary.replay_reference.replay_schema_version = 6;
   await assertProtocolPoisonBeforeEndpoint(
     replayOracle,
     wrongReplaySchema,

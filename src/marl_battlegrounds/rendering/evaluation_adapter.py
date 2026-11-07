@@ -74,7 +74,9 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV2,
     EvaluationFrameV3,
     EvaluationFrameV4,
+    EvaluationTransition,
     EvaluationTransitionV1,
+    EvaluationTransitionV2,
     FlagAutomaticallyReturnedEventV1,
     FlagCapturedEventV1,
     FlagDroppedEventV1,
@@ -2145,7 +2147,7 @@ def advance_status_source_evidence_v2(
 def build_status_source_evidence_index_v2(
     context: EvaluationEpisodeContext,
     frames: tuple[EvaluationFrame, ...],
-    transitions: tuple[EvaluationTransitionV1, ...],
+    transitions: tuple[EvaluationTransition, ...],
 ) -> StatusSourceEvidenceIndexV2:
     """Build reusable source-evidence states for a complete recorded trajectory.
 
@@ -2153,10 +2155,11 @@ def build_status_source_evidence_index_v2(
     ----------
     context : EvaluationEpisodeContext
         Exact supported context for the trajectory.
-    frames : tuple of EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frames : tuple of EvaluationFrameV1 to EvaluationFrameV4
         Nonempty exact Python tuple of T+1 coherent frames starting at frame zero.
-    transitions : tuple of EvaluationTransitionV1
-        Exact Python tuple of T transitions joining consecutive frame pairs.
+    transitions : tuple of EvaluationTransitionV1 or EvaluationTransitionV2
+        Exact Python tuple of T transitions joining consecutive frame pairs; V2
+        is a Capture the Flag transition.
 
     Returns
     -------
@@ -2184,8 +2187,8 @@ def build_status_source_evidence_index_v2(
     state = initialize_status_source_evidence_v2(context, frames[0])
     states = [state]
     for transition_index, transition in enumerate(transitions):
-        if type(transition) is not EvaluationTransitionV1:
-            raise TypeError("transitions must contain exact EvaluationTransitionV1.")
+        if type(transition) not in (EvaluationTransitionV1, EvaluationTransitionV2):
+            raise TypeError("transitions must contain exact evaluation transitions.")
         view = EvaluationTransitionViewV1(
             context=context,
             start_frame=frames[transition_index],

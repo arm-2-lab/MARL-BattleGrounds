@@ -64,6 +64,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAxisMappingV1,
     ActorPovAxisMappingV2,
     ActorPovAxisMappingV3,
+    ActorPovAxisMappingV4,
 )
 from marl_battlegrounds.evaluation.models import (
     ActionAcceptanceFactsV1,
@@ -311,8 +312,8 @@ class ReplayOraclePresentationSourceIdentityV1(_PresentationProtocolModel):
     Frame indices and simulator steps are nonnegative. The selected index cannot
     exceed the final retained frame; choreography generation cannot exceed cursor
     generation. The recorded ordinary movement scale must be positive and finite.
-    source_replay_schema_version is the loaded replay's version, 1 to 4 (4 records
-    the Team Deathmatch Red Zone rule).
+    source_replay_schema_version is the loaded replay's version, 1 to 5 (4 records
+    the Team Deathmatch Red Zone rule, 5 is a Capture the Flag game).
     """
 
     source_kind: Literal["replay_oracle_frame"]
@@ -321,7 +322,7 @@ class ReplayOraclePresentationSourceIdentityV1(_PresentationProtocolModel):
     source_authority_epoch: _NonNegativeInt
     source_artifact_id: _ScientificId
     source_timeline_id: _ScientificId
-    source_replay_schema_version: Literal[1, 2, 3, 4]
+    source_replay_schema_version: Literal[1, 2, 3, 4, 5]
     source_context_digest_sha256: _Sha256Hex
     source_trajectory_content_digest_sha256: _Sha256Hex
     source_artifact_digest_sha256: _Sha256Hex
@@ -2177,12 +2178,13 @@ def _agent_pov_action_axis_v1(
 ) -> AgentPovActionAxisV1:
     """Convert an exact recorded actor-axis model into ordered display categories.
 
-    axis_mapping may be POV axis V1, V2 or V3; all share the same category rows.
+    axis_mapping may be POV axis V1 to V4; all share the same category rows.
     """
     if (
         type(axis_mapping) is not ActorPovAxisMappingV1
         and type(axis_mapping) is not ActorPovAxisMappingV2
         and type(axis_mapping) is not ActorPovAxisMappingV3
+        and type(axis_mapping) is not ActorPovAxisMappingV4
     ):
         raise TypeError("axis_mapping must use the exact accepted POV axis root.")
     mapping = type(axis_mapping).model_validate(axis_mapping.model_dump(mode="python"))

@@ -31,6 +31,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAxisMappingV1,
     ActorPovAxisMappingV2,
     ActorPovAxisMappingV3,
+    ActorPovAxisMappingV4,
     ActorPovCurrentSlice,
     ActorPovCurrentSliceV1,
     ActorPovCurrentSliceV2,
@@ -52,8 +53,12 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
+    EvaluationFrameV4,
+    EvaluationTransition,
     EvaluationTransitionV1,
+    EvaluationTransitionV2,
     JointActionV1,
+    TransitionFactsCaptureTheFlagV2,
     TransitionFactsV1,
     evaluation_context_type,
 )
@@ -1248,7 +1253,7 @@ def _validated_context(
 
 
 def _validated_frame(frame: EvaluationFrame) -> EvaluationFrame:
-    """Revalidate an exact V1, V2 or V3 current evaluation frame.
+    """Revalidate an exact V1 to V4 current evaluation frame.
 
     Return a copy from frame's Python payload. Raise TypeError for another root
     or ValueError for invalid recorded structure. No successor frame is read.
@@ -1257,47 +1262,51 @@ def _validated_frame(frame: EvaluationFrame) -> EvaluationFrame:
         type(frame) is not EvaluationFrameV1
         and type(frame) is not EvaluationFrameV2
         and type(frame) is not EvaluationFrameV3
+        and type(frame) is not EvaluationFrameV4
     ):
-        raise TypeError("current_frame must be the exact EvaluationFrameV1 root.")
+        raise TypeError("current_frame must be an exact evaluation frame root.")
     return type(frame).model_validate(frame.model_dump(mode="python"))
 
 
 def _validated_transition(
-    transition: EvaluationTransitionV1,
-) -> EvaluationTransitionV1:
+    transition: EvaluationTransition,
+) -> EvaluationTransition:
     """Revalidate the exact recorded outgoing transition root.
 
-    Return a copy of transition after schema checks. Raise TypeError for a
-    wrong root or ValueError for malformed values. Epoch joining is separate.
+    transition is V1, or V2 in Capture the Flag. Return a copy of the same
+    version after schema checks. Raise TypeError for a wrong root or ValueError
+    for malformed values. Epoch joining is separate.
     """
-    if type(transition) is not EvaluationTransitionV1:
-        raise TypeError("outgoing_transition must be EvaluationTransitionV1.")
-    return EvaluationTransitionV1.model_validate(transition.model_dump(mode="python"))
+    if type(transition) not in (EvaluationTransitionV1, EvaluationTransitionV2):
+        raise TypeError("outgoing_transition must be an exact evaluation transition.")
+    return type(transition).model_validate(transition.model_dump(mode="python"))
 
 
 def _shared_recipient_action_rows(
-    transition: EvaluationTransitionV1,
+    transition: EvaluationTransition,
     *,
     recipient_global_slot: int,
 ) -> tuple[SubmittedActionTupleV1, AcceptedActionTupleV1]:
     """Read only the fixed SharedObs recipient's submitted and accepted actions.
 
-    transition supplies exact V1 headers, action-fact roots and ten-row action
+    transition supplies exact headers (transition V1 with facts V1, or V2 with
+    Capture the Flag facts V2), action-fact roots and ten-row action
     containers. recipient_global_slot is already validated in 0..9. Return
     (SubmittedActionTupleV1, AcceptedActionTupleV1) for that slot only. Invalid
     roots raise TypeError; malformed headers/axes/recipient values raise
     ValueError. Other actors' values, events and unrelated facts are not
     revalidated as authority for this recipient's inspection.
     """
-    if type(transition) is not EvaluationTransitionV1:
-        raise TypeError("outgoing_transition must be EvaluationTransitionV1.")
+    if type(transition) not in (EvaluationTransitionV1, EvaluationTransitionV2):
+        raise TypeError("outgoing_transition must be an exact evaluation transition.")
+    version = 1 if type(transition) is EvaluationTransitionV1 else 2
     if (
         type(transition.schema_id) is not str
         or transition.schema_id != "marl_battlegrounds.evaluation.transition"
         or type(transition.schema_version) is not int
-        or transition.schema_version != 1
+        or transition.schema_version != version
     ):
-        raise ValueError("outgoing transition must retain its exact V1 schema.")
+        raise ValueError("outgoing transition must retain its exact schema.")
     for name in (
         "episode_id",
         "transition_id",
@@ -1312,16 +1321,18 @@ def _shared_recipient_action_rows(
         transition.transition_index,
         name="outgoing_transition.transition_index",
     )
-    if type(transition.facts) is not TransitionFactsV1:
-        raise TypeError("outgoing transition facts must use their exact V1 root.")
+    if type(transition.facts) is not (
+        TransitionFactsV1 if version == 1 else TransitionFactsCaptureTheFlagV2
+    ):
+        raise TypeError("outgoing transition facts must use their exact root.")
     facts = transition.facts
     if (
         type(facts.schema_id) is not str
         or facts.schema_id != "marl_battlegrounds.evaluation.transition_facts"
         or type(facts.schema_version) is not int
-        or facts.schema_version != 1
+        or facts.schema_version != version
     ):
-        raise ValueError("outgoing transition facts must retain their exact V1 schema.")
+        raise ValueError("outgoing transition facts must retain their exact schema.")
     if facts.has_transition is not True:
         raise ValueError("outgoing transition facts must describe a transition.")
     _require_python_int(
@@ -1636,6 +1647,7 @@ def _pov_decision_mask(
         type(axis_mapping) is not ActorPovAxisMappingV1
         and type(axis_mapping) is not ActorPovAxisMappingV2
         and type(axis_mapping) is not ActorPovAxisMappingV3
+        and type(axis_mapping) is not ActorPovAxisMappingV4
     ):
         raise TypeError("axis_mapping must be the exact ActorPovAxisMappingV1 root.")
     validated_axis = type(axis_mapping).model_validate(
@@ -1699,7 +1711,7 @@ def _replay_root(
 
 
 def _validate_outgoing_epoch(
-    transition: EvaluationTransitionV1,
+    transition: EvaluationTransition,
     *,
     episode_id: str,
     frame_index: int,
@@ -1729,7 +1741,7 @@ def build_replay_oracle_inspection_v1(
     current_scene: AuthorizedBattlefieldSceneV1,
     *,
     inspection_internal_slot: int | None,
-    outgoing_transition: EvaluationTransitionV1 | None,
+    outgoing_transition: EvaluationTransition | None,
     final_frame_index: int,
 ) -> ReplayInspectionPresentationV1 | None:
     """Inspect the recorded outgoing action of one selected Oracle actor.
@@ -1744,7 +1756,7 @@ def build_replay_oracle_inspection_v1(
         Exact Oracle scene containing every configured agent joined to the frame.
     inspection_internal_slot : int or None
         Configured-active global slot in 0..9, or None for no selection.
-    outgoing_transition : EvaluationTransitionV1 or None
+    outgoing_transition : EvaluationTransition or None
         Exact transition leaving current_frame. Required for a selected nonfinal
         frame; must be None when unselected or at the final retained frame.
     final_frame_index : int
@@ -2240,7 +2252,7 @@ def build_replay_shared_obs_inspection_v1(
     recipient_source_material: SharedObsSourceMaterialProjection,
     *,
     authorized_recipient_global_slot: int,
-    outgoing_transition: EvaluationTransitionV1 | None,
+    outgoing_transition: EvaluationTransition | None,
     final_frame_index: int,
 ) -> ReplayInspectionPresentationV1 | None:
     """Inspect only the fixed SharedObs recipient's recorded outgoing action.
@@ -2254,7 +2266,7 @@ def build_replay_shared_obs_inspection_v1(
         fields are checked; unrelated incoming/history branches are not authority.
     authorized_recipient_global_slot : int
         Host-owned fixed recipient slot in 0..9. It must match current self identity.
-    outgoing_transition : EvaluationTransitionV1 or None
+    outgoing_transition : EvaluationTransition or None
         Exact transition leaving the displayed frame. Only its header and the
         recipient's submitted/accepted action entries are used as authority.
         Required before the retained end; must be None at the final frame.

@@ -27,6 +27,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
+    EvaluationFrameV4,
     EvaluationTransition,
     EvaluationTransitionV1,
     EvaluationTransitionV2,
@@ -806,6 +807,7 @@ def build_replay_no_shared_obs_authorized_presentation_v1(
             type(previous_global_frame) is not EvaluationFrameV1
             and type(previous_global_frame) is not EvaluationFrameV2
             and type(previous_global_frame) is not EvaluationFrameV3
+            and type(previous_global_frame) is not EvaluationFrameV4
         ):
             raise TypeError(
                 "non-initial NoSharedObs replays require the exact prior global frame."
@@ -960,8 +962,8 @@ def build_replay_shared_obs_authorized_presentation_v1(
         SharedObsSourceMaterialProjection, ...
     ],
     incoming_visual_events: VisualEventBatchV2 | None,
-    incoming_transition: EvaluationTransitionV1 | None,
-    outgoing_transition: EvaluationTransitionV1 | None,
+    incoming_transition: EvaluationTransition | None,
+    outgoing_transition: EvaluationTransition | None,
     researcher_space: ReplayResearcherSpaceV1,
     scores_ten_ticks_ago: tuple[int, ...] | None = None,
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
@@ -1006,9 +1008,10 @@ def build_replay_shared_obs_authorized_presentation_v1(
         Other active slots' preceding projections; empty at frame zero.
     incoming_visual_events : VisualEventBatchV2 | None
         Visual events for the immediately preceding transition, or None at frame zero.
-    incoming_transition : EvaluationTransitionV1 | None
-        Recorded transition entering this frame, or None at frame zero.
-    outgoing_transition : EvaluationTransitionV1 | None
+    incoming_transition : EvaluationTransition | None
+        Recorded transition entering this frame (V1, or V2 in Capture the
+        Flag), or None at frame zero.
+    outgoing_transition : EvaluationTransition | None
         Recorded transition leaving this frame, or None at the final captured frame.
     researcher_space : ReplayResearcherSpaceV1
         Separately authorized global panels for this same frame, without a global
@@ -1296,6 +1299,7 @@ def build_replay_shared_obs_authorized_presentation_v1(
             type(previous_global_frame) is not EvaluationFrameV1
             and type(previous_global_frame) is not EvaluationFrameV2
             and type(previous_global_frame) is not EvaluationFrameV3
+            and type(previous_global_frame) is not EvaluationFrameV4
         ):
             raise TypeError(
                 "non-initial SharedObs replays require the exact prior global frame."
@@ -1458,8 +1462,8 @@ def build_replay_oracle_authorized_presentation_v1(
     *,
     source_authority_epoch: int,
     selected_internal_slot: int | None,
-    incoming_transition: EvaluationTransitionV1 | None,
-    outgoing_transition: EvaluationTransitionV1 | None,
+    incoming_transition: EvaluationTransition | None,
+    outgoing_transition: EvaluationTransition | None,
     previous_frame: EvaluationFrame | None = None,
     scores_ten_ticks_ago: tuple[int, ...] | None = None,
     champion_streaks: tuple[ChampionStreakV1, ...] | None = None,
@@ -1482,9 +1486,10 @@ def build_replay_oracle_authorized_presentation_v1(
         Nonnegative authority revision; it must match the committed raw frame revision.
     selected_internal_slot : int | None
         Configured-active simulator slot to inspect, or None when no actor is selected.
-    incoming_transition : EvaluationTransitionV1 | None
-        Recorded transition entering this frame, or None at frame zero.
-    outgoing_transition : EvaluationTransitionV1 | None
+    incoming_transition : EvaluationTransition | None
+        Recorded transition entering this frame (V1, or V2 in Capture the
+        Flag), or None at frame zero.
+    outgoing_transition : EvaluationTransition | None
         Recorded transition leaving this frame, or None at the final captured frame.
     previous_frame : EvaluationFrame | None, optional
         The recorded frame just before current_frame (None at frame zero). The
@@ -1567,8 +1572,9 @@ def build_replay_oracle_authorized_presentation_v1(
         type(current_frame) is not EvaluationFrameV1
         and type(current_frame) is not EvaluationFrameV2
         and type(current_frame) is not EvaluationFrameV3
+        and type(current_frame) is not EvaluationFrameV4
     ):
-        raise TypeError("current_frame must be the exact EvaluationFrameV1 root.")
+        raise TypeError("current_frame must be an exact evaluation frame root.")
     context = evaluation_context_type(context).model_validate(
         context.model_dump(mode="python")
     )
@@ -1590,7 +1596,9 @@ def build_replay_oracle_authorized_presentation_v1(
         if incoming_transition is not None:
             raise ValueError("frame zero cannot receive an incoming transition.")
     elif (
-        type(incoming_transition) is not EvaluationTransitionV1
+        incoming_transition is None
+        or type(incoming_transition)
+        not in (EvaluationTransitionV1, EvaluationTransitionV2)
         or incoming_transition.transition_index != frame_index - 1
         or incoming_transition.successor_frame_id != raw_frame.frame_id
         or incoming_transition.facts.transition_start_step_count + 1

@@ -30,6 +30,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAxisMappingV1,
     ActorPovAxisMappingV2,
     ActorPovAxisMappingV3,
+    ActorPovAxisMappingV4,
     ActorPovEpisodeEndedCueV1,
     ActorPovOwnActionOutcomeCueV1,
     ActorPovOwnCooldownChangedCueV1,
@@ -2693,7 +2694,7 @@ def _compose_no_shared_obs_incoming_summary_v1(
     """Enrich an index-owned cue inventory using authorized adjacent endpoints.
 
     start, transition and successor must already come from the same validated
-    POV source; axis_mapping is its exact V1, V2 or V3 actor mapping. Check joins,
+    POV source; axis_mapping is its exact V1 to V4 actor mapping. Check joins,
     then preserve cue order/IDs while attaching only authorized endpoint facts.
     Return NoSharedObsIncomingSummaryV1. Wrong roots raise TypeError; inconsistent
     identities, epochs or cue/endpoint values raise ValueError. The recipient's
@@ -2705,6 +2706,7 @@ def _compose_no_shared_obs_incoming_summary_v1(
         type(axis_mapping) is not ActorPovAxisMappingV1
         and type(axis_mapping) is not ActorPovAxisMappingV2
         and type(axis_mapping) is not ActorPovAxisMappingV3
+        and type(axis_mapping) is not ActorPovAxisMappingV4
     ):
         raise TypeError("NoSharedObs cue compositor requires exact axis mapping.")
     start_by_public, successor_by_public = _validate_cross_epoch_agent_identity(

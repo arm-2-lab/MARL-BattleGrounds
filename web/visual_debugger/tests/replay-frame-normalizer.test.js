@@ -1825,7 +1825,7 @@ test("current replay references keep their recorded V3 identity", () => {
   assert.throws(() => normalizeReplayViewerFrameV1(raw), /artifact reference/u);
 });
 
-test("Red Zone replay V4 references are admitted and version 5 is refused", () => {
+test("replay V4 and V5 references are admitted and version 6 is refused", () => {
   const raw = researcherFrame();
   const reference = raw.artifact_summary.replay_reference;
   reference.schema_version = 4;
@@ -1837,5 +1837,11 @@ test("Red Zone replay V4 references are admitted and version 5 is refused", () =
   assert.throws(() => normalizeReplayViewerFrameV1(raw), /artifact reference/u);
   reference.schema_version = 5;
   reference.replay_schema_version = 5;
+  assert.equal(
+    normalizeReplayViewerFrameV1(raw).artifact_summary.replay_reference.schema_version,
+    5,
+  );
+  reference.schema_version = 6;
+  reference.replay_schema_version = 6;
   assert.throws(() => normalizeReplayViewerFrameV1(raw), /artifact reference/u);
 });

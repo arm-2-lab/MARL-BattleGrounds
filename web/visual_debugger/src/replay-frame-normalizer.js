@@ -297,7 +297,7 @@ function normalizeArtifactReference(value) {
   exactKeys(value, ARTIFACT_REFERENCE_KEYS, "Replay artifact reference");
   if (
     value.schema_id !== REPLAY_ARTIFACT_REFERENCE_SCHEMA_ID ||
-    ![1, 2, 3, 4].includes(value.schema_version) ||
+    ![1, 2, 3, 4, 5].includes(value.schema_version) ||
     value.replay_schema_version !== value.schema_version
   ) {
     throw new TypeError("Replay artifact reference root is invalid.");

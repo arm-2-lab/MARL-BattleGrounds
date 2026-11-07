@@ -855,9 +855,10 @@ def build_match_summary_v1(
         map=recorded_map(context),
         observation_mode=context.execution_information_mode,
         # The tick at which the game ends: in a scored mode (Team Deathmatch or
-        # Capture the Flag) the configured last tick (validation proves initial tick + expected_horizon equals
-        # it, so a game started mid-way, such as at tick 91, still reads "of
-        # 300"); otherwise the expected number of transitions.
+        # Capture the Flag) the configured last tick (validation proves initial
+        # tick + expected_horizon equals it, so a game started mid-way, such as
+        # at tick 91, still reads "of 300"); otherwise the expected number of
+        # transitions.
         episode_limit=(
             context.resolved_env_config.maximum_episode_steps
             if scored

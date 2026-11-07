@@ -64,6 +64,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
     export_actor_pov_replay_v1,
     export_actor_pov_replay_v2,
     export_actor_pov_replay_v3,
+    export_actor_pov_replay_v4,
 )
 from marl_battlegrounds.evaluation._replays.replay import (
     ReplayArtifactReferenceV1,
@@ -84,7 +85,11 @@ from marl_battlegrounds.evaluation._replays.replay_v4 import (
     ReplayArtifactV4,
     replay_reference_v4,
 )
-from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
+from marl_battlegrounds.evaluation._replays.replay_v5 import (
+    ReplayArtifactReferenceV5,
+    ReplayArtifactV5,
+    replay_reference_v5,
+)
 from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
@@ -374,13 +379,16 @@ def _replay_reference(
     | ReplayArtifactReferenceV2
     | ReplayArtifactReferenceV3
     | ReplayArtifactReferenceV4
+    | ReplayArtifactReferenceV5
 ):
     """Build the version-appropriate immutable replay identity and byte-length facts.
 
-    Replay V1-V4 each get their own reference version. Raise TypeError for any
+    Replay V1-V5 each get their own reference version. Raise TypeError for any
     other replay type instead of labelling it as V1.
     """
     replay = bundle.replay
+    if type(replay) is ReplayArtifactV5:
+        return replay_reference_v5(replay)
     if type(replay) is ReplayArtifactV4:
         return replay_reference_v4(replay)
     if type(replay) is ReplayArtifactV3:
@@ -421,9 +429,14 @@ def _processing_badge(bundle: LoadedReplayBundle) -> ReplayProcessingBadgeV1:
     """Report legacy metric processing; newer capture-only formats report not
     requested.
 
-    Replay V2-V4 record no metric processing; only replay V1 carries it.
+    Replay V2-V5 record no metric processing; only replay V1 carries it.
     """
-    if type(bundle.replay) in (ReplayArtifactV2, ReplayArtifactV3, ReplayArtifactV4):
+    if type(bundle.replay) in (
+        ReplayArtifactV2,
+        ReplayArtifactV3,
+        ReplayArtifactV4,
+        ReplayArtifactV5,
+    ):
         return ReplayProcessingBadgeV1(
             status="not_requested", processed_transition_count=0
         )
@@ -660,8 +673,9 @@ class ReplayViewerService:
             The loaded root or boolean flags have unsupported exact types.
         ValueError
             Status, cursor, view, slot selection, lane, or viewer identity is
-            invalid, or the replay is a Capture the Flag replay V5, which the
-            viewer cannot open yet.
+            invalid, or the replay is a SharedObs Capture the Flag replay V5,
+            which the viewer cannot open yet (NoSharedObs ones open in Oracle
+            View and Agent POV).
 
         Notes
         -----
@@ -712,10 +726,13 @@ class ReplayViewerService:
         self._agent_pov_prepared = False
         self._agent_pov_prepare_lock = Lock()
         replay = bundle.replay
-        if isinstance(replay, ReplayArtifactV5):
-            # Capture the Flag replays open here with the viewer's CTF update.
+        if (
+            isinstance(replay, ReplayArtifactV5)
+            and replay.header.context.execution_information_mode == "shared_obs"
+        ):
+            # SharedObs player views of a Capture the Flag game come next (C1.5a).
             raise ValueError(
-                "the Replay Viewer cannot open a Capture the Flag replay yet"
+                "the Replay Viewer cannot open a SharedObs Capture the Flag replay yet"
             )
         self._replay = replay
         self._context = replay.header.context
@@ -780,7 +797,12 @@ class ReplayViewerService:
             metric_report_availability=(
                 "not_recorded"
                 if type(bundle.replay)
-                in (ReplayArtifactV2, ReplayArtifactV3, ReplayArtifactV4)
+                in (
+                    ReplayArtifactV2,
+                    ReplayArtifactV3,
+                    ReplayArtifactV4,
+                    ReplayArtifactV5,
+                )
                 else "available"
                 if bundle.metric_report_artifact is not None
                 else "missing"
@@ -3014,13 +3036,19 @@ class ReplayViewerService:
 
         Populate the supplied cache only after construction. Preserve whether the
         replay version supports exact actor-input export or only a visual projection:
-        replay V4 exports POV V3, replay V3 exports POV V2, historical projection-V1
-        replays export POV V1, and replay V2 (or projection V2) is visual only.
+        replay V5 exports POV V4, replay V4 exports POV V3, replay V3 exports POV
+        V2, historical projection-V1 replays export POV V1, and replay V2 (or
+        projection V2) is visual only.
         """
         cached = cache.get(global_slot)
         if cached is not None:
             return cached
-        if type(self._replay) is ReplayArtifactV4:
+        if type(self._replay) is ReplayArtifactV5:
+            content = export_actor_pov_replay_v4(
+                self._replay, global_slot=global_slot
+            ).content
+            exact_actor_input_export_available = True
+        elif type(self._replay) is ReplayArtifactV4:
             content = export_actor_pov_replay_v3(
                 self._replay, global_slot=global_slot
             ).content
