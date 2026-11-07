@@ -34,7 +34,7 @@ the game in which each side picks one member. A run does this, in order:
    trainer's point-margin rule).
 
 One budget, the oracle's ``total_env_steps``, counts every game step:
-training, payoff and validation games (Rule 2.1). Rounds shrink so the run
+training, payoff and validation games. Rounds shrink so the run
 ends inside it, and the last round takes what is left.
 
 Files in ``output_dir``: ``settings.json`` (a later call with other settings
@@ -581,7 +581,7 @@ def train_psro(
         The oracle: method, learner settings, reward, seed and ``num_envs``
         for every round, for example a Season 0 recipe. ``total_env_steps`` is
         the whole budget in game steps (training, payoff and validation
-        games, Rule 2.1). ``validation_maps`` (all five validation maps when
+        games). ``validation_maps`` (all five validation maps when
         None), ``routine_seed_pairs`` and ``confirmation_seed_pairs`` set the
         validation games. Its own opponents, history, explicit saves and
         validation panel are replaced in every round, and its Random
