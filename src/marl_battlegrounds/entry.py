@@ -39,6 +39,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -122,7 +123,7 @@ Sandbox = Callable[[Path, bool], Sequence[str]]
 command) in front of every child that runs the entry's code. ``clone`` is the
 clone's folder, the only folder such a child writes. ``online`` is True in
 step 4 (the install and the released-model downloads need the network) and
-False in steps 5 to 9. The prefix must keep the environment the check gives
+False in steps 5 to 7. The prefix must keep the environment the check gives
 the child, keep the child in the check's process group (no new session) and
 let SIGINT reach it, or step 5 cannot stop the run politely. Outside ``hf://``
 models are not downloaded behind it: the check's own Python fetches them.
@@ -359,6 +360,14 @@ def _package_version() -> str:
 def _tail(text: str, lines: int = 20) -> str:
     """Return the last ``lines`` lines of a program's output, trimmed."""
     return "\n".join(text.strip().splitlines()[-lines:])
+
+
+def _last_json(out: str) -> dict[str, Any] | None:
+    """Return the JSON object on the last line of a child's output, or None."""
+    lines = out.strip().splitlines()
+    with contextlib.suppress(json.JSONDecodeError):
+        return json.loads(lines[-1]) if lines else None
+    return None
 
 
 def _git(folder: Path, *args: str) -> str:
@@ -1061,6 +1070,16 @@ else:
 if not found:
     sys.exit(f"{sys.argv[1]} has no file or folder {address.path} at that commit.")
 """
+_CHOICE_CODE = """\
+import json, sys
+from pathlib import Path
+run = Path(sys.argv[1])
+builtin, choice = (run / "run_details.json").is_file(), None
+if builtin:
+    from marl_battlegrounds.training import current_choice
+    choice = current_choice(run)
+print(json.dumps({"builtin": builtin, "choice": choice and str(choice)}))
+"""
 _PLAY_CODE = """\
 import json, sys
 import jax
@@ -1161,12 +1180,7 @@ class _Checker:
             env={**entry_environment(self.clone, offline=True), **(extra or {})},
             timeout=timeout,
         )
-        lines = out.strip().splitlines()
-        result: dict[str, Any] | None = None
-        if code_out == 0 and lines:
-            with contextlib.suppress(json.JSONDecodeError):
-                result = json.loads(lines[-1])
-        return code_out, result, _tail(err)
+        return code_out, _last_json(out) if code_out == 0 else None, _tail(err)
 
     def step_1(self, folder: Path) -> str:
         """Step 1 for a local repository: a clean tree and its last commit."""
@@ -1188,12 +1202,29 @@ class _Checker:
         return f"Commit {self.commit}."
 
     def step_2(self) -> str:
-        """Clone the commit into the work folder; keep a bundle if asked."""
+        """Clone the commit into the work folder; keep a bundle if asked.
+
+        A committed link that points outside the repository fails the step.
+        """
         assert self.commit is not None
         _git(self.work, "clone", "--quiet", "--no-checkout", self.source, "entry")
         _git(self.clone, "checkout", "--quiet", "--detach", self.commit)
         if _git(self.clone, "rev-parse", "HEAD") != self.commit:
             raise _StepFailedError(f"The clone is not at {self.commit}.")
+        # This process reads committed files (entry.yaml, uv.lock), so a link
+        # in the commit must not lead it to a file outside the repository.
+        top = self.clone.resolve()
+        outside = [
+            line.split("\t", 1)[1]
+            for line in _git(self.clone, "ls-files", "-s", "-z").split("\0")
+            if line.startswith("120000 ")
+            and not (self.clone / line.split("\t", 1)[1]).resolve().is_relative_to(top)
+        ]
+        if outside:
+            raise _StepFailedError(
+                "The commit has links that point outside the repository: "
+                + ", ".join(outside[:5])
+            )
         if self.bundle is None:
             return f"Cloned {self.commit} into {self.clone}."
         self.bundle.parent.mkdir(parents=True, exist_ok=True)
@@ -1265,6 +1296,9 @@ class _Checker:
                 "marl-battlegrounds[cuda13] (or cuda12), then run uv lock."
             )
         self.hf_home.mkdir(parents=True, exist_ok=True)
+        if self.hf_home.is_symlink():
+            # The install ran entry code; our own downloads must not follow it out.
+            raise _StepFailedError(f"The install made {_HF_FOLDER} a link.")
         for model in self.entry.starting_models:
             self.fetch(model, deadline)
         return (
@@ -1385,15 +1419,25 @@ class _Checker:
         """Ask the trainer's own ranking for a built-in run's choice (before step 6).
 
         A built-in run is an output folder with ``run_details.json``; its
-        choice is what ``training.current_choice`` names, or None.
-        """
-        from marl_battlegrounds.training import current_choice
+        choice is what ``training.current_choice`` names, or None. The entry's
+        run wrote those files, so a sealed child reads them, never this
+        process.
 
+        Raises
+        ------
+        RuntimeError
+            The child failed or ran past 10 minutes; the message has its last
+            lines of error output.
+        """
         assert self.entry is not None
-        run = self.clone / self.entry.output
-        self.builtin_run = (run / "run_details.json").is_file()
-        if self.builtin_run:
-            self.choice = current_choice(run)
+        run = str(self.clone / self.entry.output)
+        _, result, err = self.python(_CHOICE_CODE, run, timeout=_LOAD_SECONDS)
+        if result is None:
+            raise RuntimeError(
+                err or f"no answer within {_LOAD_SECONDS / 60:g} minutes"
+            )
+        self.builtin_run = bool(result["builtin"])
+        self.choice = None if result["choice"] is None else Path(result["choice"])
 
     def saved(self) -> str | None:
         """Step 8's detail when the run saved something to enter, else None.
@@ -1429,8 +1473,9 @@ class _Checker:
         """Export the choice (or the loaded Policy); refuse local paths inside it.
 
         The sealed export child writes inside the clone, the only folder it
-        may write, and step 9 plays that file. This process keeps a copy at
-        ``work/model.zip``.
+        may write. This process copies the file to ``work/model.zip``, which
+        step 9 plays, and refuses a link or anything else that is not a plain
+        file, so entry code cannot make it copy one of our own files.
         """
         assert self.entry is not None
         target = self.clone / _EXPORT_FILE
@@ -1452,7 +1497,20 @@ class _Checker:
         )
 
         kept = self.work / "model.zip"
-        shutil.copyfile(target, kept)
+        # Entry code may have swapped the export for a link to one of our files.
+        try:
+            handle = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            raise _StepFailedError(
+                f"The export did not leave a plain file at {target}."
+            ) from None
+        with os.fdopen(handle, "rb") as exported:
+            if not stat.S_ISREG(os.fstat(exported.fileno()).st_mode):
+                raise _StepFailedError(
+                    f"The export did not leave a plain file at {target}."
+                )
+            with kept.open("wb") as copy:
+                shutil.copyfileobj(exported, copy)
         findings: list[str] = _local_path_findings(kept.name, kept.read_bytes())
         if findings:
             raise _StepFailedError(
@@ -1471,22 +1529,29 @@ class _Checker:
     def step_9(self) -> tuple[StepStatus, str]:
         """Time the exported model (the file our games play) with deterministic XLA.
 
+        A fresh child of this process's own Python plays the check's copy,
+        ``work/model.zip``, so no entry code runs and the reading cannot be
+        forged by the entry.
+
         Only a reading on an RTX 5090, the card our run uses, with its memory
         known, passes or fails; any other reading is "not measured". A crash
         or games past 30 minutes fail on any machine.
         """
         assert self.entry is not None
         flags = f"{os.environ.get('XLA_FLAGS', '')} {_DETERMINISTIC}".strip()
-        code, result, err = self.python(
-            _PLAY_CODE,
-            str(self.clone / _EXPORT_FILE),
+        env = {**_own_environment(), "XLA_FLAGS": flags, "HF_HUB_OFFLINE": "1"}
+        export = self.work / "model.zip"
+        code, out, err = _run(
+            [sys.executable, "-I", "-c", _PLAY_CODE, str(export)],
+            cwd=self.work,
+            env=env,
             timeout=_PLAY_SECONDS,
-            extra={"XLA_FLAGS": flags},
         )
+        result = _last_json(out) if code == 0 else None
         if code is None:
             return "failed", "The games took more than 30 minutes: far too slow."
         if result is None:
-            return "failed", f"The play check failed:\n{err}"
+            return "failed", f"The play check failed:\n{_tail(err)}"
         if not result["on_gpu"]:
             return "not measured", (
                 f"No GPU here (JAX found {result['device']}). We measure this on "
@@ -1578,7 +1643,8 @@ def check_entry(
     block. Each step prints one line as it finishes.
 
     1. The tree is clean and the commit is recorded.
-    2. A fresh clone of that commit.
+    2. A fresh clone of that commit, with no committed link that points
+       outside the repository.
     3. ``entry.yaml`` is present and valid: the six keys ``name``,
        ``train``, ``output``, ``load``, ``entry_type`` and
        ``starting_models`` (1.0.3's ``training_maps`` and ``config`` are
@@ -1598,16 +1664,18 @@ def check_entry(
     6. The load function, in a fresh process, returns a Policy or System
        within 10 minutes.
     7. Export to a portable model file: from the actor folder
-       ``training.current_choice`` names when the output is a built-in run,
-       else from the Policy that the load function returns. The file must
-       name no folder on this computer.
+       ``training.current_choice`` names when the output is a built-in run
+       (read by a sealed child), else from the Policy that the load function
+       returns. The file must be a plain file, not a link, and must name no
+       folder on this computer.
     8. Something to enter was saved: a built-in run's choice (never its
        step-0 save), or files in an own training loop's output folder. When
        step 5 stopped the run before it saved anything (a slower card may
        not reach the first save), steps 6, 7 and 9 wait and step 8 is "not
        measured"; a run that ended by itself with nothing saved fails step 6.
-    9. ``play_limits`` on the exported file, the one our games play, in a
-       fresh process, with XLA's deterministic mode.
+    9. ``play_limits`` on the check's copy of the exported file, the one our
+       games play, in a fresh child of this Python (no entry code runs), with
+       XLA's deterministic mode.
        Its reading passes or fails only on an RTX 5090 that reports its
        memory; on another GPU it is "not measured" with the reading, and
        without a GPU "not measured". A crash, or games that run past 30
@@ -1633,7 +1701,7 @@ def check_entry(
         The check puts it in front of every child that runs the entry's code
         (see Sandbox). ``clone`` is the clone's folder, the only folder those
         children write. ``online`` is True for step 4's install and
-        released-model downloads and False for every child in steps 5 to 9.
+        released-model downloads and False for every child in steps 5 to 7.
         The prefix must keep the environment the check gives each child
         (``HF_HOME``, ``HF_HUB_OFFLINE`` and the rest) and keep the child in
         the check's process group. An error it raises fails that step. None
@@ -1682,15 +1750,16 @@ def check_entry(
     ``keep_folder``, the clone, its environment (several GB with CUDA) and
     the run live in a temporary folder (set ``TMPDIR`` to choose where).
 
-    Processes and network: steps 4 to 9 run the entry's own code in child
+    Processes and network: steps 4 to 7 run the entry's own code in child
     processes inside the clone's locked environment (``uv run --no-sync``).
     Only steps 2 and 4 use the network: step 2 clones, step 4 installs and
     downloads. An outside ``hf://`` model (any owner but MARL-BattleGrounds) is
     downloaded by a child of this Python, with no token and outside any
-    ``sandbox``; no entry code runs there. Steps 5 to 9 set
-    ``HF_HUB_OFFLINE=1`` and ``UV_OFFLINE=1``;
-    this asks tools to stay offline but does not cut the network unless a
-    ``sandbox`` does. Steps 5 to 9 may use the GPU.
+    ``sandbox``; no entry code runs there. Step 9 also runs in a child of this
+    Python, on the check's own copy of the export, so the entry's code cannot
+    report its own speed. Steps 5 to 9 set ``HF_HUB_OFFLINE=1`` (steps 5 to 7
+    also ``UV_OFFLINE=1``); this asks tools to stay offline but does not cut
+    the network unless a ``sandbox`` does. Steps 5 to 9 may use the GPU.
 
     Examples
     --------
