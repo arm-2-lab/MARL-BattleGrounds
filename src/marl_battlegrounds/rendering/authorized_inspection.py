@@ -2068,6 +2068,7 @@ def _validate_shared_current(
         type(recipient_source_material.axis_mapping) is not ActorPovAxisMappingV1
         and type(recipient_source_material.axis_mapping) is not ActorPovAxisMappingV2
         and type(recipient_source_material.axis_mapping) is not ActorPovAxisMappingV3
+        and type(recipient_source_material.axis_mapping) is not ActorPovAxisMappingV4
     ):
         raise ValueError("SharedObs axis mapping must use its exact V1 root.")
     axis_mapping = type(recipient_source_material.axis_mapping).model_validate(

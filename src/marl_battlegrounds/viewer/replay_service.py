@@ -673,9 +673,7 @@ class ReplayViewerService:
             The loaded root or boolean flags have unsupported exact types.
         ValueError
             Status, cursor, view, slot selection, lane, or viewer identity is
-            invalid, or the replay is a SharedObs Capture the Flag replay V5,
-            which the viewer cannot open yet (NoSharedObs ones open in Oracle
-            View and Agent POV).
+            invalid.
 
         Notes
         -----
@@ -726,14 +724,6 @@ class ReplayViewerService:
         self._agent_pov_prepared = False
         self._agent_pov_prepare_lock = Lock()
         replay = bundle.replay
-        if (
-            isinstance(replay, ReplayArtifactV5)
-            and replay.header.context.execution_information_mode == "shared_obs"
-        ):
-            # SharedObs player views of a Capture the Flag game come next (C1.5a).
-            raise ValueError(
-                "the Replay Viewer cannot open a SharedObs Capture the Flag replay yet"
-            )
         self._replay = replay
         self._context = replay.header.context
         # SharedObs source rows by (frame index, slot); see _shared_authority_sources.

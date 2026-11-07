@@ -71,7 +71,9 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContext,
     EvaluationTransition,
     EvaluationTransitionV1,
+    EvaluationTransitionV2,
     JointActionV1,
+    TransitionFactsCaptureTheFlagV2,
     TransitionFactsV1,
     evaluation_context_type,
 )
@@ -2489,16 +2491,22 @@ def build_shared_obs_latest_transition_v1(
         if incoming_transition is not None:
             raise ValueError("SharedObs frame zero cannot receive incoming T_(n-1).")
         return None
-    if type(incoming_transition) is not EvaluationTransitionV1:
+    if (
+        type(incoming_transition) is not EvaluationTransitionV1
+        and type(incoming_transition) is not EvaluationTransitionV2
+    ):
         raise TypeError("non-initial SharedObs presentation requires exact T_(n-1).")
     transition = incoming_transition
+    # Transition V1 carries facts V1; a Capture the Flag transition V2 carries
+    # Capture the Flag facts V2. Both hold the same action facts.
+    version = 1 if type(transition) is EvaluationTransitionV1 else 2
     if (
         type(transition.schema_id) is not str
         or transition.schema_id != "marl_battlegrounds.evaluation.transition"
         or type(transition.schema_version) is not int
-        or transition.schema_version != 1
+        or transition.schema_version != version
     ):
-        raise ValueError("incoming transition must retain its exact V1 schema.")
+        raise ValueError("incoming transition must retain its exact schema.")
     for name in (
         "episode_id",
         "transition_id",
@@ -2510,14 +2518,16 @@ def build_shared_obs_latest_transition_v1(
             raise TypeError(f"incoming transition {name} must be a nonempty string.")
     if type(transition.transition_index) is not int:
         raise TypeError("incoming transition index must be an exact Python int.")
-    if type(transition.facts) is not TransitionFactsV1:
-        raise TypeError("incoming transition facts must use their exact V1 root.")
+    if type(transition.facts) is not (
+        TransitionFactsV1 if version == 1 else TransitionFactsCaptureTheFlagV2
+    ):
+        raise TypeError("incoming transition facts must use their exact root.")
     facts = transition.facts
     if (
         type(facts.schema_id) is not str
         or facts.schema_id != "marl_battlegrounds.evaluation.transition_facts"
         or type(facts.schema_version) is not int
-        or facts.schema_version != 1
+        or facts.schema_version != version
         or facts.has_transition is not True
         or type(facts.transition_start_step_count) is not int
     ):

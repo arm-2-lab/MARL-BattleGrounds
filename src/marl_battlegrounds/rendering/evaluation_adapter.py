@@ -32,6 +32,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAxisMappingV1,
     ActorPovAxisMappingV2,
     ActorPovAxisMappingV3,
+    ActorPovAxisMappingV4,
     ActorPovPreviousTimestepActionsV1,
     ActorPovSpawnLifecycleV1,
 )
@@ -1021,6 +1022,10 @@ class _SharedObsSourceMaterialProjection:
             ActorPovAxisMappingV1,
             ActorPovAxisMappingV2,
             ActorPovAxisMappingV3,
+            ActorPovAxisMappingV4,
+        ) or (
+            type(self.axis_mapping) is ActorPovAxisMappingV4
+            and type(self) is not SharedObsSourceMaterialProjectionV3
         ):
             raise ValueError("axis_mapping must be the exact actor POV mapping root.")
         reconstructed_axis = type(self.axis_mapping).model_validate(
@@ -1068,9 +1073,15 @@ class _SharedObsSourceMaterialProjection:
             != self.base_sensor_frame.public_agent_id
         ):
             raise ValueError("SharedObs base-sensor frame and scene do not join.")
+        # A Capture the Flag source pairs projection V3 with axis mapping V4.
+        expected_axis_version = (
+            4
+            if type(self.axis_mapping) is ActorPovAxisMappingV4
+            else self.schema_version
+        )
         if (
             self.base_sensor_frame.schema_version != self.schema_version
-            or self.axis_mapping.schema_version != self.schema_version
+            or self.axis_mapping.schema_version != expected_axis_version
         ):
             raise ValueError(
                 "SharedObs projection, frame and axes must use the same schema"
@@ -1240,7 +1251,8 @@ class SharedObsSourceMaterialProjectionV3(_SharedObsSourceMaterialProjection):
     Attributes
     ----------
     axis_mapping : ActorPovAxisMappingV3
-        Exact ActorPovAxisMappingV3 for this schema.
+        Exact ActorPovAxisMappingV3 for this schema, or ActorPovAxisMappingV4
+        for a Capture the Flag source.
     base_sensor_frame : SharedObsBaseSensorFrameV3
         Exact SharedObsBaseSensorFrameV3 for the selected recipient.
 
@@ -1251,8 +1263,10 @@ class SharedObsSourceMaterialProjectionV3(_SharedObsSourceMaterialProjection):
 
     Notes
     -----
-    Built from frame V3 of a context V4 recording (SharedObs projection V3). A
-    sibling of V1 and V2. All other fields follow
+    Built from frame V3 of a context V4 recording (SharedObs projection V3), or
+    from a Capture the Flag frame V4 of a context V5 recording, whose axis
+    mapping is then ActorPovAxisMappingV4 (the observation shapes are the
+    same). A sibling of V1 and V2. All other fields follow
     _SharedObsSourceMaterialProjection. This record does not claim to contain
     the composed actor input.
     """
@@ -1361,8 +1375,9 @@ def _base_sensor_axis_mapping(
     """Copy recorded public action/observation mappings for one recipient.
 
     context owns the catalog and roster; selected_global_slot is a validated
-    slot in 0..9. Return V3 axes for context schema 4, V2 axes for context
-    schema 3, otherwise historical V1.
+    slot in 0..9. Return V4 axes for context schema 5 (Capture the Flag), V3
+    axes for context schema 4, V2 axes for context schema 3, otherwise
+    historical V1.
     The mapping includes self and unused slots, and leaves world movement
     directions unchanged. No policy input is materialized.
     """
@@ -1386,7 +1401,9 @@ def _base_sensor_axis_mapping(
         selected_global_slot
     ]
     axis_type = (
-        ActorPovAxisMappingV3
+        ActorPovAxisMappingV4
+        if context.schema_version == 5
+        else ActorPovAxisMappingV3
         if context.schema_version == 4
         else ActorPovAxisMappingV2
         if context.schema_version == 3
@@ -1427,8 +1444,9 @@ def _base_sensor_frame(
     frame supplies the selected epoch; selected_global_slot in 0..9 chooses
     the actor, and public_agent_id supplies its already-joined identity. Return
     a version-matched SharedObsBaseSensorFrame (frame V1, V2 or V3 gives base
-    sensor frame V1, V2 or V3), including history/lifecycle records and the V2/V3
-    self index. Do not combine other sources or grant access.
+    sensor frame V1, V2 or V3; a Capture the Flag frame V4, whose observation
+    shapes are frame V3's, gives V3), including history/lifecycle records and
+    the V2/V3 self index. Do not combine other sources or grant access.
     """
     observation = frame.base_observation
     previous = observation.previous_timestep_actions
@@ -1436,13 +1454,17 @@ def _base_sensor_frame(
     mask = frame.action_mask
     frame_type = (
         SharedObsBaseSensorFrameV3
-        if type(frame) is EvaluationFrameV3
+        if type(frame) in (EvaluationFrameV3, EvaluationFrameV4)
         else SharedObsBaseSensorFrameV2
         if type(frame) is EvaluationFrameV2
         else SharedObsBaseSensorFrameV1
     )
     fields: dict[str, int] = {}
-    if type(frame) is EvaluationFrameV2 or type(frame) is EvaluationFrameV3:
+    if (
+        type(frame) is EvaluationFrameV2
+        or type(frame) is EvaluationFrameV3
+        or type(frame) is EvaluationFrameV4
+    ):
         fields = {
             "self_ally_index": frame.base_observation.self_ally_index[
                 selected_global_slot
@@ -1450,7 +1472,7 @@ def _base_sensor_frame(
         }
     return frame_type(
         **fields,
-        schema_version=frame.schema_version,
+        schema_version=3 if type(frame) is EvaluationFrameV4 else frame.schema_version,
         observation_materialization="source_material_only",
         episode_id=frame.episode_id,
         public_agent_id=public_agent_id,
@@ -2964,13 +2986,13 @@ def _build_shared_obs_source_material_projection_v1(
         )
     projection_type = (
         SharedObsSourceMaterialProjectionV3
-        if type(frame) is EvaluationFrameV3
+        if type(frame) in (EvaluationFrameV3, EvaluationFrameV4)
         else SharedObsSourceMaterialProjectionV2
         if type(frame) is EvaluationFrameV2
         else SharedObsSourceMaterialProjectionV1
     )
     projection = cast(type[_SharedObsSourceMaterialProjection], projection_type)(
-        schema_version=frame.schema_version,
+        schema_version=base_sensor_frame.schema_version,
         disclosure_label=_SHARED_OBS_SOURCE_MATERIAL_DISCLOSURE,
         observation_materialization="source_material_only",
         exact_actor_input_export_available=False,
@@ -2999,7 +3021,7 @@ def build_shared_obs_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3010,7 +3032,8 @@ def build_shared_obs_source_material_projection_v1(
     Returns
     -------
     SharedObsSourceMaterialProjection
-        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3.
+        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3;
+        a Capture the Flag frame V4 gives projection V3 with axis mapping V4.
         Includes the recipient's base sensor frame/scene and ten availability
         cells. Exact composed actor-input export is False.
 
@@ -3044,7 +3067,7 @@ def build_shared_obs_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3055,7 +3078,8 @@ def build_shared_obs_source_material_projection_v1(
     Returns
     -------
     SharedObsSourceMaterialProjection
-        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3.
+        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3;
+        a Capture the Flag frame V4 gives projection V3 with axis mapping V4.
         Includes the recipient's base sensor frame/scene and ten availability
         cells. Exact composed actor-input export is False.
 
@@ -3089,7 +3113,7 @@ def build_shared_obs_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3100,7 +3124,8 @@ def build_shared_obs_source_material_projection_v1(
     Returns
     -------
     SharedObsSourceMaterialProjection
-        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3.
+        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3;
+        a Capture the Flag frame V4 gives projection V3 with axis mapping V4.
         Includes the recipient's base sensor frame/scene and ten availability
         cells. Exact composed actor-input export is False.
 
@@ -3134,7 +3159,7 @@ def build_shared_obs_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3145,7 +3170,8 @@ def build_shared_obs_source_material_projection_v1(
     Returns
     -------
     SharedObsSourceMaterialProjection
-        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3.
+        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3;
+        a Capture the Flag frame V4 gives projection V3 with axis mapping V4.
         Includes the recipient's base sensor frame/scene and ten availability
         cells. Exact composed actor-input export is False.
 
@@ -3178,7 +3204,7 @@ def build_shared_obs_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3189,7 +3215,8 @@ def build_shared_obs_source_material_projection_v1(
     Returns
     -------
     SharedObsSourceMaterialProjection
-        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3.
+        Version follows frame: frame V1, V2 or V3 gives projection V1, V2 or V3;
+        a Capture the Flag frame V4 gives projection V3 with axis mapping V4.
         Includes the recipient's base sensor frame/scene and ten availability
         cells. Exact composed actor-input export is False.
 
@@ -3277,7 +3304,7 @@ def build_shared_obs_authority_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3319,7 +3346,7 @@ def build_shared_obs_authority_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3361,7 +3388,7 @@ def build_shared_obs_authority_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3403,7 +3430,7 @@ def build_shared_obs_authority_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.
@@ -3444,7 +3471,7 @@ def build_shared_obs_authority_source_material_projection_v1(
     ----------
     context : EvaluationEpisodeContext
         Exact recorded context with execution_information_mode='shared_obs'.
-    frame : EvaluationFrameV1, EvaluationFrameV2 or EvaluationFrameV3
+    frame : EvaluationFrameV1 to EvaluationFrameV4
         Matching exact frame with recorded source-availability values.
     selected_global_slot : int
         Exact Python configured-active recipient slot in 0..9.

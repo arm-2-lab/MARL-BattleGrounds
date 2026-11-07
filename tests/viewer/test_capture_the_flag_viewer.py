@@ -1,21 +1,21 @@
 """Check the Replay Viewer's Capture the Flag games and match facts.
 
-Contracts: a NoSharedObs Capture the Flag replay V5 opens in the Replay Viewer
-in Oracle View and in Agent POV, at frame 0 and later, and both views carry
-both flags in their scene; a SharedObs one is refused with a plain message
-until its player views exist. build_match_summary_v1 summarizes a Capture
-the Flag frame (context V5) as task mode 3, with the captures as scores, the
-captures to win as the threshold, the result from the
+Contracts: a Capture the Flag replay V5, NoSharedObs or SharedObs, opens in
+the Replay Viewer in Oracle View and in each Agent POV, at frame 0 and later,
+and every view carries both flags in its scene. build_match_summary_v1
+summarizes a Capture the Flag frame (context V5) as task mode 3, with the
+captures as scores, the captures to win as the threshold, the result from the
 capture_the_flag_completed event and the configured last tick as the episode
-limit. Without the start frame, the score
-before the tick comes from the flag_captured event, credited to the carrier's
-team (the captured flag's enemy), whether the events are the transition's own
-or the visual batch's. The frames are hand-set, as in
+limit. Without the start frame, the score before the tick comes from the
+flag_captured event, credited to the carrier's team (the captured flag's
+enemy), whether the events are the transition's own or the visual batch's.
+The frames are hand-set, as in
 tests/rendering/test_capture_the_flag_presentation.py, until Core scores
 Capture the Flag (his C1.3 and C1.4). Host only, on CPU.
 """
 
 import jax
+import jax.numpy as jnp
 import pytest
 from tests.helpers.evaluation_fixtures import neutral_action
 from tests.rendering.test_capture_the_flag_presentation import (
@@ -32,17 +32,29 @@ from marl_battlegrounds.evaluation._recording.capture import (
     _capture_evaluation_transition_unit,  # pyright: ignore[reportPrivateUsage]
     _capture_initial_evaluation_frame,  # pyright: ignore[reportPrivateUsage]
 )
-from marl_battlegrounds.evaluation._replays.replay_v5 import build_replay_v5
+from marl_battlegrounds.evaluation._recording.recording_context import (
+    build_recording_context,
+)
+from marl_battlegrounds.evaluation._replays.replay_v5 import (
+    ReplayArtifactV5,
+    build_replay_v5,
+)
 from marl_battlegrounds.evaluation.models import (
+    CodeRevisionV2,
+    EvaluationEpisodeContextV5,
     EvaluationFrameV4,
     EvaluationTransitionV2,
 )
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay
+from marl_battlegrounds.policies.shared_obs import (
+    build_default_shared_obs_information_availability,
+)
 from marl_battlegrounds.rendering.evaluation_adapter import build_visual_event_batch_v2
 from marl_battlegrounds.viewer.match_summary import build_match_summary_v1
 from marl_battlegrounds.viewer.presentation_protocol import (
     ReplayNoSharedObsAuthorizedPresentationFrameV1,
     ReplayOracleAuthorizedPresentationFrameV1,
+    ReplaySharedObsAuthorizedPresentationFrameV1,
 )
 from marl_battlegrounds.viewer.replay_service import ReplayViewerService
 
@@ -77,10 +89,12 @@ def test_a_winning_capture_summarizes_as_capture_the_flag(
         assert build_match_summary_v1(_CONTEXT, won, events).previous_scores == (2, 0)
 
 
-def _with_c1c_rows(frame: EvaluationFrameV4) -> EvaluationFrameV4:
+def _with_c1c_rows(
+    context: EvaluationEpisodeContextV5, frame: EvaluationFrameV4
+) -> EvaluationFrameV4:
     # Fill each active actor's context columns 6-18 and flag rows 0-3 the way
     # C1.C defines them, with both flags at home, as Core will from C1.4 on.
-    config = _CONTEXT.resolved_env_config
+    config = context.resolved_env_config
     homes = config.capture_the_flag_flag_home_positions
     capture = config.capture_the_flag_flag_capture_distance
     touch = config.capture_the_flag_flag_interaction_distance
@@ -89,7 +103,7 @@ def _with_c1c_rows(frame: EvaluationFrameV4) -> EvaluationFrameV4:
     contexts = [list(row) for row in observation["context_features"]]
     objectives = [list(map(list, agent)) for agent in observation["objective_features"]]
     scores = frame.snapshot.capture_the_flag_scores
-    for slot, roster in enumerate(_CONTEXT.roster):
+    for slot, roster in enumerate(context.roster):
         if not roster.configured_active:
             continue
         team = roster.configured_team_id
@@ -117,18 +131,45 @@ def _with_c1c_rows(frame: EvaluationFrameV4) -> EvaluationFrameV4:
     return EvaluationFrameV4.model_validate(data)
 
 
-def test_a_capture_the_flag_replay_opens_in_oracle_view_and_agent_pov() -> None:
+def _ctf_replay(execution_information_mode: str) -> ReplayArtifactV5:
+    context, _ = build_recording_context(
+        jax.device_get(_CONFIG),
+        run_id="run-1",
+        phase="evaluation",
+        pass_id="1",
+        episode={"episode_id": 7, "map_id": 42},
+        policies={"team_a": "Alpha", "team_b": "Beta"},
+        details={
+            "code_revision": CodeRevisionV2(package_version="0.0.0").model_dump(
+                mode="json"
+            ),
+            "runtime_provenance": _RUNTIME.model_dump(mode="json"),
+            "execution_information_mode": execution_information_mode,
+        },
+    )
+    assert type(context) is EvaluationEpisodeContextV5
+    # SharedObs lets each actor receive its active teammates' sensors.
+    availability = (
+        build_default_shared_obs_information_availability(
+            jnp.asarray([row.configured_active for row in context.roster]),
+            jnp.asarray([row.configured_team_id for row in context.roster]),
+        )
+        if execution_information_mode == "shared_obs"
+        else None
+    )
     state, observation, mask, _ = reset(_CONFIG, jax.random.PRNGKey(0))
-    initial = _capture_initial_evaluation_frame(_CONTEXT, state, observation, mask)
+    initial = _capture_initial_evaluation_frame(
+        context, state, observation, mask, availability
+    )
     assert isinstance(initial, EvaluationFrameV4)
-    frames = [_with_c1c_rows(initial)]
+    frames = [_with_c1c_rows(context, initial)]
     transitions: list[EvaluationTransitionV2] = []
     for index in range(3):
         state, observation, reward, done, mask, info = step(
             _CONFIG, state, mask, neutral_action(), jax.random.PRNGKey(index + 1)
         )
         transition, frame = _capture_evaluation_transition_unit(
-            _CONTEXT,
+            context,
             frames[-1],
             state,
             observation,
@@ -136,38 +177,46 @@ def test_a_capture_the_flag_replay_opens_in_oracle_view_and_agent_pov() -> None:
             info.transition_facts,
             reward,
             done,
+            successor_shared_obs_information_availability_by_recipient_and_sensor_source=(
+                availability
+            ),
         )
         assert isinstance(frame, EvaluationFrameV4)
         assert isinstance(transition, EvaluationTransitionV2)
-        frames.append(_with_c1c_rows(frame))
+        frames.append(_with_c1c_rows(context, frame))
         transitions.append(transition)
-    replay = build_replay_v5(_CONTEXT, frames, transitions, runtime_provenance=_RUNTIME)
+    return build_replay_v5(context, frames, transitions, runtime_provenance=_RUNTIME)
+
+
+@pytest.mark.parametrize("execution_information_mode", ["no_shared_obs", "shared_obs"])
+def test_a_capture_the_flag_replay_opens_in_oracle_view_and_agent_pov(
+    execution_information_mode: str,
+) -> None:
+    replay = _ctf_replay(execution_information_mode)
     for frame_index in (0, 2):
         oracle = ReplayViewerService(
             LoadedReplay(replay), initial_frame_index=frame_index
         ).current_presentation()
-        pov = ReplayViewerService(
-            LoadedReplay(replay),
-            initial_frame_index=frame_index,
-            view_mode="pov",
-            pov_global_slot=0,
-        ).current_presentation()
         assert isinstance(oracle.payload, ReplayOracleAuthorizedPresentationFrameV1)
-        assert isinstance(pov.payload, ReplayNoSharedObsAuthorizedPresentationFrameV1)
-        for scene in (
-            oracle.payload.current_endpoint.scene,
-            pov.payload.current_endpoint.parts.scene,
-        ):
+        scenes = [oracle.payload.current_endpoint.scene]
+        for pov_global_slot in (0, 1):
+            pov = ReplayViewerService(
+                LoadedReplay(replay),
+                initial_frame_index=frame_index,
+                view_mode="pov",
+                pov_global_slot=pov_global_slot,
+            ).current_presentation()
+            assert isinstance(
+                pov.payload,
+                (
+                    ReplayNoSharedObsAuthorizedPresentationFrameV1,
+                    ReplaySharedObsAuthorizedPresentationFrameV1,
+                ),
+            )
+            scenes.append(pov.payload.current_endpoint.parts.scene)
+        for scene in scenes:
             assert scene.capture_the_flag is not None
             assert [flag.state for flag in scene.capture_the_flag.flags] == [
                 "home",
                 "home",
             ]
-    context = replay.header.context.model_copy(
-        update={"execution_information_mode": "shared_obs"}
-    )
-    shared = replay.model_copy(
-        update={"header": replay.header.model_copy(update={"context": context})}
-    )
-    with pytest.raises(ValueError, match="SharedObs Capture the Flag"):
-        ReplayViewerService(LoadedReplay(shared))

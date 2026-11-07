@@ -993,6 +993,7 @@ def _shared_public_id_by_global_slot(
         type(projection.axis_mapping) is not ActorPovAxisMappingV1
         and type(projection.axis_mapping) is not ActorPovAxisMappingV2
         and type(projection.axis_mapping) is not ActorPovAxisMappingV3
+        and type(projection.axis_mapping) is not ActorPovAxisMappingV4
     ):
         raise ValueError("SharedObs source axis must use the exact POV mapping.")
     validated_axis = type(projection.axis_mapping).model_validate(
@@ -2076,49 +2077,79 @@ def _merge_shared_contributions(
 
 
 def _pov_capture_the_flag(
-    frame: ActorPovFrame,
+    sources: tuple[tuple[tuple[tuple[float, ...], ...], ActorPovAxisMapping], ...],
     *,
-    selection: _SourceSelectionV1,
+    team_id: int,
     agent_by_public_id: dict[str, AuthorizedAgentV1],
 ) -> AuthorizedCaptureTheFlagV1 | None:
-    """Build both flags as the recipient's own objective rows show them.
+    """Build both flags as one view's own objective rows show them.
 
-    Return None unless the source is a Capture the Flag one (axis mapping V4).
-    Positions, states and countdowns are public to every actor (C1.C); a
-    carrier is named only when the rows name one, which they do only for a
-    body the actor sees or is (decision 155), and then by its POV key. The
-    return ticks have no actor source, so return_steps is None. Raise
-    ValueError when the rows are missing or break decision 139
-    (decode_capture_the_flag_objective_rows_v1), or name a carrier row whose
-    body this view does not hold. Nothing is read from Oracle data.
+    sources holds each source's objective rows and axis mapping: the recipient
+    alone in NoSharedObs; the recipient, then its admitted teammates, in
+    SharedObs. Return None unless the recipient's source is a Capture the Flag
+    one (axis mapping V4). team_id is the recipient's team. Positions, states
+    and countdowns are public to every actor (C1.C), so every source must agree
+    on them. A carrier is named when a source's rows name one, which they do
+    only for a body that source sees or is (decision 155); it is resolved
+    through that source's own observation rows to a public ID, then to its POV
+    key in agent_by_public_id. The return ticks have no actor source, so
+    return_steps is None. Raise ValueError when rows are missing or break
+    decision 139 (decode_capture_the_flag_objective_rows_v1), when sources
+    disagree about a flag or name different carriers, or when a named carrier's
+    body is not in this view. Nothing is read from Oracle data.
     """
-    if type(selection.axis_mapping) is not ActorPovAxisMappingV4:
+    if type(sources[0][1]) is not ActorPovAxisMappingV4:
         return None
-    rows = decode_capture_the_flag_objective_rows_v1(frame.objective_features)
-    mapping = selection.axis_mapping
+    decoded = [
+        (decode_capture_the_flag_objective_rows_v1(rows), mapping)
+        for rows, mapping in sources
+    ]
+    first = decoded[0][0]
 
-    def authorized(
-        row: CaptureTheFlagFlagRowV1,
-        *,
-        team_id: int,
-        home: tuple[float, float],
-        carrier_public_ids: tuple[str, ...],
-    ) -> AuthorizedCaptureTheFlagFlagV1:
-        """Key one decoded flag row's carrier through the carrier team's rows."""
-        carrier = (
-            None
-            if row.carrier_row is None
-            else agent_by_public_id.get(carrier_public_ids[row.carrier_row])
-        )
-        if row.carrier_row is not None and carrier is None:
-            raise ValueError("a flag row names a carrier this view does not hold.")
+    def public_facts(row: CaptureTheFlagFlagRowV1) -> tuple[object, ...]:
+        """Return the flag facts every actor sees alike."""
+        return (row.position, row.carried, row.countdown_steps)
+
+    for rows, _ in decoded[1:]:
+        if (
+            (rows.ally_home, rows.enemy_home) != (first.ally_home, first.enemy_home)
+            or (rows.capture_distance, rows.interaction_distance)
+            != (first.capture_distance, first.interaction_distance)
+            or public_facts(rows.ally_flag) != public_facts(first.ally_flag)
+            or public_facts(rows.enemy_flag) != public_facts(first.enemy_flag)
+        ):
+            raise ValueError("SharedObs sources disagree about the flags.")
+
+    def authorized(own_flag: bool) -> AuthorizedCaptureTheFlagFlagV1:
+        """Key one flag's carrier from every source that names one."""
+        named = {
+            public_id
+            for rows, mapping in decoded
+            for row in ((rows.ally_flag if own_flag else rows.enemy_flag),)
+            if row.carrier_row is not None
+            for public_id in (
+                (
+                    mapping.enemy_observation_row_public_agent_id_by_id
+                    if own_flag
+                    else mapping.ally_observation_row_public_agent_id_by_id
+                )[row.carrier_row],
+            )
+        }
+        if len(named) > 1:
+            raise ValueError("SharedObs sources name different flag carriers.")
+        carrier = None
+        if named:
+            carrier = agent_by_public_id.get(next(iter(named)))
+            if carrier is None:
+                raise ValueError("a flag row names a carrier this view does not hold.")
+        row = first.ally_flag if own_flag else first.enemy_flag
         return AuthorizedCaptureTheFlagFlagV1(
-            team_id=team_id,
+            team_id=team_id if own_flag else 3 - team_id,
             state=capture_the_flag_flag_state(
                 carried=row.carried, countdown_steps=row.countdown_steps
             ),
             position=row.position,
-            home_position=home,
+            home_position=first.ally_home if own_flag else first.enemy_home,
             carrier_presentation_key=None
             if carrier is None
             else carrier.presentation_key,
@@ -2128,23 +2159,12 @@ def _pov_capture_the_flag(
             countdown_steps=row.countdown_steps,
         )
 
-    own = authorized(
-        rows.ally_flag,
-        team_id=selection.configured_team_id,
-        home=rows.ally_home,
-        carrier_public_ids=mapping.enemy_observation_row_public_agent_id_by_id,
-    )
-    enemy = authorized(
-        rows.enemy_flag,
-        team_id=3 - selection.configured_team_id,
-        home=rows.enemy_home,
-        carrier_public_ids=mapping.ally_observation_row_public_agent_id_by_id,
-    )
-    team_a, team_b = (own, enemy) if selection.configured_team_id == 1 else (enemy, own)
+    own, enemy = authorized(True), authorized(False)
+    team_a, team_b = (own, enemy) if team_id == 1 else (enemy, own)
     return AuthorizedCaptureTheFlagV1(
         flags=(team_a, team_b),
-        capture_distance=rows.capture_distance,
-        interaction_distance=rows.interaction_distance,
+        capture_distance=first.capture_distance,
+        interaction_distance=first.interaction_distance,
         return_steps=None,
     )
 
@@ -2447,7 +2467,9 @@ def build_no_shared_obs_authorized_scene_v1(
         spawn_pads=tuple(spawn_pads),
         respawn_waves=respawn_waves,
         capture_the_flag=_pov_capture_the_flag(
-            frame, selection=selection, agent_by_public_id=agent_by_public_id
+            ((frame.objective_features, selection.axis_mapping),),
+            team_id=selection.configured_team_id,
+            agent_by_public_id=agent_by_public_id,
         ),
     )
     recipient_key = pov_presentation_key_v1(
@@ -2481,7 +2503,8 @@ def build_shared_obs_authorized_scene_v1(
     Parameters
     ----------
     recipient_source_material : SharedObsSourceMaterialProjection
-        Exact selected recipient projection V1, V2 or V3. Its availability,
+        Exact selected recipient projection V1, V2 or V3 (V3 with axis mapping
+        V4 for a Capture the Flag source). Its availability,
         lifecycle, map and next-decision mask own the resulting view.
     all_active_nonrecipient_source_material : tuple of SharedObsSourceMaterialProjection
         Every and only configured-active nonrecipient source, including opponents
@@ -2498,6 +2521,9 @@ def build_shared_obs_authorized_scene_v1(
         Neutral scene sorted by physical team/public ID, recipient-owned mask,
         admitted sensor list and per-body observation provenance. This is a
         visual union, not an export of exact composed SharedObs policy tensors.
+        A Capture the Flag source (axis mapping V4) adds both flags from the
+        recipient's and admitted teammates' own objective rows; a carrier is
+        named when any of them names one.
 
     Raises
     ------
@@ -2505,7 +2531,9 @@ def build_shared_obs_authorized_scene_v1(
         Catalog or source container/root types are unsupported.
     ValueError
         Source set, headers, topology, epoch, availability, lifecycle, catalog
-        or duplicate-body facts disagree.
+        or duplicate-body facts disagree, or Capture the Flag rows are missing
+        (before his C1.4), break decision 139, disagree between sources, name
+        different carriers or name a carrier this view does not hold.
 
     Notes
     -----
@@ -2824,6 +2852,27 @@ def build_shared_obs_authorized_scene_v1(
         ),
         spawn_pads=tuple(spawn_pads),
         respawn_waves=respawn_waves,
+        capture_the_flag=_pov_capture_the_flag(
+            (
+                (
+                    recipient_frame.objective_features,
+                    recipient_source_material.axis_mapping,
+                ),
+                *(
+                    (
+                        header_by_slot[
+                            row.sensor_source_global_slot
+                        ].projection.base_sensor_frame.objective_features,
+                        header_by_slot[
+                            row.sensor_source_global_slot
+                        ].projection.axis_mapping,
+                    )
+                    for row in admitted_topology
+                ),
+            ),
+            team_id=recipient_team_id,
+            agent_by_public_id=agent_by_public_id,
+        ),
     )
     provenance = tuple(
         SharedObsAgentObservationProvenanceV1(
