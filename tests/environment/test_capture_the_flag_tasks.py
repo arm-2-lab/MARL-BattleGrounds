@@ -16,16 +16,17 @@ Capture the Flag record on a Capture the Flag handle, nothing on a Team
 Deathmatch handle. make_standard_capture_the_flag_config builds the same config
 as converting the Team Deathmatch one on Capture the Flag's own map geometry,
 with its settings passed through; list_ctf_maps and maps_for_task give each
-mode's 52 maps. Capture the Flag has its own 52 maps: ordered IDs,
-"ctf_map_id_<id>_" names ending in their split, Team Deathmatch's splits and
-curriculum flags, and its own entries; the factory reads its own map files and
-never Team Deathmatch's, listed_map_id accepts only the task's own entries, and
-TASK_MODES equals Core's mode constants. make("ctf") plays Capture the Flag on
-a listed map with the mode's default threshold, refuses a Red Zone depth, and a
-task name and its exact config must share a mode; the error names the task to
-pass. Each handle's task property names the task make fixed, "tdm" also for a
-neutral config. One dispatcher, make_standard_config, builds each task's standard config
-with the task's defaults (DEFAULT_SCORE_THRESHOLDS and
+mode's 52 maps, and scenarios_for_task each mode's scenarios (Team Deathmatch's
+eight; none yet for Capture the Flag). Capture the Flag has its own 52 maps:
+ordered IDs, "ctf_map_id_<id>_" names ending in their split, Team Deathmatch's
+splits and curriculum flags, and its own entries; the factory reads its own map
+files and never Team Deathmatch's, listed_map_id accepts only the task's own
+entries, and TASK_MODES equals Core's mode constants. make("ctf") plays Capture
+the Flag on a listed map with the mode's default threshold, refuses a Red Zone
+depth, and a task name and its exact config must share a mode; the error names
+the task to pass. Each handle's task property names the task make fixed, "tdm"
+also for a neutral config. One dispatcher, make_standard_config, builds each
+task's standard config with the task's defaults (DEFAULT_SCORE_THRESHOLDS and
 DEFAULT_RED_ZONE_DEPTHS), takes only exactly 0.0 as a Capture the Flag depth,
 and is what normalize_episode_specs builds from map IDs; task_for_mode names
 the task each Core mode plays.
@@ -67,11 +68,13 @@ from marl_battlegrounds.tasks import (
     balanced_spawn_configs,
     list_ctf_maps,
     list_tdm_maps,
+    list_tdm_scenarios,
     listed_map_id,
     make_standard_capture_the_flag_config,
     make_standard_config,
     make_standard_team_deathmatch_config,
     maps_for_task,
+    scenarios_for_task,
     spawn_locations_for_source,
     task_for_mode,
 )
@@ -245,6 +248,10 @@ def test_each_mode_lists_its_maps_through_one_dispatcher() -> None:
     assert maps_for_task("tdm") == list_tdm_maps()
     with pytest.raises(ValueError, match=r"^task must be one of 'tdm', 'ctf'"):
         maps_for_task("koth")  # pyright: ignore[reportArgumentType]
+    assert scenarios_for_task("tdm") == list_tdm_scenarios()
+    assert scenarios_for_task("ctf") == ()
+    with pytest.raises(ValueError, match=r"^task must be one of 'tdm', 'ctf'"):
+        scenarios_for_task("koth")  # pyright: ignore[reportArgumentType]
 
 
 def test_make_ctf_plays_capture_the_flag_on_a_listed_map() -> None:

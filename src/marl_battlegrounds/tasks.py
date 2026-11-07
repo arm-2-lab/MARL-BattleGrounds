@@ -287,6 +287,41 @@ def list_tdm_scenarios() -> tuple[TDMScenarioInfo, ...]:
     return asset_manifest().scenarios
 
 
+def scenarios_for_task(task: TaskName) -> tuple[TDMScenarioInfo, ...]:
+    """Return one mode's scenario catalog, for code that serves every mode.
+
+    Parameters
+    ----------
+    task : TaskName
+        ``"tdm"`` or ``"ctf"``, the names make accepts.
+
+    Returns
+    -------
+    tuple[TDMScenarioInfo, ...]
+        list_tdm_scenarios() for ``"tdm"``, its eight scenarios in numeric ID
+        order. An empty tuple for ``"ctf"``: Capture the Flag has no scenarios
+        until its own arrive.
+
+    Raises
+    ------
+    ValueError
+        task is not a supported task name.
+
+    Notes
+    -----
+    The one place that knows which scenarios belong to which mode, the twin of
+    maps_for_task. Training keeps every scenario listed here out of its
+    content, so a mode's protected starts are never trained on. Host-only.
+    """
+    if task == "tdm":
+        return list_tdm_scenarios()
+    if task == "ctf":
+        return ()
+    raise ValueError(
+        f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+    )
+
+
 def _config_has_batch(env_config: EnvConfig, num_envs: int | None) -> bool:
     """Check every configuration leaf's scalar or native-batch shape.
 
