@@ -36,16 +36,21 @@ download fails step 4, and so does running past step 4's hour. Children in
 steps 5 to 9 run behind sandbox(clone, False) with exactly
 entry_environment(clone, offline=True), HF_HOME and HF_HUB_OFFLINE included,
 and step 7's sealed export writes inside the clone before the check copies it
-to the work folder's model.zip.
+to the work folder's model.zip; a link there is refused, so the check never
+copies a file the link points to. A built-in run's choice is read by a sealed
+child (its code reports an own loop as no built-in run), never by the check
+itself. A committed link that points outside the repository fails step 2,
+while one that stays inside passes.
 
 After step 5 the waiting rule holds: a run stopped at its time limit with
 nothing saved to enter (an empty own-loop output folder, or a built-in run
 without a choice) makes steps 6, 7 and 9 wait and step 8 "not measured"; a run
 that ended by itself with nothing saved fails step 6; a saved run makes step 8
 pass even when loading fails; an error in step 9 fails step 9 instead of
-crashing the check. Step 9 passes or fails only a reading on an RTX 5090 that
-reports its memory; a reading on another GPU, one without memory, and a CPU
-are "not measured".
+crashing the check. Step 9 plays the check's copy of the export in a child of
+the check's own isolated Python with deterministic XLA, and passes or fails
+only a reading on an RTX 5090 that reports its memory; a reading on another
+GPU, one without memory, and a CPU are "not measured".
 
 check_entry sorts steps 1-7 as must pass and 8-9 as measured here: a failed
 measured step never fails the check, a failed must-pass step does. A dirty
@@ -132,6 +137,10 @@ def _checker(folder: Path, sandbox: entry.Sandbox | None = None) -> entry._Check
 def _form_text_fields() -> set[str]:
     body = yaml.safe_load(FORM.read_text())["body"]
     return {f["id"] for f in body if f["type"] in ("input", "textarea")}
+
+
+def _own_loop(checker: entry._Checker) -> None:
+    checker.builtin_run, checker.choice = False, None
 
 
 @pytest.fixture
@@ -380,6 +389,19 @@ def test_downloads_and_children_run_behind_the_sandbox(
     assert (starter.parent / "model.zip").read_bytes() == exported.read_bytes()
     assert env["HF_HUB_OFFLINE"] == "1" and env["HF_HOME"] == str(checker.hf_home)
     assert env == entry.entry_environment(starter, offline=True)
+    secret = starter.parent / "secret.txt"
+    secret.write_text("hf_not_for_you\n")
+    exported.unlink()
+    exported.symlink_to(secret)
+
+    def left_a_link(*args: object, **kwargs: object) -> tuple[int, str, str]:
+        return 0, '{"exported": true}', ""
+
+    monkeypatch.setattr(entry, "_run", left_a_link)
+    with pytest.raises(entry._StepFailedError, match="did not leave a plain file"):
+        checker.step_7()
+    assert b"hf_not_for_you" not in (starter.parent / "model.zip").read_bytes()
+    monkeypatch.setattr(entry, "_run", run)
     reply[0] = (1, "", "no such model")
     with pytest.raises(entry._StepFailedError, match="no such model"):
         checker.fetch(QMIX, time.monotonic() + 60)
@@ -416,6 +438,7 @@ def test_a_run_with_nothing_saved_waits_only_when_stopped(
         assert not online
         return ["env", "MARL_BGS_TEST_SEALED=yes"]
 
+    monkeypatch.setattr(entry._Checker, "find_choice", _own_loop)
     _write_entry(starter, train="echo $MARL_BGS_TEST_SEALED > sealed.txt; sleep 30")
     stopped = _checker(starter, sandbox=sandbox)
     assert "then stopped" in stopped.step_5()
@@ -451,6 +474,7 @@ def test_a_saved_run_passes_step_8_and_a_step_9_error_fails_step_9(
         return None, None, ""
 
     monkeypatch.setattr(entry._Checker, "python", slow)
+    monkeypatch.setattr(entry._Checker, "find_choice", _own_loop)
     checker = _checker(starter)
     checker.after_training()
     assert checker.steps[6].detail == "Loading took more than 10 minutes."
@@ -500,11 +524,15 @@ def test_step_9_decides_only_on_an_rtx_5090(
         "peak_memory_bytes": peak,
     }
 
-    def played(*args: object, **kwargs: object) -> tuple[int, dict[str, Any], str]:
-        assert args[2] == str(starter / ".entry-check-model.zip")
-        return 0, reading, ""
+    def played(
+        command: Sequence[str], *, cwd: Path, env: dict[str, str], timeout: float
+    ) -> tuple[int, str, str]:
+        export = str(starter.parent / "model.zip")
+        assert list(command) == [sys.executable, "-I", "-c", entry._PLAY_CODE, export]
+        assert "--xla_gpu_deterministic_ops=true" in env["XLA_FLAGS"]
+        return 0, json.dumps(reading), ""
 
-    monkeypatch.setattr(entry._Checker, "python", played)
+    monkeypatch.setattr(entry, "_run", played)
     assert _checker(starter).step_9()[0] == status
 
 
@@ -591,6 +619,38 @@ def test_check_and_submit(
         entry.submit_entry(starter, open_browser=False)
     _git(starter, "remote", "set-url", "origin", "https://me:FAKE@github.com/t/e.git")
     assert entry._remote_url(starter, commit) == "https://github.com/t/e"
+
+
+def test_the_choice_is_read_by_a_sealed_child(
+    starter: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def answered(*args: object, **kwargs: object) -> tuple[int, dict[str, Any], str]:
+        assert args[1:3] == (entry._CHOICE_CODE, str(starter / "runs/entry"))
+        return 0, {"builtin": True, "choice": "/clone/runs/entry/actors/a"}, ""
+
+    monkeypatch.setattr(entry._Checker, "python", answered)
+    checker = _checker(starter)
+    checker.find_choice()
+    assert checker.builtin_run and checker.choice == Path("/clone/runs/entry/actors/a")
+    monkeypatch.setattr(sys, "argv", ["-c", str(starter / "runs/entry")])
+    exec(entry._CHOICE_CODE, {})
+    assert json.loads(capsys.readouterr().out) == {"builtin": False, "choice": None}
+
+
+def test_a_committed_link_out_of_the_repository_fails_step_2(
+    starter: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_steps(monkeypatch)
+    (starter / "inside").symlink_to("README.md")
+    _git(starter, "add", "inside")
+    _git(starter, "commit", "--quiet", "-m", "A link inside")
+    assert entry.check_entry(starter).passed
+    (starter / "entry.yaml").unlink()
+    (starter / "entry.yaml").symlink_to("/etc/hostname")
+    _git(starter, "commit", "--quiet", "-am", "A link outside")
+    check = entry.check_entry(starter)
+    assert check.steps[1].status == "failed"
+    assert "point outside the repository: entry.yaml" in check.steps[1].detail
 
 
 def test_a_kept_folder_keeps_the_clone(
