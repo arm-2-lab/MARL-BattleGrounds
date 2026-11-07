@@ -64,7 +64,7 @@ def wandb_logging(
     project: str,
     directory: str,
     entity: str | None = None,
-    mode: Literal["online", "offline"] = "online",
+    mode: Literal["online", "offline"] | None = None,
 ) -> Generator[Callable[[dict[str, Any]], None]]:
     """Yield a lazy logger and close its SDK run when the training attempt ends.
 
@@ -78,9 +78,12 @@ def wandb_logging(
         YAML against the launch folder. Created only on the first saved update.
     entity : str or None, default=None
         Optional W&B account/team; None uses the SDK's configured account.
-    mode : {"online", "offline"}, default="online"
-        Whether W&B sends records remotely or saves them locally. To disable
-        logging entirely, omit this factory or set runtime.on_update=null.
+    mode : {"online", "offline"} or None, default=None
+        Whether W&B sends records remotely or saves them locally. None leaves
+        the choice to W&B: its WANDB_MODE environment variable, otherwise its
+        own default (online), so a run with WANDB_MODE=offline logs offline.
+        An explicit value wins over WANDB_MODE. To disable logging entirely,
+        omit this factory or set runtime.on_update=null.
 
     Yields
     ------
@@ -115,8 +118,8 @@ def wandb_logging(
         not isinstance(cast(object, entity), str) or not entity.strip()
     ):
         raise ValueError("W&B entity must be nonempty or None")
-    if mode not in ("online", "offline"):
-        raise ValueError("W&B mode must be online or offline")
+    if mode not in (None, "online", "offline"):
+        raise ValueError("W&B mode must be online, offline or None")
     from marl_battlegrounds.evaluation.revision import (
         _check_output_path,  # pyright: ignore[reportPrivateUsage]
     )

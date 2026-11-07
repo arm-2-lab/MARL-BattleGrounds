@@ -1,6 +1,8 @@
 """Check optional callbacks, cleanup and durable factory receipts without an SDK.
 
-The fake W&B run proves axis setup, attempt separation and cleanup. Subprocess
+The fake W&B run proves axis setup, attempt separation and cleanup, and that
+the logger's mode defaults to None, so WANDB_MODE decides, while an explicit
+mode passes through and any other value is refused. Subprocess
 checks forbid optional/numerical imports when logging is disabled. Scoped
 factories reuse ordinary trainer keyword routes; they do not own a scheduler.
 """
@@ -121,6 +123,36 @@ def test_wandb_scope_groups_attempts_and_closes_after_errors(
     assert all(run.finished == 1 for run in runs)
     assert "SECRET" not in json.dumps(calls)
     assert all(run.axes == [("env_steps", None), ("*", "env_steps")] for run in runs)
+
+
+def test_wandb_mode_defaults_to_none_so_wandb_mode_decides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marl_battlegrounds.experiments.callbacks import wandb_logging
+
+    calls: list[dict[str, Any]] = []
+
+    def init(**kwargs: object) -> FakeRun:
+        calls.append(kwargs)
+        return FakeRun()
+
+    monkeypatch.setitem(sys.modules, "wandb", SimpleNamespace(init=init))
+    choices: dict[str, dict[str, Any]] = {"default": {}, "offline": {"mode": "offline"}}
+    for name, options in choices.items():
+        with wandb_logging(
+            project="software-check", directory=str(tmp_path / name), **options
+        ) as callback:
+            callback({"run_id": "durable", "attempt_id": name, "env_steps": 32})
+    assert [call["mode"] for call in calls] == [None, "offline"]
+    with (
+        pytest.raises(ValueError, match="W&B mode must be"),
+        wandb_logging(
+            project="software-check",
+            directory=str(tmp_path),
+            mode=cast(Any, "disabled"),
+        ),
+    ):
+        pass
 
 
 def test_unused_wandb_scope_does_not_import_or_create_files(tmp_path: Path) -> None:
