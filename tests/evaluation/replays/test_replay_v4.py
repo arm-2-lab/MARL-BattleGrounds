@@ -3,14 +3,15 @@
 Replay V4 holds context V4 (resolved config V2 with the depth) and frame V3 (20 context
 columns; column 19 is the depth). It saves and loads as the exact canonical bytes its
 reference describes, and the package's replay_from_packets builds it. load_replay
-refuses an unsupported version 5 and V4 content relabelled as V3, and the V4 builder
-refuses pre-Red-Zone contexts and frames. Records written before the rule (the fixtures
-in tests/fixtures/historical_scenario_v4, captured at commit 59c157c: two replay V3
-files, a scenario record V4 and an Agent POV V2 export of slot 0) still load byte for
-byte and validate; the POV V2 file joins its source replay V3. The scenario record V5
-loader refuses V4 bytes and the V4 loader refuses V5-labelled bytes. The POV V3 loader
-refuses the POV V2 file as an unsupported schema version. reconstruct_env_config_v1
-returns the recorded depth from a V2 record and 0.0 from a V1 record.
+refuses an unsupported version 6 and V4 content relabelled as V3 or V5, and the V4
+builder refuses pre-Red-Zone contexts and frames. Records written before the rule (the
+fixtures in tests/fixtures/historical_scenario_v4, captured at commit 59c157c: two
+replay V3 files, a scenario record V4 and an Agent POV V2 export of slot 0) still load
+byte for byte and validate; the POV V2 file joins its source replay V3. The scenario
+record V5 loader refuses V4 bytes and the V4 loader refuses V5-labelled bytes. The POV
+V3 loader refuses the POV V2 file as an unsupported schema version.
+reconstruct_env_config_v1 returns the recorded depth from a V2 record and 0.0 from a V1
+record.
 """
 
 import json
@@ -134,7 +135,8 @@ def test_replay_readers_and_builder_refuse_other_versions(
 ) -> None:
     payload = json.loads(canonical_json_bytes(current_replay))
     for version, code in (
-        (5, "unsupported_schema_version"),
+        (6, "unsupported_schema_version"),
+        (5, "model_validation_failed"),
         (3, "model_validation_failed"),
     ):
         path = _write_json(

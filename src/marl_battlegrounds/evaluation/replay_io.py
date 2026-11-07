@@ -5,8 +5,9 @@ with unique keys, exact schema versions, and canonical bytes. Paths are opened
 through POSIX directory descriptors without following symlinks. Parent
 directories must already exist; this module does not create them.
 
-Replay V2-V4 are single files; V4 records the Team Deathmatch Red Zone rule
-and older versions keep their original meaning. Legacy V1 bundles publish a
+Replay V2-V5 are single files; V4 records the Team Deathmatch Red Zone rule,
+V5 records a Capture the Flag game, and older versions keep their original
+meaning. Legacy V1 bundles publish a
 separate metric sidecar before the replay that references it. Publication
 never overwrites an existing target; retries can explicitly verify previously
 published cached bytes. Host validation and filesystem durability live here.
@@ -30,6 +31,7 @@ from typing import Literal, cast
 
 from pydantic import ValidationError
 
+from marl_battlegrounds._task_settings import task_for_mode
 from marl_battlegrounds.evaluation._recording.validation import (
     validate_declared_model_tree,
 )
@@ -58,6 +60,7 @@ from marl_battlegrounds.evaluation._replays.replay import (
 from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
 from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactV3
 from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
     AssignedPolicySlotV2,
@@ -65,6 +68,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrame,
     EvaluationFrameV1,
     EvaluationModel,
+    EvaluationTransition,
     EvaluationTransitionV1,
     canonical_json_bytes,
 )
@@ -84,6 +88,17 @@ from marl_battlegrounds.evaluation.scenario import (
 )
 
 DEFAULT_MAX_REPLAY_FILE_SIZE_BYTES_V1 = 1024**3
+# Replays that carry their own records, in version order: V2-V4 (Team Deathmatch
+# and neutral games) and V5 (Capture the Flag).
+type _SelfContainedReplay = (
+    ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4 | ReplayArtifactV5
+)
+_SELF_CONTAINED_REPLAY_TYPES = (
+    ReplayArtifactV2,
+    ReplayArtifactV3,
+    ReplayArtifactV4,
+    ReplayArtifactV5,
+)
 DEFAULT_MAX_REPLAY_JSON_DEPTH_V1 = 128
 REPLAY_FILE_SUFFIX_V1 = ".marlbg-replay.json"
 METRIC_REPORT_FILE_SUFFIX_V1 = ".marlbg-metrics.json"
@@ -289,12 +304,14 @@ class LoadedReplay:
 
     Attributes
     ----------
-    replay : ReplayArtifactV1 | ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4
-        ReplayArtifactV1, V2, V3 or V4 (V4 records the Red Zone rule).
+    replay : ReplayArtifactV1 | ReplayArtifactV2 | ReplayArtifactV3 |
+    ReplayArtifactV4 | ReplayArtifactV5
+        ReplayArtifactV1, V2, V3 or V4 (V4 records the Red Zone rule), or V5
+        (a Capture the Flag game).
     metric_report_artifact : EvaluationMetricReportArtifactV1 | None
-        Optional V1 sidecar; defaults to None and is forbidden for V2-V4.
+        Optional V1 sidecar; defaults to None and is forbidden for V2-V5.
     status : Literal['complete', 'metric_report_missing', 'not_recorded']
-        not_recorded for V2-V4 (default); complete or metric_report_missing for V1.
+        not_recorded for V2-V5 (default); complete or metric_report_missing for V1.
 
     Notes
     -----
@@ -302,7 +319,7 @@ class LoadedReplay:
     pairing only.
     """
 
-    replay: ReplayArtifactV1 | ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4
+    replay: ReplayArtifactV1 | _SelfContainedReplay
     metric_report_artifact: EvaluationMetricReportArtifactV1 | None = None
     status: Literal["complete", "metric_report_missing", "not_recorded"] = (
         "not_recorded"
@@ -311,19 +328,14 @@ class LoadedReplay:
     def __post_init__(self) -> None:
         """Require exact replay roots and a sidecar status consistent with that version.
 
-        V2-V4 forbid legacy sidecars and require not_recorded. V1 uses complete only
+        V2-V5 forbid legacy sidecars and require not_recorded. V1 uses complete only
         when
         a sidecar is present. Raise TypeError or ValueError; do not load or validate
         files.
         """
-        if type(self.replay) not in (
-            ReplayArtifactV1,
-            ReplayArtifactV2,
-            ReplayArtifactV3,
-            ReplayArtifactV4,
-        ):
+        if type(self.replay) not in (ReplayArtifactV1, *_SELF_CONTAINED_REPLAY_TYPES):
             raise TypeError("loaded replay requires an exact supported artifact")
-        if type(self.replay) in (ReplayArtifactV2, ReplayArtifactV3, ReplayArtifactV4):
+        if type(self.replay) in _SELF_CONTAINED_REPLAY_TYPES:
             if self.status != "not_recorded" or self.metric_report_artifact is not None:
                 raise ValueError(
                     "Self-contained replay has no legacy metric-report sidecar"
@@ -365,7 +377,7 @@ class LoadedReplay:
             raise IndexError("frame index is outside the captured replay prefix")
         return self.replay.frames[frame_index]
 
-    def incoming_transition_at(self, frame_index: int) -> EvaluationTransitionV1 | None:
+    def incoming_transition_at(self, frame_index: int) -> EvaluationTransition | None:
         """Return the transition that produced one captured frame.
 
         Parameters
@@ -375,7 +387,7 @@ class LoadedReplay:
 
         Returns
         -------
-        EvaluationTransitionV1 | None
+        EvaluationTransition | None
             None at frame zero; otherwise the transition at frame_index minus one.
 
         Raises
@@ -450,8 +462,8 @@ class PreparedReplay:
 
     Attributes
     ----------
-    replay : ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4
-        Exact ReplayArtifactV2, V3 or V4.
+    replay : _SelfContainedReplay
+        Exact ReplayArtifactV2, V3, V4 or V5.
     max_file_size_bytes : int
         Positive per-file cap, default 1 GiB (1024**3 bytes).
     replay_json_bytes : bytes
@@ -465,13 +477,13 @@ class PreparedReplay:
     hash differs in purpose from the artifact's digest field, which excludes itself.
     """
 
-    replay: ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4
+    replay: _SelfContainedReplay
     max_file_size_bytes: int = DEFAULT_MAX_REPLAY_FILE_SIZE_BYTES_V1
     replay_json_bytes: bytes = field(init=False, repr=False)
     replay_payload_sha256: str = field(init=False)
 
     def __post_init__(self) -> None:
-        """Validate exact V2-V4 replay content and cache canonical bytes within the
+        """Validate exact V2-V5 replay content and cache canonical bytes within the
         limit.
 
         Reject invalid limits/types/models before publishing anything. Oversized bytes
@@ -480,11 +492,7 @@ class PreparedReplay:
         size = _require_positive_limit(
             self.max_file_size_bytes, name="max_file_size_bytes"
         )
-        if type(self.replay) not in (
-            ReplayArtifactV2,
-            ReplayArtifactV3,
-            ReplayArtifactV4,
-        ):
+        if type(self.replay) not in _SELF_CONTAINED_REPLAY_TYPES:
             raise TypeError("prepared replay requires an exact supported artifact")
         canonical = validate_declared_model_tree(
             self.replay, record_name="replay", expected_type=type(self.replay)
@@ -492,17 +500,15 @@ class PreparedReplay:
         self._set_payload(canonical, size)
 
     @classmethod
-    def _from_capture(
-        cls, replay: ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4
-    ) -> PreparedReplay:
+    def _from_capture(cls, replay: _SelfContainedReplay) -> PreparedReplay:
         """Prepare freshly validated collector output without a duplicate model-tree
         pass.
 
         Only immediate capture-to-publication uses this trusted path. Require exact
-        replay V2-V4, use the default 1 GiB limit, and cache canonical bytes. Arbitrary
+        replay V2-V5, use the default 1 GiB limit, and cache canonical bytes. Arbitrary
         external models must use the normal strict constructor.
         """
-        if type(replay) not in (ReplayArtifactV2, ReplayArtifactV3, ReplayArtifactV4):
+        if type(replay) not in _SELF_CONTAINED_REPLAY_TYPES:
             raise TypeError(
                 "capture publication requires an exact self-contained replay"
             )
@@ -1756,15 +1762,11 @@ def load_replay(
             payload,
             path=replay_path,
             expected_schema_id=REPLAY_ARTIFACT_SCHEMA_ID,
-            expected_schema_version=(1, 2, 3, 4),
+            expected_schema_version=(1, 2, 3, 4, 5),
             max_json_depth=depth,
         )
-        if root["schema_version"] in (2, 3, 4):
-            model: (
-                type[ReplayArtifactV2] | type[ReplayArtifactV3] | type[ReplayArtifactV4]
-            ) = {2: ReplayArtifactV2, 3: ReplayArtifactV3, 4: ReplayArtifactV4}[
-                cast(int, root["schema_version"])
-            ]
+        if root["schema_version"] in (2, 3, 4, 5):
+            model = _SELF_CONTAINED_REPLAY_TYPES[cast(int, root["schema_version"]) - 2]
             try:
                 replay = model.model_validate_json(payload)
             except (TypeError, ValueError) as error:
@@ -1859,7 +1861,8 @@ def generated_replay_filename(
         map_info.technical_name
         if map_info.map_id is not None
         else (
-            f"tdm_{'custom' if map_info.display_name == 'Custom Map' else 'recorded'}"
+            f"{task_for_mode(context.resolved_env_config.task_mode) or 'tdm'}_"
+            f"{'custom' if map_info.display_name == 'Custom Map' else 'recorded'}"
             f"_map_{context.identity.layout.canonical_digest[:12]}"
         )
     )
@@ -2184,7 +2187,7 @@ def _publish_staged_replays(  # pyright: ignore[reportUnusedFunction]
 
 
 def save_replay(
-    replay: ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4,
+    replay: _SelfContainedReplay,
     path: str | os.PathLike[str],
     *,
     max_file_size_bytes: int = DEFAULT_MAX_REPLAY_FILE_SIZE_BYTES_V1,
@@ -2193,8 +2196,8 @@ def save_replay(
 
     Parameters
     ----------
-    replay : ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4
-        Exact ReplayArtifactV2, V3 or V4, including valid partial prefixes.
+    replay : _SelfContainedReplay
+        Exact ReplayArtifactV2, V3, V4 or V5, including valid partial prefixes.
     path : str | os.PathLike[str]
         Absent nonempty .marlbg-replay.json destination in an existing parent.
     max_file_size_bytes : int

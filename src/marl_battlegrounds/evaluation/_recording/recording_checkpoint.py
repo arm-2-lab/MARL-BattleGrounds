@@ -320,7 +320,10 @@ def _restore_replays(
         _build_resolved_env_config_for,  # pyright: ignore[reportPrivateUsage]
         reconstruct_env_config_v1,
     )
-    from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
+    from marl_battlegrounds.evaluation.models import (
+        EvaluationEpisodeContextV4,
+        EvaluationEpisodeContextV5,
+    )
     from marl_battlegrounds.evaluation.run_writer import configuration_identity
 
     collector = ReplayCollector(context_factory)
@@ -338,9 +341,16 @@ def _restore_replays(
             expected_path = f"open_replays/{episode_id}.npylog"
             if record.get("path") != expected_path:
                 raise ValueError("open replay path differs from its episode ID")
-            context = EvaluationEpisodeContextV4.model_validate_json(
-                json.dumps(record.get("context"))
+            # A Capture the Flag replay saved its context V5; every other open
+            # replay holds context V4.
+            saved_context = record.get("context")
+            context_type = (
+                EvaluationEpisodeContextV5
+                if isinstance(saved_context, dict)
+                and cast(dict[str, object], saved_context).get("schema_version") == 5
+                else EvaluationEpisodeContextV4
             )
+            context = context_type.model_validate_json(json.dumps(saved_context))
             runtime = RuntimeProvenanceV1.model_validate_json(
                 json.dumps(record.get("runtime"))
             )

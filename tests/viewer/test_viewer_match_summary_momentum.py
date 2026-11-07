@@ -48,6 +48,7 @@ from marl_battlegrounds._battle_client.model import DebuggerSession
 from marl_battlegrounds._battle_client.service import DebuggerService
 from marl_battlegrounds.core.types import Action
 from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.replay_io import LoadedReplay, load_replay
 from marl_battlegrounds.viewer.match_summary import (
     MOMENTUM_TICKS,
@@ -133,6 +134,7 @@ def _summary(session: DebuggerSession, view_mode: str) -> MatchSummaryV1:
 
 def test_match_summary_carries_the_field_and_refuses_impossible_values() -> None:
     loaded = load_replay(_SCENARIO_REPLAY)
+    assert not isinstance(loaded.replay, ReplayArtifactV5)
     context = loaded.replay.header.context
     frames = loaded.replay.frames
     transitions = loaded.replay.transitions
@@ -256,6 +258,7 @@ def test_replay_viewer_reads_the_recorded_scores_ten_frames_back(
     fall_game: tuple[DebuggerSession, ...],
 ) -> None:
     loaded = _replay_of(fall_game)
+    assert not isinstance(loaded.replay, ReplayArtifactV5)
     frames = loaded.replay.frames
     assert len(frames) == MOMENTUM_TICKS + 2
     for view_mode in ("researcher", "pov"):

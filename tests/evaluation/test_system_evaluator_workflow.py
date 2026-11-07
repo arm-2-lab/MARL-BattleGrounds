@@ -146,9 +146,10 @@ def test_recurrent_system_refill_and_chunking_keep_games_identical() -> None:
     )
 
     def indexed(result: EvaluationResult) -> dict[int, ReplayArtifactV4]:
+        replays = [r for r in result.replays if type(r) is ReplayArtifactV4]
+        assert len(replays) == len(result.replays)
         return {
-            int(r.header.context.identity.episode_id.split("-")[-1]): r
-            for r in result.replays
+            int(r.header.context.identity.episode_id.split("-")[-1]): r for r in replays
         }
 
     left, right = indexed(first), indexed(second)

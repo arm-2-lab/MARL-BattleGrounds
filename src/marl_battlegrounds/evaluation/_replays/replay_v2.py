@@ -32,6 +32,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrame,
     EvaluationFrameV1,
     EvaluationModel,
+    EvaluationTransition,
     EvaluationTransitionV1,
     SchemaVersionEntryV2,
     canonical_digest_sha256,
@@ -392,7 +393,7 @@ class ReplayArtifactReferenceV2(EvaluationModel):
 def _build_replay_content(
     context: EvaluationEpisodeContext,
     frames: Sequence[EvaluationFrame],
-    transitions: Sequence[EvaluationTransitionV1],
+    transitions: Sequence[EvaluationTransition],
     *,
     runtime_provenance: RuntimeProvenanceV1,
     wrapper_stack: tuple[ReplayWrapperMetadataV1, ...],
@@ -663,13 +664,13 @@ def replay_from_packets(
     )
 
 
-def _frames_from_packets[FrameT: EvaluationFrame](
+def _frames_from_packets[FrameT: EvaluationFrame, TransitionT: EvaluationTransition](
     context: EvaluationEpisodeContext,
     packets: Iterable[ReplayPackets],
     *,
     capture_initial: Callable[..., FrameT],
-    capture_transition: Callable[..., tuple[EvaluationTransitionV1, FrameT]],
-) -> tuple[list[FrameT], list[EvaluationTransitionV1]]:
+    capture_transition: Callable[..., tuple[TransitionT, FrameT]],
+) -> tuple[list[FrameT], list[TransitionT]]:
     """Decode one admitted scalar packet stream through exact-version capture helpers.
 
     Require positive single-episode identity, consecutive transition indexes,
@@ -685,7 +686,7 @@ def _frames_from_packets[FrameT: EvaluationFrame](
     )
 
     frames: list[FrameT] = []
-    transitions: list[EvaluationTransitionV1] = []
+    transitions: list[TransitionT] = []
     episode_id: int | None = None
     availability = None
     for packet in packets:

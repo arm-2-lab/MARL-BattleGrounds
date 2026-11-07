@@ -66,6 +66,7 @@ from marl_battlegrounds.evaluation.run_writer import (
 
 if TYPE_CHECKING:
     from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
     from marl_battlegrounds.evaluation._tournaments.tournament_records import (
         TournamentRecords,
     )
@@ -3365,8 +3366,9 @@ class EvaluationResult(_ResultAccess):
         ``episodes`` are the whole pass.
     paths : dict of str to Path or None, default=None
         The writer's files, by name. None for in-memory results.
-    replays : tuple of ReplayArtifactV4, default=()
-        Current (version 4) replays captured in memory by this call. Empty
+    replays : tuple of ReplayArtifactV4 or ReplayArtifactV5, default=()
+        Current replays captured in memory by this call: version 4 for Team
+        Deathmatch and neutral games, version 5 for Capture the Flag. Empty
         with a writer, which saves them as files instead.
     """
 
@@ -3376,7 +3378,7 @@ class EvaluationResult(_ResultAccess):
     metadata: Row
     completed_episode_ids: tuple[int, ...] = ()
     paths: dict[str, Path] | None = None
-    replays: tuple[ReplayArtifactV4, ...] = ()
+    replays: tuple[ReplayArtifactV4 | ReplayArtifactV5, ...] = ()
     _view: _View = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -3474,9 +3476,10 @@ class TournamentResult(_ResultAccess):
     full_metrics : dict of str to numpy.ndarray
         Selected full metric columns captured in memory by this call. Empty
         with file output or when full metrics are off.
-    replays : tuple of ReplayArtifactV4
-        Current (version 4) replays captured in memory by this call. Empty with
-        file output, which saves them as files instead.
+    replays : tuple of ReplayArtifactV4 or ReplayArtifactV5
+        Current replays captured in memory by this call: version 4 for Team
+        Deathmatch and neutral games, version 5 for Capture the Flag. Empty
+        with file output, which saves them as files instead.
     metadata : dict
         Method details, systems, participants, passes, configurations and the
         run's settings. Creating the result adds table availability, status,
@@ -3501,7 +3504,7 @@ class TournamentResult(_ResultAccess):
     matchup_results: tuple[Row, ...]
     map_results: tuple[Row, ...]
     full_metrics: Columns
-    replays: tuple[ReplayArtifactV4, ...]
+    replays: tuple[ReplayArtifactV4 | ReplayArtifactV5, ...]
     metadata: Row
     paths: dict[str, Path] | None
     headline_metrics: tuple[Row, ...] = field(default=(), kw_only=True)

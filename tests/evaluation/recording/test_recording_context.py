@@ -731,7 +731,7 @@ def _source_context(
         details["configurations"] = {source_id: {**source_content, "max_steps": 123}}
     elif change == "actual_hash":
         episode["configuration_digest"] = "0" * 64
-    return build_recording_context(
+    context = build_recording_context(
         actual,
         run_id="paired-map",
         phase="evaluation",
@@ -740,6 +740,8 @@ def _source_context(
         policies={"team_a": "A", "team_b": "B"},
         details=details,
     )[0]
+    assert type(context) is EvaluationEpisodeContextV4
+    return context
 
 
 @pytest.mark.parametrize("choice", [0, 1])

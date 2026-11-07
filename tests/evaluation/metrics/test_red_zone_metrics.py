@@ -85,6 +85,7 @@ from marl_battlegrounds.evaluation._recording.capture import (
 )
 from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation._replays.replay_v2 import build_replay_v2
+from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
 from marl_battlegrounds.evaluation.analysis import analyze_replay
 from marl_battlegrounds.evaluation.catalog import reconstruct_env_config_v1
 from marl_battlegrounds.evaluation.combat_metrics import combat_quantities
@@ -449,6 +450,7 @@ def test_live_saved_csv_and_replay_analysis_agree_after_a_late_capture_start(
     # frames. Victims come from Core's own classifier; helpers are the
     # reconstructed kill contributions to those victims.
     replay = live.replays[0]
+    assert type(replay) is ReplayArtifactV4
     assert replay.frames[0].simulator_step_count == 5
     recorded = reconstruct_env_config_v1(replay.header.context)
     counts = np.zeros(10, np.int32)

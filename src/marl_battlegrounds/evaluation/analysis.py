@@ -61,6 +61,7 @@ from marl_battlegrounds.evaluation._recording.capture import (
     reconstruct_env_state_v1,
     reconstruct_transition_facts_v1,
 )
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.catalog import (
     build_static_mechanics_catalog_v1,
     reconstruct_env_config_v1,
@@ -998,7 +999,7 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
     Raises
     ------
     ValueError
-        The recorded task mode is outside neutral/TDM (0/1), or full
+        The replay records a Capture the Flag game (replay V5), or full
         analysis sees a different mechanics catalog.
     RuntimeError
         Evaluation/Core source bytes change during analysis.
@@ -1018,9 +1019,9 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
     frame; every older column keeps its computed value and availability.
     """
     replay = bundle.replay
-    context = replay.header.context
-    if context.resolved_env_config.task_mode not in (0, 1):
+    if isinstance(replay, ReplayArtifactV5):  # A Capture the Flag game.
         raise ValueError("scalar replay analysis supports TDM only")
+    context = replay.header.context
     if full and context.static_mechanics_catalog != build_static_mechanics_catalog_v1():
         raise ValueError(
             "full analysis requires the recorded mechanics catalog version"

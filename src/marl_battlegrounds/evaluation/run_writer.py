@@ -52,7 +52,10 @@ if TYPE_CHECKING:
     from marl_battlegrounds.evaluation._tournaments.tournament_records import (
         TournamentRecords,
     )
-    from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
+    from marl_battlegrounds.evaluation.models import (
+        EvaluationEpisodeContextV4,
+        EvaluationEpisodeContextV5,
+    )
     from marl_battlegrounds.evaluation.policy_execution import Policy, System
     from marl_battlegrounds.evaluation.tournament_statistics import TournamentStatistics
 
@@ -125,7 +128,12 @@ class _PreparedReplay(NamedTuple):
     """
 
     packets: ReplayPackets
-    contexts: dict[int, tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]]
+    contexts: dict[
+        int,
+        tuple[
+            EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5, RuntimeProvenanceV1
+        ],
+    ]
     config_ids: dict[int, str]
     provenance: dict[str, object] | None
 
@@ -660,7 +668,11 @@ class RunWriter:
         self._replay_ids: dict[str, int] = {}
         self._replay_config_ids: dict[int, str] = {}
         self._preflight_contexts: dict[
-            int, tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]
+            int,
+            tuple[
+                EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5,
+                RuntimeProvenanceV1,
+            ],
         ] = {}
         self._pending_replays: dict[str, dict[str, object]] = {}
         self._recording_provenance: dict[str, object] | None = None
@@ -1982,7 +1994,9 @@ class RunWriter:
 
     def _replay_context(
         self, packet: ReplayPackets
-    ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
+    ) -> tuple[
+        EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5, RuntimeProvenanceV1
+    ]:
         """Consume one context prepared before any replay publication.
 
         This callback runs only during application. Missing preparation is an
@@ -1996,7 +2010,9 @@ class RunWriter:
     def _prepare_replay_context(
         self, packet: ReplayPackets, provenance: dict[str, object] | None
     ) -> tuple[
-        EvaluationEpisodeContextV4, RuntimeProvenanceV1, dict[str, object] | None
+        EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5,
+        RuntimeProvenanceV1,
+        dict[str, object] | None,
     ]:
         """Resolve initial replay identities without changing writer state.
 
@@ -2815,7 +2831,13 @@ class RunWriter:
 
         rows = jax.tree.map(flatten, host)
         entry = self._details["passes"][self._pass_key]
-        contexts: dict[int, tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]] = {}
+        contexts: dict[
+            int,
+            tuple[
+                EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5,
+                RuntimeProvenanceV1,
+            ],
+        ] = {}
         replay_configs: dict[int, str] = {}
         provenance = None
         for index in np.flatnonzero(np.asarray(rows.valid) & np.asarray(rows.initial)):

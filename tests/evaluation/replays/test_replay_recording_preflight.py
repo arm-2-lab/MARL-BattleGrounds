@@ -49,7 +49,7 @@ def terminal() -> ReplayPackets:
 def _context(
     packet: ReplayPackets,
 ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
-    return build_recording_context(
+    context, runtime = build_recording_context(
         packet.config,
         run_id="test",
         phase="evaluation",
@@ -61,6 +61,8 @@ def _context(
             "runtime_provenance": capture_runtime_provenance("0.0.0"),
         },
     )
+    assert type(context) is EvaluationEpisodeContextV4
+    return context, runtime
 
 
 def _pair(left: ReplayPackets, right: ReplayPackets) -> ReplayPackets:

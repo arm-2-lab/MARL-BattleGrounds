@@ -40,6 +40,7 @@ from marl_battlegrounds.evaluation._recording.events import (
     decode_evaluation_events_v1,
     team_deathmatch_home_fall_slots_v1,
 )
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.models import (
     AgentRespawnedEventV1,
     EvaluationEpisodeContext,
@@ -297,6 +298,7 @@ def _shared_pov(
 def test_replay_presentations_carry_old_scores_and_returns_for_all() -> None:
     loaded = load_replay(_SCENARIO_REPLAY)
     replay = loaded.replay
+    assert not isinstance(replay, ReplayArtifactV5)
     context = replay.header.context
     oracle = ReplayViewerService(loaded, view_mode="researcher")
     pov = ReplayViewerService(loaded, view_mode="pov", pov_global_slot=0)
@@ -348,6 +350,7 @@ def test_agent_died_rows_carry_home_fall_and_agent_pov_only_for_seen_falls(
     )
     loaded = load_replay(_SCENARIO_REPLAY)
     replay = loaded.replay
+    assert not isinstance(replay, ReplayArtifactV5)
     oracle = ReplayViewerService(loaded, view_mode="researcher")
     oracle_falls: set[str] = set()
     for index in range(1, len(replay.frames)):

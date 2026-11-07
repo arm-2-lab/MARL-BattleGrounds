@@ -70,6 +70,7 @@ from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
 from marl_battlegrounds.evaluation._replays.replay_recording import ReplayCollector
 from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.evaluation_conditions import (
     OMITTED,
     Omitted,
@@ -93,7 +94,10 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     METRIC_SCHEMA_VERSION,
     PRIORITY_METRIC_NAMES,
 )
-from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
+from marl_battlegrounds.evaluation.models import (
+    EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
+)
 from marl_battlegrounds.evaluation.policy_execution import (
     Policy,
     PolicyApply,
@@ -1685,13 +1689,16 @@ def _run_evaluation(
         full = _MetricTable.create(
             FULL_METRIC_NAMES, full_ids if writer is None else ()
         )
-        replays: list[ReplayArtifactV4] = []
+        replays: list[ReplayArtifactV4 | ReplayArtifactV5] = []
         collector = None
         if replay_selection and writer is None:
 
             def context(
                 packet: ReplayPackets,
-            ) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
+            ) -> tuple[
+                EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5,
+                RuntimeProvenanceV1,
+            ]:
                 """Build known context for the first packet of one selected in-memory
                 replay, naming each champion slot's controller from the live
                 team_a and team_b methods.

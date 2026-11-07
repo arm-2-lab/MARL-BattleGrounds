@@ -3,12 +3,12 @@
 Host-only helpers match explicit asset identity or registered metadata against
 the current catalog, retained map history and approved aliases. They also own
 each map's readable name, which the clients show; the technical name stays the
-stored identity. New map evidence (registered_map_metadata) reads the record's
-own mode's catalog: Team Deathmatch's, or Capture the Flag's own maps. The
-readers of saved records still read Team Deathmatch's only, until Capture the
-Flag records exist. Geometry alone
-never grants an old recording a map ID or split. Custom layouts remain unnamed
-unless the record provides truthful descriptive text. No JAX runtime is imported here.
+stored identity. New map evidence (registered_map_metadata) and the readers
+of saved records (recorded_map) both use the record's own mode's catalog: Team
+Deathmatch's, with its history and aliases, or Capture the Flag's own maps.
+Geometry alone never grants an old recording a map ID or split. Custom layouts
+remain unnamed unless the record provides truthful descriptive text. No JAX
+runtime is imported here.
 """
 
 from __future__ import annotations
@@ -170,12 +170,22 @@ def _registered_map(map_id: int, task: TaskName) -> RecordedMap:
 
 
 @lru_cache(maxsize=104)
-def _registered_map_by_name(name: str) -> tuple[RecordedMap, int]:
+def _registered_map_by_name(
+    name: str, task: TaskName = "tdm"
+) -> tuple[RecordedMap, int]:
     """Resolve an exact current or approved historical technical name.
 
-    Return the recorded identity and its catalog-family ID separately. Historical
-    map numbers and labels remain unchanged; unknown names raise ValueError.
+    Return the recorded identity and its catalog-family ID separately. task
+    picks the catalog: "tdm" (the default) also accepts Team Deathmatch's
+    approved historical names and aliases, unchanged; "ctf" accepts only
+    Capture the Flag's current names, since that catalog has no history yet.
+    Unknown names raise ValueError.
     """
+    if task == "ctf":
+        for info in ctf_assets.asset_manifest().maps:
+            if info.name == name:
+                return _registered_map(info.map_id, "ctf"), info.map_id
+        raise ValueError("recorded map name conflicts with the approved catalogue")
     for info in asset_manifest().maps:
         if info.name == name:
             return _registered_map(info.map_id, "tdm"), info.map_id
@@ -410,12 +420,15 @@ def _snapshot_map_metadata(  # pyright: ignore[reportUnusedFunction]
 
 
 @lru_cache(maxsize=128)
-def _recorded_map(bindings: tuple[tuple[str, str], ...], layout: str) -> RecordedMap:
+def _recorded_map(
+    bindings: tuple[tuple[str, str], ...], layout: str, task: TaskName
+) -> RecordedMap:
     """Interpret immutable recorded keys without inventing historical identity.
 
-    Explicit registered keys must contain a coherent ID, name and split. Custom
-    keys cannot also claim registered metadata. Older free-form names remain
-    descriptive only. Invalid explicit claims raise ValueError.
+    Explicit registered keys must contain a coherent ID, name and split, read
+    in task's catalog (the record's own mode). Custom keys cannot also claim
+    registered metadata. Older free-form names remain descriptive only.
+    Invalid explicit claims raise ValueError.
     """
     metadata = dict(bindings)
     origin = metadata.get("map_origin")
@@ -435,7 +448,7 @@ def _recorded_map(bindings: tuple[tuple[str, str], ...], layout: str) -> Recorde
             map_id = int(metadata["map_id"])
         except ValueError as error:
             raise ValueError("recorded map_id must be an integer") from error
-        result, _ = _registered_map_by_name(metadata["map_name"])
+        result, _ = _registered_map_by_name(metadata["map_name"], task)
         if map_id != result.map_id or metadata["map_split"] != result.split:
             raise ValueError("recorded map name or split conflicts with its map_id")
         return result
@@ -529,7 +542,9 @@ def recorded_map(context: EvaluationEpisodeContext) -> RecordedMap:
         if row.name in {"map_id", "map_name", "map_split", "map_origin"}
     )
     layout = context.identity.layout
-    result = _recorded_map(bindings, layout.identifier)
+    # The record's own mode picks the catalog, as on the writing side.
+    task = task_for_mode(context.resolved_env_config.task_mode) or "tdm"
+    result = _recorded_map(bindings, layout.identifier, task)
     if not bindings:
         # Older authored recordings already name and fingerprint their source
         # layout. Recognize that explicit identity, never geometry alone.
@@ -554,7 +569,14 @@ def recorded_map(context: EvaluationEpisodeContext) -> RecordedMap:
         if not _geometry_matches(source_geometry, authored[1], mode=TASK_MODES["tdm"]):
             raise ValueError("recorded source does not match the episode geometry")
         return result
-    _, map_id = _registered_map_by_name(result.technical_name)
+    _, map_id = _registered_map_by_name(result.technical_name, task)
+    if task == "ctf":
+        ctf_map = ctf_assets.asset_manifest().maps[map_id]
+        if _geometry_matches(
+            source_geometry, ctf_assets.map_geometry(ctf_map), mode=TASK_MODES["ctf"]
+        ):
+            return result
+        raise ValueError("recorded map_id does not match the episode geometry")
     current = asset_manifest().maps[map_id]
     if result.technical_name == current.name and _geometry_matches(
         source_geometry, map_geometry(current), mode=TASK_MODES["tdm"]

@@ -84,11 +84,13 @@ from marl_battlegrounds.evaluation._replays.replay_v4 import (
     ReplayArtifactV4,
     replay_reference_v4,
 )
+from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
     AssignedPolicySlotV2,
     canonical_json_bytes,
+    recorded_team_scores,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     LoadedReplay,
@@ -657,7 +659,9 @@ class ReplayViewerService:
         TypeError
             The loaded root or boolean flags have unsupported exact types.
         ValueError
-            Status, cursor, view, slot selection, lane, or viewer identity is invalid.
+            Status, cursor, view, slot selection, lane, or viewer identity is
+            invalid, or the replay is a Capture the Flag replay V5, which the
+            viewer cannot open yet.
 
         Notes
         -----
@@ -707,8 +711,14 @@ class ReplayViewerService:
         # the lock lets only one prepare_agent_pov call work at a time.
         self._agent_pov_prepared = False
         self._agent_pov_prepare_lock = Lock()
-        self._replay = bundle.replay
-        self._context = bundle.replay.header.context
+        replay = bundle.replay
+        if isinstance(replay, ReplayArtifactV5):
+            # Capture the Flag replays open here with the viewer's CTF update.
+            raise ValueError(
+                "the Replay Viewer cannot open a Capture the Flag replay yet"
+            )
+        self._replay = replay
+        self._context = replay.header.context
         # SharedObs source rows by (frame index, slot); see _shared_authority_sources.
         self._source_materials: dict[
             tuple[int, int], SharedObsSourceMaterialProjection
@@ -1928,7 +1938,7 @@ class ReplayViewerService:
                     leads.append(
                         max(
                             leads[-1],
-                            score_lead_v1(frame.snapshot.team_deathmatch_scores),
+                            score_lead_v1(recorded_team_scores(frame.snapshot)),
                         )
                     )
                 self._largest_leads = tuple(leads)
@@ -1985,7 +1995,7 @@ class ReplayViewerService:
                 context,
                 fresh_start=frame_index >= 1
                 and is_fresh_start_v1(
-                    first.simulator_step_count, first.snapshot.team_deathmatch_scores
+                    first.simulator_step_count, recorded_team_scores(first.snapshot)
                 ),
                 largest_lead_before=self._largest_leads[frame_index],
                 reached_runs=table.reached[frame_index],
@@ -2339,7 +2349,7 @@ class ReplayViewerService:
         immutable replay only; no lock, file or simulator work.
         """
         earlier = self._replay.frames[max(0, frame_index - MOMENTUM_TICKS)]
-        return tuple(earlier.snapshot.team_deathmatch_scores)
+        return recorded_team_scores(earlier.snapshot)
 
     def _validate_committed_presentation_snapshot(
         self,

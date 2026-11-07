@@ -21,6 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 from pydantic import TypeAdapter
 
+from marl_battlegrounds._task_settings import task_for_mode
 from marl_battlegrounds.core.types import EnvConfig
 from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
@@ -32,8 +33,8 @@ from marl_battlegrounds.evaluation._replays.controller_names import (
 )
 from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
 from marl_battlegrounds.evaluation.catalog import (
-    build_evaluation_episode_context_v4,
-    build_resolved_env_config_v2,
+    build_evaluation_episode_context,
+    build_resolved_env_config,
 )
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
@@ -42,6 +43,7 @@ from marl_battlegrounds.evaluation.models import (
     CodeRevisionV2,
     ContentAddressedIdentityV1,
     EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
     EvaluationEpisodeIdentityV1,
     EvaluationRole,
     EvaluationSeedProtocolV2,
@@ -50,6 +52,7 @@ from marl_battlegrounds.evaluation.models import (
     VersionedIdentityV1,
     canonical_digest_sha256,
     canonical_json_bytes,
+    recorded_score_threshold,
 )
 from marl_battlegrounds.evaluation.revision import discover_code_revision_v2
 from marl_battlegrounds.evaluation.runtime_provenance import (
@@ -398,7 +401,7 @@ def _map_recording_keys(
         if type(map_id) is not int:
             raise ValueError("recorded map_id must be an integer")
         if metadata is None:
-            source_geometry = build_resolved_env_config_v2(source)
+            source_geometry = build_resolved_env_config(source)
             keys.extend(registered_map_metadata(map_id, source_geometry))  # pyright: ignore[reportArgumentType]
         else:
             if not isinstance(metadata, (list, tuple)):
@@ -433,7 +436,9 @@ def build_recording_context(
     policies: dict[str, object],
     details: dict[str, object],
     slot_controller_names: Sequence[str | None] | None = None,
-) -> tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]:
+) -> tuple[
+    EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5, RuntimeProvenanceV1
+]:
     """Build replay context using only known execution and source facts.
 
     Parameters
@@ -476,11 +481,14 @@ def build_recording_context(
 
     Returns
     -------
-    tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]
-        (EvaluationEpisodeContextV4, RuntimeProvenanceV1). The context records exact
-        resolved conditions (resolved config V2, including the Team Deathmatch
-        Red Zone depth), actor assignments, information contract, known seed
-        coordinates and verified map keys. Unknown training/checkpoint facts remain
+    tuple[EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5, RuntimeProvenanceV1]
+        (context, runtime). The context is V4 for a Team Deathmatch or neutral
+        config and V5 for Capture the Flag (build_evaluation_episode_context).
+        It records exact resolved conditions (resolved config V2 with the Red
+        Zone depth, or the Capture the Flag config V3), the task name and
+        winning score, the mode's reward contract ("core-tdm" or "core-ctf"),
+        actor assignments, information contract, known seed coordinates and
+        verified map keys. Unknown training/checkpoint facts remain
         absent rather than being guessed.
 
     Raises
@@ -522,7 +530,8 @@ def build_recording_context(
         if isinstance(runtime_payload, RuntimeProvenanceV1)
         else RuntimeProvenanceV1.model_validate_json(json.dumps(runtime_payload))
     )
-    resolved = build_resolved_env_config_v2(config)
+    resolved = build_resolved_env_config(config)
+    task = task_for_mode(int(config.task_mode)) or "tdm"
     descriptor_rows = details.get("policies", [])
     descriptors = (
         cast(list[dict[str, object]], descriptor_rows)
@@ -684,7 +693,7 @@ def build_recording_context(
         )
     ):
         raise ValueError("public_agent_id_by_global_slot must contain ten string IDs")
-    context = build_evaluation_episode_context_v4(
+    context = build_evaluation_episode_context(
         identity=EvaluationEpisodeIdentityV1(
             run_id=_identifier(run_id),
             evaluation_id=f"{_identifier(phase)}:{_identifier(pass_id)}",
@@ -698,11 +707,12 @@ def build_recording_context(
                 "python-evaluation", {"phase": phase, "pass_id": pass_id}
             ),
             experiment_manifest=_content("run-manifest", details),
+            # A neutral config keeps Team Deathmatch's name, as it always has.
             task=_content(
-                "tdm",
+                task,
                 {
                     "task_mode": int(config.task_mode),
-                    "score_threshold": int(config.team_deathmatch_score_threshold),
+                    "score_threshold": recorded_score_threshold(resolved),
                 },
             ),
             layout=cast(
@@ -739,7 +749,7 @@ def build_recording_context(
         critic_information_regime=VersionedIdentityV1(
             identifier="not_applicable", version=1
         ),
-        canonical_reward_mode=VersionedIdentityV1(identifier="core-tdm", version=1),
+        canonical_reward_mode=VersionedIdentityV1(identifier=f"core-{task}", version=1),
         shaping_configuration=_content("none", {"shaping": None}),
         code_revision=code,
         scenario_name=cast(str | None, episode.get("scenario_name")),

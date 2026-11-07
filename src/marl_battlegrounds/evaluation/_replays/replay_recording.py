@@ -24,10 +24,17 @@ from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
 if TYPE_CHECKING:
     from marl_battlegrounds.evaluation._replays.replay import RuntimeProvenanceV1
     from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
-    from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV4
+    from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
+    from marl_battlegrounds.evaluation.models import (
+        EvaluationEpisodeContextV4,
+        EvaluationEpisodeContextV5,
+    )
 
+# A Team Deathmatch or neutral episode records context V4 and replay V4; a
+# Capture the Flag episode context V5 and replay V5.
 type ContextFactory = Callable[
-    [ReplayPackets], tuple[EvaluationEpisodeContextV4, RuntimeProvenanceV1]
+    [ReplayPackets],
+    tuple[EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5, RuntimeProvenanceV1],
 ]
 
 
@@ -60,7 +67,7 @@ def validate_packet_epoch(
 class _Episode:
     """Ordered host packets and an optional owned spool for one episode."""
 
-    context: EvaluationEpisodeContextV4
+    context: EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5
     runtime: RuntimeProvenanceV1
     tree: Any  # JAX exposes PyTreeDef as a runtime alias, without a public type stub.
     stream: BinaryIO | None
@@ -224,7 +231,7 @@ class ReplayCollector:
         self,
         packet: ReplayPackets,
         *,
-        context: EvaluationEpisodeContextV4,
+        context: EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5,
         runtime: RuntimeProvenanceV1,
         stream: BinaryIO,
         count: int,
@@ -394,7 +401,9 @@ class ReplayCollector:
                 )
         return host
 
-    def write(self, packets: ReplayPackets) -> Iterator[ReplayArtifactV4]:
+    def write(
+        self, packets: ReplayPackets
+    ) -> Iterator[ReplayArtifactV4 | ReplayArtifactV5]:
         """Consume selected packets and yield each replay as soon as it completes.
 
         Parameters
@@ -405,9 +414,10 @@ class ReplayCollector:
 
         Yields
         ------
-        ReplayArtifactV4
-            One ReplayArtifactV4 per completed selected episode. Consume the iterator
-            fully: transfers, validation and collection occur during iteration.
+        ReplayArtifactV4 | ReplayArtifactV5
+            One replay per completed selected episode: V5 for a Capture the Flag
+            context, V4 otherwise. Consume the iterator fully: transfers,
+            validation and collection occur during iteration.
 
         Raises
         ------
@@ -428,7 +438,8 @@ class ReplayCollector:
         It keeps unfinished episodes for later chunks. Completion closes that
         episode's spool; the returned artifact owns its materialized replay data.
         """
-        from marl_battlegrounds.evaluation._replays.replay_v4 import replay_from_packets
+        from marl_battlegrounds.evaluation._replays import replay_v4, replay_v5
+        from marl_battlegrounds.evaluation.models import EvaluationEpisodeContextV5
 
         host = self.preflight(packets)
         valid = np.asarray(host.valid)
@@ -463,10 +474,19 @@ class ReplayCollector:
             episode.append(packet)
             if bool(packet.done.done):
                 try:
-                    artifact = replay_from_packets(
-                        episode.context,
-                        episode.records(),
-                        runtime_provenance=episode.runtime,
+                    context = episode.context
+                    artifact = (
+                        replay_v5.replay_from_packets(
+                            context,
+                            episode.records(),
+                            runtime_provenance=episode.runtime,
+                        )
+                        if isinstance(context, EvaluationEpisodeContextV5)
+                        else replay_v4.replay_from_packets(
+                            context,
+                            episode.records(),
+                            runtime_provenance=episode.runtime,
+                        )
                     )
                 finally:
                     episode.close()
