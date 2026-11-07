@@ -26,7 +26,7 @@ from marl_battlegrounds.evaluation.catalog import (
     build_resolved_env_config_v3,
 )
 from marl_battlegrounds.evaluation.models import (
-    ResolvedCaptureTheFlagConfigV3,
+    ResolvedEnvConfigCaptureTheFlagV3,
     ResolvedEnvConfigV2,
 )
 from marl_battlegrounds.tasks import (
@@ -55,12 +55,12 @@ _TDM_FIELDS = {"team_deathmatch_score_threshold", "team_deathmatch_red_zone_dept
 def test_a_record_holds_the_shared_settings_and_only_its_own() -> None:
     saved = build_resolved_env_config_v3(_CTF)
     assert (
-        ResolvedCaptureTheFlagConfigV3.model_validate_json(saved.model_dump_json())
+        ResolvedEnvConfigCaptureTheFlagV3.model_validate_json(saved.model_dump_json())
         == saved
     )
     record = saved.model_dump()
     shared = set(ResolvedEnvConfigV2.model_fields) - _TDM_FIELDS
-    assert set(ResolvedCaptureTheFlagConfigV3.model_fields) == shared | _CTF_FIELDS
+    assert set(ResolvedEnvConfigCaptureTheFlagV3.model_fields) == shared | _CTF_FIELDS
     assert set(record) == shared | _CTF_FIELDS
     assert (record["schema_version"], record["task_mode"]) == (3, 3)
     assert {name: record[name] for name in _CTF_FIELDS} == {
@@ -105,7 +105,9 @@ def test_the_record_reloads_and_refuses_tampering(
 ) -> None:
     record = build_resolved_env_config_v3(_CTF)
     with pytest.raises(ValueError, match=message):
-        ResolvedCaptureTheFlagConfigV3.model_validate({**record.model_dump(), **change})
+        ResolvedEnvConfigCaptureTheFlagV3.model_validate(
+            {**record.model_dump(), **change}
+        )
 
 
 def test_the_router_picks_each_modes_current_version() -> None:

@@ -4,14 +4,16 @@ Capture transfers the complete input bundle with one jax.device_get call, then
 checks exact NumPy shapes/dtypes before building strict models. This is a host
 recording boundary, outside JIT; one bundled call is not a claim about physical
 transfer count. Reconstruction reads recorded values without running physics.
-Current context V4 uses frame V3 (20 context columns); context V3 uses frame V2
-and older contexts keep frame V1.
+Current context V4 uses frame V3 (20 context columns) for Team Deathmatch and
+neutral games, and context V5 uses frame V4 and transition V2 for Capture the
+Flag; context V3 uses frame V2 and older contexts keep frame V1.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import cache
-from typing import cast
+from typing import NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -63,8 +65,8 @@ from marl_battlegrounds.core.types import (
 )
 from marl_battlegrounds.evaluation._recording.events import decode_evaluation_events_v1
 from marl_battlegrounds.evaluation._recording.validation import (
-    _derive_and_validate_team_deathmatch_authority_v1,  # pyright: ignore[reportPrivateUsage]
     _validate_frame_information_regime,  # pyright: ignore[reportPrivateUsage]
+    derive_and_validate_task_authority,
     validate_evaluation_transition_unit_v1,
     validate_initial_evaluation_frame_v1,
 )
@@ -82,17 +84,24 @@ from marl_battlegrounds.evaluation.models import (
     BaseObservationV1,
     BaseObservationV2,
     BaseObservationV3,
+    CaptureTheFlagTransitionFactsV1,
     CombatTransitionFactsV1,
     DeathTransitionFactsV1,
     EvaluationEpisodeContext,
     EvaluationEpisodeContextV1,
+    EvaluationEpisodeContextV2,
     EvaluationEpisodeContextV3,
     EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
     EvaluationFrame,
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
+    EvaluationFrameV4,
+    EvaluationTransition,
     EvaluationTransitionV1,
+    EvaluationTransitionV2,
+    GlobalAnalysisSnapshotCaptureTheFlagV2,
     GlobalAnalysisSnapshotV1,
     JointActionV1,
     PhysicalTransitionFactsV1,
@@ -103,10 +112,12 @@ from marl_battlegrounds.evaluation.models import (
     SpawnShieldTransitionFactsV1,
     StatusLifecycleTransitionFactsV1,
     TeamDeathmatchTransitionFactsV1,
+    TransitionFactsCaptureTheFlagV2,
     TransitionFactsV1,
     evaluation_context_type,
     evaluation_frame_type,
     evaluation_frame_type_for_context,
+    evaluation_transition_type_for_context,
 )
 
 _BOOL_DTYPE = np.dtype(np.bool_)
@@ -213,12 +224,20 @@ def _array_payload(
     return _freeze_payload(cast(object, array.tolist()))
 
 
-def _normalize_snapshot_v1(state: EnvState) -> tuple[int, GlobalAnalysisSnapshotV1]:
-    """Convert one unbatched host EnvState into simulator tick and V1 snapshot.
+def _normalize_snapshot(
+    state: EnvState,
+    snapshot_type: type[GlobalAnalysisSnapshotV1]
+    | type[GlobalAnalysisSnapshotCaptureTheFlagV2],
+) -> tuple[int, GlobalAnalysisSnapshotV1 | GlobalAnalysisSnapshotCaptureTheFlagV2]:
+    """Convert one unbatched host EnvState into simulator tick and snapshot.
 
     Require exact Core type, fixed global/team axes, int32 counters/actions, float32
     positions/health, and bool flags. Reject negative tick, nonfinite floats, or
     out-of-range previous actions. Values remain recorded snapshot facts.
+    snapshot_type picks the mode's own fields: V1 adds Team Deathmatch's
+    scores; the Capture the Flag snapshot adds its four fields, after refusing
+    a state whose Team Deathmatch or King of the Hills fields are not neutral,
+    so a mirrored record drops nothing it should keep.
     """
     _require_exact_type(state, EnvState, name="state")
     step_count = cast(
@@ -234,12 +253,6 @@ def _normalize_snapshot_v1(state: EnvState) -> tuple[int, GlobalAnalysisSnapshot
         raise ValueError("state.step_count must be nonnegative")
 
     payload: dict[str, object] = {
-        "team_deathmatch_scores": _array_payload(
-            state.team_deathmatch_scores,
-            name="state.team_deathmatch_scores",
-            shape=(NUM_TEAMS,),
-            dtype=_INT32_DTYPE,
-        ),
         "alive_mask": _array_payload(
             state.alive_mask,
             name="state.alive_mask",
@@ -342,7 +355,78 @@ def _normalize_snapshot_v1(state: EnvState) -> tuple[int, GlobalAnalysisSnapshot
             dtype=_BOOL_DTYPE,
         ),
     }
-    return step_count, GlobalAnalysisSnapshotV1.model_validate(payload)
+    team_deathmatch_scores = _array_payload(
+        state.team_deathmatch_scores,
+        name="state.team_deathmatch_scores",
+        shape=(NUM_TEAMS,),
+        dtype=_INT32_DTYPE,
+    )
+    if snapshot_type is GlobalAnalysisSnapshotV1:
+        payload["team_deathmatch_scores"] = team_deathmatch_scores
+        return step_count, GlobalAnalysisSnapshotV1.model_validate(payload)
+    if team_deathmatch_scores != (0, 0) or not _is_neutral(
+        state, "king_of_the_hills_", neutral_objective_fields(EnvState, host=True)
+    ):
+        raise ValueError(
+            "a Capture the Flag state needs neutral Team Deathmatch and King of "
+            "the Hills fields"
+        )
+    carriers = cast(
+        tuple[int, int],
+        _array_payload(
+            state.capture_the_flag_flag_carrier_slots,
+            name="state.capture_the_flag_flag_carrier_slots",
+            shape=(NUM_TEAMS,),
+            dtype=_INT32_DTYPE,
+        ),
+    )
+    payload.update(
+        capture_the_flag_scores=_array_payload(
+            state.capture_the_flag_scores,
+            name="state.capture_the_flag_scores",
+            shape=(NUM_TEAMS,),
+            dtype=_INT32_DTYPE,
+        ),
+        capture_the_flag_flag_positions=_array_payload(
+            state.capture_the_flag_flag_positions,
+            name="state.capture_the_flag_flag_positions",
+            shape=(NUM_TEAMS, ENVIRONMENT_DIMENSIONS),
+            dtype=_FLOAT32_DTYPE,
+            finite=True,
+        ),
+        # Core marks "nobody carries it" with -1; the record says None.
+        capture_the_flag_flag_carrier_slots=tuple(
+            None if slot == -1 else slot for slot in carriers
+        ),
+        capture_the_flag_dropped_flag_countdowns=_array_payload(
+            state.capture_the_flag_dropped_flag_countdowns,
+            name="state.capture_the_flag_dropped_flag_countdowns",
+            shape=(NUM_TEAMS,),
+            dtype=_INT32_DTYPE,
+        ),
+    )
+    return step_count, GlobalAnalysisSnapshotCaptureTheFlagV2.model_validate(payload)
+
+
+def _is_neutral(record: NamedTuple, prefix: str, neutral: Mapping[str, object]) -> bool:
+    """Return whether every field of record starting with prefix equals neutral.
+
+    record is a host Core NamedTuple (EnvState or a facts record); neutral maps
+    field names to host arrays or scalars (neutral_objective_fields with
+    host=True, or zeros). Fields neutral does not name must be all zero or
+    False. Exact comparison; no tolerance.
+    """
+    for name in record._fields:
+        if not name.startswith(prefix):
+            continue
+        value = np.asarray(getattr(record, name))
+        expected = neutral.get(name)
+        if expected is None:
+            if np.any(value):
+                return False
+        elif not np.array_equal(value, np.asarray(expected)):
+            return False
+    return True
 
 
 def _normalize_previous_action_observation_v1(
@@ -495,8 +579,8 @@ def _normalize_base_observation(
     """Freeze one host observation using the context's declared wire version.
 
     Check exact shapes, bool masks, finite float32 features, previous-action rows,
-    and spawn data. Context V4 records 20 context columns (column 19 is the Red
-    Zone depth) and int32 self_ally_index in BaseObservationV3; context V3 the
+    and spawn data. Contexts V4 and V5 record 20 context columns (column 19 is
+    the Red Zone depth) and int32 self_ally_index in BaseObservationV3; context V3 the
     same with 19 columns in BaseObservationV2. The context width comes from the
     recorded wire version, not from the live simulator, so a live 20-column
     observation cannot be captured under a historical context. Legacy capture
@@ -504,11 +588,8 @@ def _normalize_base_observation(
     identity-blind observations cannot be relabeled as legacy data.
     """
     _require_exact_type(source, Observation, name="observation")
-    context_width = (
-        CONTEXT_FEATURES_V2
-        if type(context) is EvaluationEpisodeContextV4
-        else CONTEXT_FEATURES_V1
-    )
+    current = type(context) in (EvaluationEpisodeContextV4, EvaluationEpisodeContextV5)
+    context_width = CONTEXT_FEATURES_V2 if current else CONTEXT_FEATURES_V1
     specs = (
         ("self_features", (MAX_AGENT_SLOTS, SELF_FEATURES), _FLOAT32_DTYPE, True),
         (
@@ -571,7 +652,7 @@ def _normalize_base_observation(
         source.spawn_lifecycle,
         context,
     )
-    if type(context) in (EvaluationEpisodeContextV3, EvaluationEpisodeContextV4):
+    if current or type(context) is EvaluationEpisodeContextV3:
         payload["self_ally_index"] = _array_payload(
             source.self_ally_index,
             name="observation.self_ally_index",
@@ -579,7 +660,7 @@ def _normalize_base_observation(
             dtype=_INT32_DTYPE,
             category_count=MAX_AGENTS_PER_TEAM,
         )
-        if type(context) is EvaluationEpisodeContextV4:
+        if current:
             return BaseObservationV3.model_validate(payload)
         return BaseObservationV2.model_validate(payload)
     for slot, row in enumerate(context.roster):
@@ -791,6 +872,7 @@ def _normalize_simple_fact_model(
         | AuraTransitionFactsV1
         | StatusLifecycleTransitionFactsV1
         | TeamDeathmatchTransitionFactsV1
+        | CaptureTheFlagTransitionFactsV1
     ],
     specs: tuple[tuple[str, tuple[int, ...], np.dtype[np.generic], bool], ...],
 ) -> (
@@ -802,6 +884,7 @@ def _normalize_simple_fact_model(
     | AuraTransitionFactsV1
     | StatusLifecycleTransitionFactsV1
     | TeamDeathmatchTransitionFactsV1
+    | CaptureTheFlagTransitionFactsV1
 ):
     """Build one fact subtree from explicit host field/shape/dtype specifications.
 
@@ -825,6 +908,9 @@ def _normalize_simple_fact_model(
 
 def normalize_transition_facts_v1(source: TransitionFacts) -> TransitionFactsV1:
     """Convert an already-host Core fact tree into its strict V1 wire record.
+
+    The Team Deathmatch and neutral record; normalize_transition_facts
+    records Capture the Flag facts too.
 
     Parameters
     ----------
@@ -853,6 +939,46 @@ def normalize_transition_facts_v1(source: TransitionFacts) -> TransitionFactsV1:
     implicit device-to-host copies. Initialization facts are allowed with
     has_transition false and start tick -1; actual transitions require a
     nonnegative start tick. Transition capture separately rejects initialization.
+    """
+    return cast(
+        TransitionFactsV1, normalize_transition_facts(source, TransitionFactsV1)
+    )
+
+
+def normalize_transition_facts(
+    source: TransitionFacts,
+    facts_type: type[TransitionFactsV1] | type[TransitionFactsCaptureTheFlagV2],
+) -> TransitionFactsV1 | TransitionFactsCaptureTheFlagV2:
+    """Convert an already-host Core fact tree into the record facts_type names.
+
+    Parameters
+    ----------
+    source : TransitionFacts
+        Exact unbatched host TransitionFacts, as for
+        normalize_transition_facts_v1.
+    facts_type : type[TransitionFactsV1] | type[TransitionFactsCaptureTheFlagV2]
+        TransitionFactsV1 records Team Deathmatch's facts (for Team
+        Deathmatch and neutral contexts); TransitionFactsCaptureTheFlagV2
+        records Core's capture_the_flag_facts instead.
+
+    Returns
+    -------
+    TransitionFactsV1 | TransitionFactsCaptureTheFlagV2
+        The strict record of facts_type, built from the same shared facts.
+
+    Raises
+    ------
+    TypeError
+        A record type or dtype is wrong, or a leaf is still a JAX array.
+    ValueError
+        As for normalize_transition_facts_v1; a Capture the Flag record also
+        refuses a Team Deathmatch outcome other than 0 or any King of the
+        Hills fact that is not neutral.
+
+    Notes
+    -----
+    Performs no transfer. The shared facts are normalized once, so both
+    records agree on every fact they share.
     """
     _require_exact_type(source, TransitionFacts, name="transition_facts")
     has_transition = cast(
@@ -1027,9 +1153,41 @@ def normalize_transition_facts_v1(source: TransitionFacts) -> TransitionFactsV1:
             specs=(("outcome", (), _INT32_DTYPE, False),),
         ),
     )
+    mode_facts: dict[str, object] = {"team_deathmatch_facts": team_deathmatch}
+    if facts_type is TransitionFactsCaptureTheFlagV2:
+        if team_deathmatch.outcome != 0 or not _is_neutral(
+            source.king_of_the_hills_facts, "", {}
+        ):
+            raise ValueError(
+                "Capture the Flag facts need a neutral Team Deathmatch outcome "
+                "and neutral King of the Hills facts"
+            )
+        agent_fact = ((MAX_AGENT_SLOTS,), _BOOL_DTYPE, False)
+        mode_facts = {
+            "capture_the_flag_facts": _normalize_simple_fact_model(
+                source.capture_the_flag_facts,
+                source_type=CaptureTheFlagTransitionFacts,
+                source_name="capture_the_flag_facts",
+                model_type=CaptureTheFlagTransitionFactsV1,
+                specs=(
+                    ("flag_was_picked_up_by_agent", *agent_fact),
+                    ("flag_was_dropped_by_agent", *agent_fact),
+                    ("ally_flag_was_returned_by_agent", *agent_fact),
+                    ("enemy_flag_was_captured_by_agent", *agent_fact),
+                    (
+                        "flag_was_automatically_returned_by_team",
+                        (NUM_TEAMS,),
+                        _BOOL_DTYPE,
+                        False,
+                    ),
+                    ("outcome", (), _INT32_DTYPE, False),
+                ),
+            )
+        }
 
-    return TransitionFactsV1.model_validate(
+    return facts_type.model_validate(
         {
+            **mode_facts,
             "has_transition": has_transition,
             "transition_start_step_count": transition_start_step_count,
             "action_acceptance_facts": _normalize_action_acceptance_facts_v1(
@@ -1045,7 +1203,6 @@ def normalize_transition_facts_v1(source: TransitionFacts) -> TransitionFactsV1:
             "physical_facts": physical,
             "aura_facts": aura,
             "status_lifecycle_facts": status_lifecycle,
-            "team_deathmatch_facts": team_deathmatch,
         }
     )
 
@@ -1062,8 +1219,9 @@ def _build_evaluation_frame_from_host(
     """Build a canonical indexed frame from a bundle already copied to NumPy.
 
     Require a nonnegative exact Python frame_index. Choose the frame version that
-    pairs with the context (evaluation_frame_type_for_context: V3 for context V4,
-    V2 for V3, otherwise V1); normalize snapshot, observation, masks, and
+    pairs with the context (evaluation_frame_type_for_context: V4 for context V5,
+    V3 for V4, V2 for V3, otherwise V1; frame V4 holds the Capture the Flag
+    snapshot); normalize snapshot, observation, masks, and
     optional (10, 10) SharedObs availability, then check information sharing.
     No second transfer
     occurs. Full cross-record validation is owned by replay admission.
@@ -1071,7 +1229,13 @@ def _build_evaluation_frame_from_host(
     evaluation_context_type(context)
     if type(frame_index) is not int or frame_index < 0:
         raise ValueError("frame_index must be a nonnegative exact integer")
-    simulator_step_count, snapshot = _normalize_snapshot_v1(state)
+    frame_model = evaluation_frame_type_for_context(context)
+    simulator_step_count, snapshot = _normalize_snapshot(
+        state,
+        GlobalAnalysisSnapshotCaptureTheFlagV2
+        if frame_model is EvaluationFrameV4
+        else GlobalAnalysisSnapshotV1,
+    )
     availability_payload: object | None = None
     if shared_obs_information_availability_by_recipient_and_sensor_source is not None:
         availability_payload = _array_payload(
@@ -1082,7 +1246,6 @@ def _build_evaluation_frame_from_host(
         )
 
     episode_id = context.identity.episode_id
-    frame_model = evaluation_frame_type_for_context(context)
     frame = frame_model.model_validate(
         {
             "episode_id": episode_id,
@@ -1200,14 +1363,16 @@ def _capture_evaluation_transition_unit(
     successor_shared_obs_information_availability_by_recipient_and_sensor_source: (
         object | None
     ) = None,
-) -> tuple[EvaluationTransitionV1, EvaluationFrame]:
+) -> tuple[EvaluationTransition, EvaluationFrame]:
     """Copy a successor/facts/reward bundle and build its joined transition record.
 
     One jax.device_get call transfers all supplied outputs. Normalize the successor,
     require actual transition facts, check task rewards/completion, and decode
-    canonical events. Context V1 additionally gets full transition-unit validation
-    here; replay admission validates later context versions. Return transition then
-    successor frame without modifying the previous frame.
+    canonical events. The context picks the transition version
+    (evaluation_transition_type_for_context) and so the facts record. Context V1
+    additionally gets full transition-unit validation here; replay admission
+    validates later context versions. Return transition then successor frame
+    without modifying the previous frame.
     """
     evaluation_context_type(context)
     evaluation_frame_type(start_frame)
@@ -1252,7 +1417,13 @@ def _capture_evaluation_transition_unit(
             host_successor_availability
         ),
     )
-    facts = normalize_transition_facts_v1(host_transition_facts)
+    transition_model = evaluation_transition_type_for_context(context)
+    facts = normalize_transition_facts(
+        host_transition_facts,
+        TransitionFactsCaptureTheFlagV2
+        if transition_model is EvaluationTransitionV2
+        else TransitionFactsV1,
+    )
     if not facts.has_transition:
         raise ValueError("evaluation transition capture rejects initialization facts")
     canonical_reward_by_agent = cast(
@@ -1261,7 +1432,7 @@ def _capture_evaluation_transition_unit(
     )
     terminated, truncated = _normalize_done_flags_v1(host_done_flags)
     canonical_reward_by_team, owning_task_end_reason = (
-        _derive_and_validate_team_deathmatch_authority_v1(
+        derive_and_validate_task_authority(
             context,
             start_frame,
             facts,
@@ -1280,7 +1451,7 @@ def _capture_evaluation_transition_unit(
         facts,
         successor_frame,
     )
-    transition = EvaluationTransitionV1.model_validate(
+    transition = transition_model.model_validate(
         {
             "episode_id": episode_id,
             "transition_index": transition_index,
@@ -1300,7 +1471,7 @@ def _capture_evaluation_transition_unit(
         validate_evaluation_transition_unit_v1(
             context,
             start_frame,
-            transition,
+            cast(EvaluationTransitionV1, transition),
             successor_frame,
         )
     return transition, successor_frame
@@ -1325,12 +1496,13 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
         two team rows, float32 position/health, int32 counters/actions, and bool flags.
         The Capture the Flag and King of the Hills fields hold their neutral
         values (neutral_objective_fields): the supported frames record only
-        Team Deathmatch games.
+        Team Deathmatch and neutral games.
 
     Raises
     ------
     TypeError
-        A recorded integer field contains a non-integer value.
+        The frame is a Capture the Flag frame V4 (no reader needs its state
+        yet), or a recorded integer field contains a non-integer value.
     ValueError
         Integers exceed int32 or floating values cannot be represented
         exactly as finite float32.
@@ -1346,6 +1518,8 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
         _wire_int32_array,  # pyright: ignore[reportPrivateUsage]
     )
 
+    if type(frame) is EvaluationFrameV4:
+        raise TypeError("a Capture the Flag frame cannot be rebuilt into a state yet")
     values = frame.snapshot.model_dump(exclude={"schema_id", "schema_version"})
     values["step_count"] = frame.simulator_step_count
     # The supported frames record Team Deathmatch games, whose objective fields
@@ -1637,6 +1811,7 @@ __all__ = [
     "capture_initial_evaluation_frame_v1",
     "capture_initial_evaluation_frame_v2",
     "capture_initial_evaluation_frame_v3",
+    "normalize_transition_facts",
     "normalize_transition_facts_v1",
     "reconstruct_env_state_v1",
     "reconstruct_transition_facts_v1",
@@ -1689,7 +1864,7 @@ def capture_initial_evaluation_frame_v1(
     call. It does not step or reset the environment. Legacy observations retain
     historical Team ID features; current observations must use V3 capture.
     """
-    if type(context) in (EvaluationEpisodeContextV3, EvaluationEpisodeContextV4):
+    if type(context) not in (EvaluationEpisodeContextV1, EvaluationEpisodeContextV2):
         raise ValueError("capture V1 requires matching episode context")
     return cast(
         EvaluationFrameV1,
@@ -1886,7 +2061,7 @@ def capture_evaluation_transition_unit_v1(
     reading the complete replay; capture alone is not an artifact integrity audit.
     """
     if (
-        type(context) in (EvaluationEpisodeContextV3, EvaluationEpisodeContextV4)
+        type(context) not in (EvaluationEpisodeContextV1, EvaluationEpisodeContextV2)
         or type(start_frame) is not EvaluationFrameV1
     ):
         raise ValueError("capture V1 requires matching episode context and frame")

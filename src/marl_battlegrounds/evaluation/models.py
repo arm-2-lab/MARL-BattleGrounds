@@ -2,12 +2,13 @@
 
 Records use immutable Python tuples with frozen versioned schemas. Ten global
 slots are Team A 0-4 then Team B 5-9; policy relation rows remain actor-relative.
-Context V4, frame V3 and resolved config V2 describe current records, including
-the Team Deathmatch Red Zone depth (context column 19). Resolved config V3
-records a Capture the Flag config; no episode context holds it yet. Older
-versions remain readable with their original meanings: context V3 with frame
-V2 describes relative actor inputs before Red Zone, and a record without a
-depth means one point per death.
+Context V4, frame V3, transition V1 and resolved config V2 describe current
+Team Deathmatch records, including the Red Zone depth (context column 19).
+Context V5, frame V4, transition V2 and resolved config V3 describe Capture the
+Flag records; a mode's records hold the shared fields and only its own, under
+Core's names. Older versions remain readable with their original meanings:
+context V3 with frame V2 describes relative actor inputs before Red Zone, and a
+record without a depth means one point per death.
 
 This module also owns the host (JAX-free) copy of the Red Zone side and strip
 rules: red_zone_team_on_right decides a spawn bank's side exactly, and
@@ -30,7 +31,7 @@ from array import array
 from collections.abc import Mapping, Sequence
 from fractions import Fraction
 from math import copysign, hypot, isfinite
-from typing import Annotated, Literal, cast
+from typing import Annotated, ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -1282,7 +1283,9 @@ def _validate_resolved_config_fields(
 
 
 def _validate_resolved_config_structure(
-    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | ResolvedCaptureTheFlagConfigV3,
+    config: ResolvedEnvConfigV1
+    | ResolvedEnvConfigV2
+    | ResolvedEnvConfigCaptureTheFlagV3,
 ) -> None:
     """Check the fixed row order, pad count and digest every version shares.
 
@@ -1311,7 +1314,7 @@ def _validate_resolved_config_structure(
         raise ValueError("resolved environment config canonical digest mismatch")
 
 
-class ResolvedCaptureTheFlagConfigV3(EvaluationModel):
+class ResolvedEnvConfigCaptureTheFlagV3(EvaluationModel):
     """Store one Capture the Flag config's resolved values: the shared ones and its own.
 
     Attributes
@@ -1400,7 +1403,7 @@ class ResolvedCaptureTheFlagConfigV3(EvaluationModel):
     ]
 
     @model_validator(mode="after")
-    def _validate_resolved_config(self) -> ResolvedCaptureTheFlagConfigV3:
+    def _validate_resolved_config(self) -> ResolvedEnvConfigCaptureTheFlagV3:
         """Check the shared row order, pad count and digest.
 
         Raise ValueError on rows out of order, a wrong pad count or a digest
@@ -1408,6 +1411,37 @@ class ResolvedCaptureTheFlagConfigV3(EvaluationModel):
         """
         _validate_resolved_config_structure(self)
         return self
+
+
+def recorded_score_threshold(
+    config: ResolvedEnvConfigV1
+    | ResolvedEnvConfigV2
+    | ResolvedEnvConfigCaptureTheFlagV3,
+) -> int:
+    """Return the score a team needs to win under a recorded config.
+
+    Parameters
+    ----------
+    config : ResolvedEnvConfigV1 | ResolvedEnvConfigV2 |
+    ResolvedEnvConfigCaptureTheFlagV3
+        Any resolved config record.
+
+    Returns
+    -------
+    int
+        Team Deathmatch's points threshold from V1 and V2 (0 in a neutral
+        config, which has no winning score), or the captures a team needs
+        from a Capture the Flag V3 record.
+
+    Notes
+    -----
+    The one reader of a recorded mode's winning score, the twin of
+    recorded_team_scores, so code that shows or checks a score never
+    branches on mode.
+    """
+    if isinstance(config, ResolvedEnvConfigCaptureTheFlagV3):
+        return config.capture_the_flag_score_threshold
+    return config.team_deathmatch_score_threshold
 
 
 class RosterSlotV1(EvaluationModel):
@@ -2299,20 +2333,142 @@ class EvaluationEpisodeContextV4(EvaluationModel):
             != REQUIRED_SCHEMA_BINDINGS_V4
         ):
             raise ValueError("schema_versions must equal the V4 context bindings")
-        from marl_battlegrounds.evaluation._replays.actor_projection import (
-            NO_SHARED_OBS_ACTOR_PROJECTION_V4,
-            SHARED_OBS_ACTOR_PROJECTION_V3,
+        _require_current_actor_projection(self)
+        _validate_context_contents(self)
+        return self
+
+
+def _require_current_actor_projection(
+    context: EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5,
+) -> None:
+    """Require SharedObs V3 or NoSharedObs V4, matching the information mode.
+
+    Raise ValueError when a current context names another projection; the
+    import stays local so record readers do not load the projection code.
+    """
+    from marl_battlegrounds.evaluation._replays.actor_projection import (
+        NO_SHARED_OBS_ACTOR_PROJECTION_V4,
+        SHARED_OBS_ACTOR_PROJECTION_V3,
+    )
+
+    expected_projection = (
+        SHARED_OBS_ACTOR_PROJECTION_V3
+        if context.execution_information_mode == "shared_obs"
+        else NO_SHARED_OBS_ACTOR_PROJECTION_V4
+    )
+    if context.actor_projection != expected_projection:
+        raise ValueError(
+            "current context requires the matching relative-input projection"
         )
 
-        expected_projection = (
-            SHARED_OBS_ACTOR_PROJECTION_V3
-            if self.execution_information_mode == "shared_obs"
-            else NO_SHARED_OBS_ACTOR_PROJECTION_V4
-        )
-        if self.actor_projection != expected_projection:
-            raise ValueError(
-                "current context requires the matching relative-input projection"
-            )
+
+class SchemaVersionEntryV5(EvaluationModel):
+    """Name one source schema/version used by context V5.
+
+    Attributes
+    ----------
+    schema_id : _AsciiIdentifier
+        Nonempty schema identifier.
+    schema_version : Annotated[int, Field(ge=1, le=5)]
+        Integer from 1 through 5.
+
+    Notes
+    -----
+    The owning context checks exact ordered bindings; a row alone does not establish a
+    supported schema combination.
+    """
+
+    schema_id: _AsciiIdentifier
+    schema_version: Annotated[int, Field(ge=1, le=5)]
+
+
+# Context V5 binds Capture the Flag's records: resolved config 3, context 5,
+# snapshot 2, frame 4, transition facts 2 and transition 2; the catalog and
+# the event envelope keep version 1. Table V4 stays Team Deathmatch's.
+REQUIRED_SCHEMA_BINDINGS_V5 = tuple(
+    (
+        schema_id,
+        {
+            RESOLVED_ENV_CONFIG_SCHEMA_ID: 3,
+            CONTEXT_SCHEMA_ID: 5,
+            GLOBAL_ANALYSIS_SNAPSHOT_SCHEMA_ID: 2,
+            FRAME_SCHEMA_ID: 4,
+            TRANSITION_FACTS_SCHEMA_ID: 2,
+            TRANSITION_SCHEMA_ID: 2,
+        }.get(schema_id, version),
+    )
+    for schema_id, version in REQUIRED_SCHEMA_BINDINGS_V1
+)
+
+
+class EvaluationEpisodeContextV5(EvaluationModel):
+    """Current episode metadata for one Capture the Flag game.
+
+    Attributes
+    ----------
+    schema_id : Literal['marl_battlegrounds.evaluation.episode_context']
+        Fixed episode-context identifier.
+    schema_version : Literal[5]
+        Version 5; the default.
+    identity, aggregation_keys, expected_horizon, static_mechanics_catalog,
+    roster, policy_assignments, seed_protocol, capture_profile,
+    execution_information_mode, actor_projection, critic_information_regime,
+    canonical_reward_mode, shaping_configuration, code_revision, scenario_name
+        Same meaning as in EvaluationEpisodeContextV4.
+    schema_versions : tuple[SchemaVersionEntryV5, ...]
+        Exact ordered REQUIRED_SCHEMA_BINDINGS_V5 entries.
+    resolved_env_config : ResolvedEnvConfigCaptureTheFlagV3
+        Recorded shared settings, ten resolved profiles and the five Capture
+        the Flag settings.
+
+    Notes
+    -----
+    Pairs with frame V4 and transition V2. A separate class, not a subclass
+    of V4, so a Team Deathmatch reader typed for V4 never receives it. It
+    checks what context V4 checks; both teams need an active member, as Core
+    requires. It does not grant actor access to all stored provenance.
+    """
+
+    schema_id: Literal["marl_battlegrounds.evaluation.episode_context"] = (
+        CONTEXT_SCHEMA_ID
+    )
+    schema_version: Literal[5] = 5
+    identity: EvaluationEpisodeIdentityV1
+    schema_versions: tuple[SchemaVersionEntryV5, ...]
+    aggregation_keys: tuple[AggregationKeyV1, ...]
+    expected_horizon: _PositiveInt
+    resolved_env_config: ResolvedEnvConfigCaptureTheFlagV3
+    static_mechanics_catalog: StaticMechanicsCatalogV1
+    roster: Annotated[
+        tuple[RosterSlotV1, ...],
+        Field(min_length=MAX_AGENT_SLOTS, max_length=MAX_AGENT_SLOTS),
+    ]
+    policy_assignments: Annotated[
+        tuple[PolicyAssignmentSlotV2, ...],
+        Field(min_length=MAX_AGENT_SLOTS, max_length=MAX_AGENT_SLOTS),
+    ]
+    seed_protocol: EvaluationSeedProtocolV1 | EvaluationSeedProtocolV2
+    capture_profile: CaptureProfile
+    execution_information_mode: ExecutionInformationMode
+    actor_projection: VersionedIdentityV1
+    critic_information_regime: VersionedIdentityV1
+    canonical_reward_mode: VersionedIdentityV1
+    shaping_configuration: ContentAddressedIdentityV1
+    code_revision: CodeRevisionV1 | CodeRevisionV2
+    scenario_name: _AsciiText | None = None
+
+    @model_validator(mode="after")
+    def _validate_context(self) -> EvaluationEpisodeContextV5:
+        """Require exact V5 bindings, the current projection and coherent contents.
+
+        Return this context or raise ValueError.
+        """
+        if (
+            tuple((row.schema_id, row.schema_version) for row in self.schema_versions)
+            != REQUIRED_SCHEMA_BINDINGS_V5
+        ):
+            raise ValueError("schema_versions must equal the V5 context bindings")
+        _require_current_actor_projection(self)
         _validate_context_contents(self)
         return self
 
@@ -2322,15 +2478,17 @@ type EvaluationEpisodeContext = (
     | EvaluationEpisodeContextV2
     | EvaluationEpisodeContextV3
     | EvaluationEpisodeContextV4
+    | EvaluationEpisodeContextV5
 )
 
 
 def _validate_context_contents(
     context: EvaluationEpisodeContextV2
     | EvaluationEpisodeContextV3
-    | EvaluationEpisodeContextV4,
+    | EvaluationEpisodeContextV4
+    | EvaluationEpisodeContextV5,
 ) -> None:
-    """Check shared V2-V4 horizon, sorted strata, roster, seeds, and scenario metadata.
+    """Check shared V2-V5 horizon, sorted strata, roster, seeds, and scenario metadata.
 
     Scenario capture/name needs a scenario identity. Raise ValueError on disagreement;
     version-specific schema and actor-projection checks stay with each context model.
@@ -2358,18 +2516,20 @@ def evaluation_context_type(
     | type[EvaluationEpisodeContextV2]
     | type[EvaluationEpisodeContextV3]
     | type[EvaluationEpisodeContextV4]
+    | type[EvaluationEpisodeContextV5]
 ):
     """Return the exact supported context class after checking its root type.
 
     Parameters
     ----------
     context : EvaluationEpisodeContext
-        Episode context V1, V2, V3 or V4.
+        Episode context V1, V2, V3, V4 or V5.
 
     Returns
     -------
     type[EvaluationEpisodeContextV1] | type[EvaluationEpisodeContextV2] |
-    type[EvaluationEpisodeContextV3] | type[EvaluationEpisodeContextV4]
+    type[EvaluationEpisodeContextV3] | type[EvaluationEpisodeContextV4] |
+    type[EvaluationEpisodeContextV5]
         Its exact concrete model class.
 
     Raises
@@ -2386,6 +2546,7 @@ def evaluation_context_type(
         EvaluationEpisodeContextV2,
         EvaluationEpisodeContextV3,
         EvaluationEpisodeContextV4,
+        EvaluationEpisodeContextV5,
     ):
         raise TypeError("context must be an exact supported episode-context root")
     return type(context)
@@ -2396,7 +2557,7 @@ def _validate_context_rows(context: EvaluationEpisodeContext) -> None:
 
     Require unique public IDs, fixed team blocks, active assigned policies, and
     neutral inactive profile/policy rows. Resolved slot mechanics must exactly match
-    their recorded class catalog; TDM needs active members on both teams.
+    their recorded class catalog; TDM and CTF need active members on both teams.
     Raise ValueError without repairing or substituting roster values.
     """
     slots = tuple(row.global_slot for row in context.roster)
@@ -2469,13 +2630,16 @@ def _validate_context_rows(context: EvaluationEpisodeContext) -> None:
         if actual_profile != expected_profile:
             raise ValueError("roster profile disagrees with mechanics catalog")
 
-    if context.resolved_env_config.task_mode == 1:
+    mode_name = {1: "Team Deathmatch", 3: "Capture the Flag"}.get(
+        context.resolved_env_config.task_mode
+    )
+    if mode_name is not None:
         active_team_ids = {
             row.configured_team_id for row in context.roster if row.configured_active
         }
         if active_team_ids != {1, 2}:
             raise ValueError(
-                "Team Deathmatch context requires at least one configured active "
+                f"{mode_name} context requires at least one configured active "
                 "member on each team"
             )
 
@@ -2639,51 +2803,189 @@ class GlobalAnalysisSnapshotV1(EvaluationModel):
         Typed fields check value ranges; this validator raises ValueError on shape
         mismatch.
         """
-        vector_fields = (
-            "alive_mask",
-            "current_health",
-            "ultimate_cooldowns",
-            "rogue_poison_anti_heal_durations",
-            "mage_burst_damage_amplification_durations",
-            "priest_blessing_of_freedom_slow_floor_durations",
-            "spawn_shield_durations",
-            "steps_until_out_of_combat",
-            "previous_timestep_move_actions",
-            "previous_timestep_select_target_actions",
-            "previous_timestep_use_ultimate_actions",
-        )
-        for field_name in vector_fields:
-            _require_tuple_shape(
-                getattr(self, field_name),
-                (MAX_AGENT_SLOTS,),
-                field_name=field_name,
-            )
-        _require_tuple_shape(
-            self.team_deathmatch_scores,
-            (NUM_TEAMS,),
-            field_name="team_deathmatch_scores",
-        )
-        _require_tuple_shape(
-            self.agent_positions,
-            (MAX_AGENT_SLOTS, ENVIRONMENT_DIMENSIONS),
-            field_name="agent_positions",
-        )
-        _require_tuple_shape(
-            self.slow_durations,
-            (MAX_AGENT_SLOTS, NUM_SLOW_CHANNELS),
-            field_name="slow_durations",
-        )
-        _require_tuple_shape(
-            self.stun_durations,
-            (MAX_AGENT_SLOTS, NUM_STUN_CHANNELS),
-            field_name="stun_durations",
-        )
-        _require_tuple_shape(
-            self.team_respawn_wave_countdowns,
-            (NUM_TEAMS,),
-            field_name="team_respawn_wave_countdowns",
-        )
+        _validate_snapshot_shapes(self, team_fields=("team_deathmatch_scores",))
         return self
+
+
+def _validate_snapshot_shapes(
+    snapshot: GlobalAnalysisSnapshotV1 | GlobalAnalysisSnapshotCaptureTheFlagV2,
+    *,
+    team_fields: tuple[str, ...],
+) -> None:
+    """Check the shared tuple axes of any snapshot, in V1's order.
+
+    team_fields names the mode's variable-length team vectors (V1's
+    team_deathmatch_scores); fixed-length fields need no check. Raise
+    ValueError on the first shape mismatch.
+    """
+    vector_fields = (
+        "alive_mask",
+        "current_health",
+        "ultimate_cooldowns",
+        "rogue_poison_anti_heal_durations",
+        "mage_burst_damage_amplification_durations",
+        "priest_blessing_of_freedom_slow_floor_durations",
+        "spawn_shield_durations",
+        "steps_until_out_of_combat",
+        "previous_timestep_move_actions",
+        "previous_timestep_select_target_actions",
+        "previous_timestep_use_ultimate_actions",
+    )
+    for field_name in vector_fields:
+        _require_tuple_shape(
+            getattr(snapshot, field_name),
+            (MAX_AGENT_SLOTS,),
+            field_name=field_name,
+        )
+    for field_name in team_fields:
+        _require_tuple_shape(
+            getattr(snapshot, field_name),
+            (NUM_TEAMS,),
+            field_name=field_name,
+        )
+    _require_tuple_shape(
+        snapshot.agent_positions,
+        (MAX_AGENT_SLOTS, ENVIRONMENT_DIMENSIONS),
+        field_name="agent_positions",
+    )
+    _require_tuple_shape(
+        snapshot.slow_durations,
+        (MAX_AGENT_SLOTS, NUM_SLOW_CHANNELS),
+        field_name="slow_durations",
+    )
+    _require_tuple_shape(
+        snapshot.stun_durations,
+        (MAX_AGENT_SLOTS, NUM_STUN_CHANNELS),
+        field_name="stun_durations",
+    )
+    _require_tuple_shape(
+        snapshot.team_respawn_wave_countdowns,
+        (NUM_TEAMS,),
+        field_name="team_respawn_wave_countdowns",
+    )
+
+
+type _TeamPair[T] = tuple[T, T]
+
+
+class GlobalAnalysisSnapshotCaptureTheFlagV2(EvaluationModel):
+    """Keep one Capture the Flag frame's privileged state as host tuples.
+
+    Attributes
+    ----------
+    schema_id : Literal['marl_battlegrounds.evaluation.global_analysis_snapshot']
+        Fixed global-analysis-snapshot identifier, the same as V1's.
+    schema_version : Literal[2]
+        Version 2; the default.
+    capture_the_flag_scores : tuple[int, int]
+        Captures so far, Team A then Team B, each nonnegative.
+    capture_the_flag_flag_positions : tuple[tuple[float, float], tuple[float,
+    float]]
+        Where each flag is, [Team A's flag, Team B's flag], finite (x, y) map
+        units: at home, at its carrier, or where it fell.
+    capture_the_flag_flag_carrier_slots : tuple[int | None, int | None]
+        Each flag's carrier, a global slot 0-9 on the flag's enemy team, or
+        None (Core's -1) when nobody carries it.
+    capture_the_flag_dropped_flag_countdowns : tuple[int, int]
+        Ticks before each dropped flag goes home by itself; 0 unless dropped.
+    alive_mask, agent_positions, current_health, ultimate_cooldowns,
+    slow_durations, stun_durations, rogue_poison_anti_heal_durations,
+    mage_burst_damage_amplification_durations,
+    priest_blessing_of_freedom_slow_floor_durations,
+    team_respawn_wave_countdowns, spawn_shield_durations,
+    steps_until_out_of_combat, previous_timestep_move_actions,
+    previous_timestep_select_target_actions,
+    previous_timestep_use_ultimate_actions, has_previous_timestep_joint_action
+        Same meaning as in GlobalAnalysisSnapshotV1.
+
+    Notes
+    -----
+    V1's fields without team_deathmatch_scores, plus EnvState's four Capture
+    the Flag fields under their names (mirrored: Core keeps Team Deathmatch's
+    scores at zero here). A separate class, not a subclass of V1. The model
+    checks, within this snapshot, that a carrier is on the flag's enemy team,
+    that a carried flag is not counting down, and that it sits at its
+    carrier's position. This full snapshot is analysis data, not policy input.
+    """
+
+    schema_id: Literal["marl_battlegrounds.evaluation.global_analysis_snapshot"] = (
+        GLOBAL_ANALYSIS_SNAPSHOT_SCHEMA_ID
+    )
+    schema_version: Literal[2] = 2
+    capture_the_flag_scores: _TeamPair[_NonNegativeInt]
+    capture_the_flag_flag_positions: _TeamPair[_TeamPair[_FiniteFloat]]
+    capture_the_flag_flag_carrier_slots: _TeamPair[_GlobalSlot | None]
+    capture_the_flag_dropped_flag_countdowns: _TeamPair[_NonNegativeInt]
+    alive_mask: _BooleanVector
+    agent_positions: _FloatMatrix
+    current_health: _NonNegativeFloatVector
+    ultimate_cooldowns: _NonNegativeIntegerVector
+    slow_durations: _NonNegativeIntegerMatrix
+    stun_durations: _NonNegativeIntegerMatrix
+    rogue_poison_anti_heal_durations: _NonNegativeIntegerVector
+    mage_burst_damage_amplification_durations: _NonNegativeIntegerVector
+    priest_blessing_of_freedom_slow_floor_durations: _NonNegativeIntegerVector
+    team_respawn_wave_countdowns: _NonNegativeIntegerVector
+    spawn_shield_durations: _NonNegativeIntegerVector
+    steps_until_out_of_combat: _NonNegativeIntegerVector
+    previous_timestep_move_actions: tuple[
+        Annotated[int, Field(ge=0, lt=NUM_MOVE_ACTIONS)], ...
+    ]
+    previous_timestep_select_target_actions: tuple[
+        Annotated[int, Field(ge=0, lt=NUM_TARGET_ACTIONS)], ...
+    ]
+    previous_timestep_use_ultimate_actions: tuple[
+        Annotated[int, Field(ge=0, lt=NUM_ULTIMATE_ACTIONS)], ...
+    ]
+    has_previous_timestep_joint_action: bool
+
+    @model_validator(mode="after")
+    def _validate_snapshot(self) -> GlobalAnalysisSnapshotCaptureTheFlagV2:
+        """Check the shared shapes, then each carried flag against its carrier.
+
+        Return this snapshot or raise ValueError.
+        """
+        _validate_snapshot_shapes(self, team_fields=())
+        for flag_team, carrier in enumerate(self.capture_the_flag_flag_carrier_slots):
+            if carrier is None:
+                continue
+            if carrier // MAX_AGENTS_PER_TEAM == flag_team:
+                raise ValueError("a flag's carrier must be on the flag's enemy team")
+            if self.capture_the_flag_dropped_flag_countdowns[flag_team] != 0:
+                raise ValueError("a carried flag cannot count down")
+            if self.capture_the_flag_flag_positions[flag_team] != tuple(
+                self.agent_positions[carrier]
+            ):
+                raise ValueError("a carried flag must sit at its carrier's position")
+        return self
+
+
+def recorded_team_scores(
+    snapshot: GlobalAnalysisSnapshotV1 | GlobalAnalysisSnapshotCaptureTheFlagV2,
+) -> tuple[int, int]:
+    """Return each team's score in a recorded snapshot, in its mode's units.
+
+    Parameters
+    ----------
+    snapshot : GlobalAnalysisSnapshotV1 | GlobalAnalysisSnapshotCaptureTheFlagV2
+        Any recorded snapshot.
+
+    Returns
+    -------
+    tuple[int, int]
+        (Team A, Team B): Team Deathmatch points from V1 (zero in a neutral
+        game) or captures from the Capture the Flag snapshot.
+
+    Notes
+    -----
+    The one reader of a recorded mode's score, keyed on the snapshot's class,
+    the twin of recorded_score_threshold. Readers that show a lead, compare
+    scores or check a threshold call it instead of naming a mode's field.
+    """
+    if isinstance(snapshot, GlobalAnalysisSnapshotCaptureTheFlagV2):
+        return snapshot.capture_the_flag_scores
+    team_a, team_b = snapshot.team_deathmatch_scores
+    return team_a, team_b
 
 
 class PreviousTimestepActionObservationV1(EvaluationModel):
@@ -3272,22 +3574,77 @@ class EvaluationFrameV3(EvaluationModel):
         return self
 
 
-type EvaluationFrame = EvaluationFrameV1 | EvaluationFrameV2 | EvaluationFrameV3
+class EvaluationFrameV4(EvaluationModel):
+    """Store one Capture the Flag decision epoch: its snapshot and observations.
+
+    Attributes
+    ----------
+    schema_id : Literal['marl_battlegrounds.evaluation.frame']
+        Fixed frame identifier.
+    schema_version : Literal[4]
+        Version 4; the default.
+    episode_id, frame_index, frame_id, simulator_step_count, base_observation,
+    action_mask, shared_obs_information_availability_by_recipient_and_sensor_source
+        Same meaning as in EvaluationFrameV3; the base observation keeps its
+        20-column shape, since Capture the Flag changes no observation shape.
+    snapshot : GlobalAnalysisSnapshotCaptureTheFlagV2
+        The Capture the Flag state, flags and captures included.
+
+    Notes
+    -----
+    Pairs with context V5. A separate class, not a subclass of V3. Context V5
+    owns version and information-mode admission; model construction checks
+    local ID and shape.
+    """
+
+    schema_id: Literal["marl_battlegrounds.evaluation.frame"] = FRAME_SCHEMA_ID
+    schema_version: Literal[4] = 4
+    episode_id: _AsciiIdentifier
+    frame_index: _NonNegativeInt
+    frame_id: _AsciiIdentifier
+    simulator_step_count: _NonNegativeInt
+    snapshot: GlobalAnalysisSnapshotCaptureTheFlagV2
+    base_observation: BaseObservationV3
+    action_mask: ActionMaskV1
+    shared_obs_information_availability_by_recipient_and_sensor_source: (
+        _BooleanMatrix | None
+    ) = None
+
+    @model_validator(mode="after")
+    def _validate_frame(self) -> EvaluationFrameV4:
+        """Check shared canonical ID and availability shape, then return this frame.
+
+        Raise ValueError on a local mismatch; context-specific admission is separate.
+        """
+        _validate_frame_fields(self)
+        return self
+
+
+type EvaluationFrame = (
+    EvaluationFrameV1 | EvaluationFrameV2 | EvaluationFrameV3 | EvaluationFrameV4
+)
 
 
 def evaluation_frame_type(
     frame: EvaluationFrame,
-) -> type[EvaluationFrameV1] | type[EvaluationFrameV2] | type[EvaluationFrameV3]:
+) -> (
+    type[EvaluationFrameV1]
+    | type[EvaluationFrameV2]
+    | type[EvaluationFrameV3]
+    | type[EvaluationFrameV4]
+):
     """Return the exact supported frame class after checking its root type.
 
     Parameters
     ----------
     frame : EvaluationFrame
-        Historical frame V1 or V2, or current frame V3.
+        Historical frame V1 or V2, current Team Deathmatch frame V3, or
+        Capture the Flag frame V4.
 
     Returns
     -------
-    type[EvaluationFrameV1] | type[EvaluationFrameV2] | type[EvaluationFrameV3]
+    type[EvaluationFrameV1] | type[EvaluationFrameV2] | type[EvaluationFrameV3] |
+    type[EvaluationFrameV4]
         Its exact concrete model class.
 
     Raises
@@ -3299,26 +3656,37 @@ def evaluation_frame_type(
     -----
     This helper does not deeply revalidate frame content or its context join.
     """
-    if type(frame) not in (EvaluationFrameV1, EvaluationFrameV2, EvaluationFrameV3):
+    if type(frame) not in (
+        EvaluationFrameV1,
+        EvaluationFrameV2,
+        EvaluationFrameV3,
+        EvaluationFrameV4,
+    ):
         raise TypeError("frame must be an exact supported evaluation frame")
     return type(frame)
 
 
 def evaluation_frame_type_for_context(
     context: EvaluationEpisodeContext,
-) -> type[EvaluationFrameV1] | type[EvaluationFrameV2] | type[EvaluationFrameV3]:
+) -> (
+    type[EvaluationFrameV1]
+    | type[EvaluationFrameV2]
+    | type[EvaluationFrameV3]
+    | type[EvaluationFrameV4]
+):
     """Return the one frame class that pairs with an exact episode context.
 
     Parameters
     ----------
     context : EvaluationEpisodeContext
-        Exact context V1, V2, V3 or V4.
+        Exact context V1, V2, V3, V4 or V5.
 
     Returns
     -------
-    type[EvaluationFrameV1] | type[EvaluationFrameV2] | type[EvaluationFrameV3]
-        Frame V1 for contexts V1 and V2, V2 for context V3, and V3 for
-        context V4.
+    type[EvaluationFrameV1] | type[EvaluationFrameV2] | type[EvaluationFrameV3] |
+    type[EvaluationFrameV4]
+        Frame V1 for contexts V1 and V2, V2 for context V3, V3 for context V4
+        and V4 for context V5.
 
     Raises
     ------
@@ -3331,6 +3699,8 @@ def evaluation_frame_type_for_context(
     and metrics readers call it instead of repeating the rule.
     """
     context_type = evaluation_context_type(context)
+    if context_type is EvaluationEpisodeContextV5:
+        return EvaluationFrameV4
     if context_type is EvaluationEpisodeContextV4:
         return EvaluationFrameV3
     if context_type is EvaluationEpisodeContextV3:
@@ -3890,10 +4260,125 @@ class TransitionFactsV1(EvaluationModel):
         Return this record or raise ValueError; the owning transition rejects
         initialization.
         """
-        if self.has_transition != (self.transition_start_step_count >= 0):
-            raise ValueError(
-                "transition facts require -1 exactly when has_transition is false"
+        _require_transition_step_sentinel(self)
+        return self
+
+
+def _require_transition_step_sentinel(
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
+) -> None:
+    """Raise ValueError unless the start tick is -1 exactly without a transition."""
+    if facts.has_transition != (facts.transition_start_step_count >= 0):
+        raise ValueError(
+            "transition facts require -1 exactly when has_transition is false"
+        )
+
+
+type _AgentFlags = Annotated[
+    tuple[bool, ...], Field(min_length=MAX_AGENT_SLOTS, max_length=MAX_AGENT_SLOTS)
+]
+
+
+class CaptureTheFlagTransitionFactsV1(EvaluationModel):
+    """Keep Core's Capture the Flag events and outcome for one transition.
+
+    Attributes
+    ----------
+    flag_was_picked_up_by_agent : tuple[bool, ...]
+        Ten bools in global-slot order: who picked up a flag this tick.
+    flag_was_dropped_by_agent : tuple[bool, ...]
+        Ten bools: which carriers dropped a flag by dying this tick.
+    ally_flag_was_returned_by_agent : tuple[bool, ...]
+        Ten bools: who returned their own team's dropped flag; at most one per
+        team.
+    enemy_flag_was_captured_by_agent : tuple[bool, ...]
+        Ten bools: which carrier scored a capture; at most one.
+    flag_was_automatically_returned_by_team : tuple[bool, bool]
+        Whose dropped flag went home on its own timer, Team A's flag then
+        Team B's.
+    outcome : Annotated[int, Field(ge=0, le=3)]
+        0 ongoing, 1 Team A win, 2 Team B win, or 3 draw.
+
+    Notes
+    -----
+    Field for field Core's CaptureTheFlagTransitionFacts; all False and
+    outcome 0 in a record with no transition. The model checks shapes and the
+    two "at most one" rules; the decoder joins each fact to its frames and the
+    outcome to the recorded captures.
+    """
+
+    flag_was_picked_up_by_agent: _AgentFlags
+    flag_was_dropped_by_agent: _AgentFlags
+    ally_flag_was_returned_by_agent: _AgentFlags
+    enemy_flag_was_captured_by_agent: _AgentFlags
+    flag_was_automatically_returned_by_team: _TeamPair[bool]
+    outcome: Annotated[int, Field(ge=0, le=3)]
+
+    @model_validator(mode="after")
+    def _validate_counts(self) -> CaptureTheFlagTransitionFactsV1:
+        """Refuse two captures in one tick or two returns by one team.
+
+        Return this record or raise ValueError.
+        """
+        if sum(self.enemy_flag_was_captured_by_agent) > 1:
+            raise ValueError("at most one capture can happen in one tick")
+        returns = self.ally_flag_was_returned_by_agent
+        for team in range(NUM_TEAMS):
+            team_slots = slice(
+                team * MAX_AGENTS_PER_TEAM, (team + 1) * MAX_AGENTS_PER_TEAM
             )
+            if sum(returns[team_slots]) > 1:
+                raise ValueError("at most one agent returns a team's flag in one tick")
+        return self
+
+
+class TransitionFactsCaptureTheFlagV2(EvaluationModel):
+    """Keep normalized Core facts for one Capture the Flag transition or its start.
+
+    Attributes
+    ----------
+    schema_id : Literal['marl_battlegrounds.evaluation.transition_facts']
+        Fixed transition-facts identifier, the same as V1's.
+    schema_version : Literal[2]
+        Version 2; the default.
+    has_transition, transition_start_step_count, action_acceptance_facts,
+    combat_transition_facts, death_facts, spawn_shield_facts, respawn_facts,
+    regeneration_facts, physical_facts, aura_facts, status_lifecycle_facts
+        Same meaning as in TransitionFactsV1.
+    capture_the_flag_facts : CaptureTheFlagTransitionFactsV1
+        Flag pickups, drops, returns, captures, timed returns and the outcome.
+
+    Notes
+    -----
+    TransitionFactsV1's shared facts plus Core's capture_the_flag_facts and no
+    team_deathmatch_facts (mirrored: Core keeps Team Deathmatch's outcome 0
+    here). A separate class, not a subclass of V1.
+    """
+
+    schema_id: Literal["marl_battlegrounds.evaluation.transition_facts"] = (
+        TRANSITION_FACTS_SCHEMA_ID
+    )
+    schema_version: Literal[2] = 2
+    has_transition: bool
+    transition_start_step_count: Annotated[int, Field(ge=-1, le=2**31 - 1)]
+    action_acceptance_facts: ActionAcceptanceFactsV1
+    combat_transition_facts: CombatTransitionFactsV1
+    death_facts: DeathTransitionFactsV1
+    spawn_shield_facts: SpawnShieldTransitionFactsV1
+    respawn_facts: RespawnTransitionFactsV1
+    regeneration_facts: RegenerationTransitionFactsV1
+    physical_facts: PhysicalTransitionFactsV1
+    aura_facts: AuraTransitionFactsV1
+    status_lifecycle_facts: StatusLifecycleTransitionFactsV1
+    capture_the_flag_facts: CaptureTheFlagTransitionFactsV1
+
+    @model_validator(mode="after")
+    def _validate_transition_step_sentinel(self) -> TransitionFactsCaptureTheFlagV2:
+        """Require start tick -1 exactly when has_transition is false.
+
+        Return this record or raise ValueError.
+        """
+        _require_transition_step_sentinel(self)
         return self
 
 
@@ -4657,7 +5142,218 @@ class TeamDeathmatchCompletedEventV1(EvaluationEventBaseV1):
     ]
 
 
-type EvaluationEventV1 = Annotated[
+class CaptureTheFlagAgentEventBaseV1(EvaluationEventBaseV1):
+    """Name the agent and the flag in one Capture the Flag agent event.
+
+    Attributes
+    ----------
+    agent_global_slot : _GlobalSlot
+        The agent that returned, picked up, captured or dropped the flag, 0-9.
+    flag_team_index : Literal[0, 1]
+        Whose flag: 0 Team A's, 1 Team B's.
+    flag_team_id : Literal[1, 2]
+        flag_team_index plus one.
+
+    Notes
+    -----
+    Concrete events supply event_type and phase_rank. Only a return touches
+    the agent's own flag; the model checks that and the team index mapping.
+    It does not replace canonical decoding from joined facts.
+    """
+
+    touches_own_flag: ClassVar[bool] = False
+    agent_global_slot: _GlobalSlot
+    flag_team_index: Literal[0, 1]
+    flag_team_id: Literal[1, 2]
+
+    @model_validator(mode="after")
+    def _validate_flag_owner(self) -> CaptureTheFlagAgentEventBaseV1:
+        """Check the team index mapping and whose flag the agent touched.
+
+        Return this event or raise ValueError.
+        """
+        if self.flag_team_id != self.flag_team_index + 1:
+            raise ValueError("flag_team_id must match the zero-based flag_team_index")
+        own_flag = self.agent_global_slot // MAX_AGENTS_PER_TEAM == self.flag_team_index
+        if own_flag != self.touches_own_flag:
+            raise ValueError(
+                "a return touches the agent's own flag; every other flag event "
+                "touches the enemy's"
+            )
+        return self
+
+
+class FlagReturnedEventV1(CaptureTheFlagAgentEventBaseV1):
+    """Record an agent returning its own team's dropped flag by touch.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_returned']
+        Fixed "flag_returned"; the default.
+    phase_rank : Literal[130]
+        Fixed ordering rank 130; the default.
+
+    Notes
+    -----
+    Agent and flag fields come from CaptureTheFlagAgentEventBaseV1.
+    """
+
+    touches_own_flag: ClassVar[bool] = True
+    event_type: Literal["flag_returned"] = "flag_returned"
+    phase_rank: Literal[130] = 130
+
+
+class FlagPickedUpEventV1(CaptureTheFlagAgentEventBaseV1):
+    """Record an agent picking up the enemy flag, from its home or the ground.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_picked_up']
+        Fixed "flag_picked_up"; the default.
+    phase_rank : Literal[131]
+        Fixed ordering rank 131; the default.
+    picked_up_from : Literal['home', 'ground']
+        "home" for a steal from the flag's home, "ground" for a dropped flag.
+
+    Notes
+    -----
+    The decoder reads picked_up_from from the start frame: a countdown of 0
+    means the flag was home, 1 or more that it lay on the ground.
+    """
+
+    event_type: Literal["flag_picked_up"] = "flag_picked_up"
+    phase_rank: Literal[131] = 131
+    picked_up_from: Literal["home", "ground"]
+
+
+class FlagCapturedEventV1(CaptureTheFlagAgentEventBaseV1):
+    """Record a carrier capturing the enemy flag at its own home.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_captured']
+        Fixed "flag_captured"; the default.
+    phase_rank : Literal[132]
+        Fixed ordering rank 132; the default.
+    score_increment : Literal[1]
+        One capture; the default.
+    previous_score : _NonNegativeInt
+        The carrier's team's captures before the tick.
+    successor_score : _NonNegativeInt
+        previous_score plus one.
+
+    Notes
+    -----
+    The scoring team is the carrier's; the score fields mirror Team
+    Deathmatch's score event.
+    """
+
+    event_type: Literal["flag_captured"] = "flag_captured"
+    phase_rank: Literal[132] = 132
+    score_increment: Literal[1] = 1
+    previous_score: _NonNegativeInt
+    successor_score: _NonNegativeInt
+
+    @model_validator(mode="after")
+    def _validate_score_edge(self) -> FlagCapturedEventV1:
+        """Require successor_score to be previous_score plus one.
+
+        Return this event or raise ValueError.
+        """
+        if self.successor_score != self.previous_score + self.score_increment:
+            raise ValueError(
+                "successor_score must equal previous_score plus score_increment"
+            )
+        return self
+
+
+class FlagDroppedEventV1(CaptureTheFlagAgentEventBaseV1):
+    """Record a carrier dropping the enemy flag by dying.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_dropped']
+        Fixed "flag_dropped"; the default.
+    phase_rank : Literal[133]
+        Fixed ordering rank 133; the default.
+
+    Notes
+    -----
+    A pickup and a drop by one agent on one tick are two events, in that
+    order. The successor frame holds where the flag fell.
+    """
+
+    event_type: Literal["flag_dropped"] = "flag_dropped"
+    phase_rank: Literal[133] = 133
+
+
+class FlagAutomaticallyReturnedEventV1(EvaluationEventBaseV1):
+    """Record a dropped flag going home on its own timer.
+
+    Attributes
+    ----------
+    event_type : Literal['flag_automatically_returned']
+        Fixed "flag_automatically_returned"; the default.
+    phase_rank : Literal[134]
+        Fixed ordering rank 134; the default.
+    flag_team_index : Literal[0, 1]
+        Whose flag: 0 Team A's, 1 Team B's.
+    flag_team_id : Literal[1, 2]
+        flag_team_index plus one.
+
+    Notes
+    -----
+    Inherits event identity from EvaluationEventBaseV1.
+    """
+
+    event_type: Literal["flag_automatically_returned"] = "flag_automatically_returned"
+    phase_rank: Literal[134] = 134
+    flag_team_index: Literal[0, 1]
+    flag_team_id: Literal[1, 2]
+
+    @model_validator(mode="after")
+    def _validate_flag_team(self) -> FlagAutomaticallyReturnedEventV1:
+        """Check the team index mapping; return this event or raise ValueError."""
+        if self.flag_team_id != self.flag_team_index + 1:
+            raise ValueError("flag_team_id must match the zero-based flag_team_index")
+        return self
+
+
+class CaptureTheFlagCompletedEventV1(EvaluationEventBaseV1):
+    """Record a Capture the Flag result and its exact completion basis.
+
+    Attributes
+    ----------
+    event_type : Literal['capture_the_flag_completed']
+        Fixed "capture_the_flag_completed"; the default.
+    phase_rank : Literal[140]
+        Fixed ordering rank 140; the default.
+    outcome : Literal['team_a_win', 'team_b_win', 'draw']
+        team_a_win, team_b_win, or draw.
+    completion_basis : Literal['score_threshold', 'horizon',
+    'score_threshold_at_horizon']
+        score_threshold, horizon, or score_threshold_at_horizon.
+
+    Notes
+    -----
+    The twin of TeamDeathmatchCompletedEventV1. Mode events follow every
+    shared event, as Team Deathmatch's do; among themselves they keep C1.C's
+    flag order (return, pickup, capture, drop, timed return).
+    """
+
+    event_type: Literal["capture_the_flag_completed"] = "capture_the_flag_completed"
+    phase_rank: Literal[140] = 140
+    outcome: Literal["team_a_win", "team_b_win", "draw"]
+    completion_basis: Literal[
+        "score_threshold",
+        "horizon",
+        "score_threshold_at_horizon",
+    ]
+
+
+# The event types every mode records, listed once; each mode's union adds its
+# own task events.
+_SharedEvaluationEventV1 = (
     ActionRejectedEventV1
     | AbilityActivatedEventV1
     | SourceDamageOutputEventV1
@@ -4680,8 +5376,23 @@ type EvaluationEventV1 = Annotated[
     | SpawnShieldExpiredEventV1
     | RespawnWaveOccurredEventV1
     | AgentRespawnedEventV1
+)
+
+type EvaluationEventV1 = Annotated[
+    _SharedEvaluationEventV1
     | TeamDeathmatchScoreChangedEventV1
     | TeamDeathmatchCompletedEventV1,
+    Field(discriminator="event_type"),
+]
+
+type EvaluationEventCaptureTheFlagV1 = Annotated[
+    _SharedEvaluationEventV1
+    | FlagReturnedEventV1
+    | FlagPickedUpEventV1
+    | FlagCapturedEventV1
+    | FlagDroppedEventV1
+    | FlagAutomaticallyReturnedEventV1
+    | CaptureTheFlagCompletedEventV1,
     Field(discriminator="event_type"),
 ]
 
@@ -4753,42 +5464,173 @@ class EvaluationTransitionV1(EvaluationModel):
         Return this transition or raise ValueError; joined frame/task semantics are
         checked separately.
         """
-        expected_transition_id = f"{self.episode_id}:transition:{self.transition_index}"
-        if self.transition_id != expected_transition_id:
-            raise ValueError(
-                "transition_id must be derived from episode_id and transition_index"
-            )
-        expected_start_frame_id = f"{self.episode_id}:frame:{self.transition_index}"
-        expected_successor_frame_id = (
-            f"{self.episode_id}:frame:{self.transition_index + 1}"
-        )
-        if self.start_frame_id != expected_start_frame_id:
-            raise ValueError("start_frame_id must identify the transition-start frame")
-        if self.successor_frame_id != expected_successor_frame_id:
-            raise ValueError("successor_frame_id must identify the adjacent frame")
-        if not self.facts.has_transition:
-            raise ValueError("evaluation transitions require has_transition facts")
-        _require_tuple_shape(
-            self.canonical_reward_by_agent,
-            (MAX_AGENT_SLOTS,),
-            field_name="canonical_reward_by_agent",
-        )
-        if self.canonical_reward_by_team is not None:
-            _require_tuple_shape(
-                self.canonical_reward_by_team,
-                (NUM_TEAMS,),
-                field_name="canonical_reward_by_team",
-            )
-        if self.owning_task_end_reason is not None and not (
-            self.terminated or self.truncated
-        ):
-            raise ValueError("owning_task_end_reason is allowed only when done")
-        for expected_ordinal, event in enumerate(self.events):
-            if event.transition_id != self.transition_id:
-                raise ValueError("every event must join its containing transition")
-            if event.ordinal != expected_ordinal:
-                raise ValueError("event ordinals must be gap-free and ordered")
+        _validate_transition_fields(self)
         return self
+
+
+def _validate_transition_fields(
+    transition: EvaluationTransitionV1 | EvaluationTransitionV2,
+) -> None:
+    """Check the local rules every transition version shares, in V1's order.
+
+    Canonical adjacent IDs, actual facts, reward axes, the done reason and
+    gap-free event ordinals; raise ValueError on the first mismatch.
+    """
+    expected_transition_id = (
+        f"{transition.episode_id}:transition:{transition.transition_index}"
+    )
+    if transition.transition_id != expected_transition_id:
+        raise ValueError(
+            "transition_id must be derived from episode_id and transition_index"
+        )
+    expected_start_frame_id = (
+        f"{transition.episode_id}:frame:{transition.transition_index}"
+    )
+    expected_successor_frame_id = (
+        f"{transition.episode_id}:frame:{transition.transition_index + 1}"
+    )
+    if transition.start_frame_id != expected_start_frame_id:
+        raise ValueError("start_frame_id must identify the transition-start frame")
+    if transition.successor_frame_id != expected_successor_frame_id:
+        raise ValueError("successor_frame_id must identify the adjacent frame")
+    if not transition.facts.has_transition:
+        raise ValueError("evaluation transitions require has_transition facts")
+    _require_tuple_shape(
+        transition.canonical_reward_by_agent,
+        (MAX_AGENT_SLOTS,),
+        field_name="canonical_reward_by_agent",
+    )
+    if transition.canonical_reward_by_team is not None:
+        _require_tuple_shape(
+            transition.canonical_reward_by_team,
+            (NUM_TEAMS,),
+            field_name="canonical_reward_by_team",
+        )
+    if transition.owning_task_end_reason is not None and not (
+        transition.terminated or transition.truncated
+    ):
+        raise ValueError("owning_task_end_reason is allowed only when done")
+    for expected_ordinal, event in enumerate(transition.events):
+        if event.transition_id != transition.transition_id:
+            raise ValueError("every event must join its containing transition")
+        if event.ordinal != expected_ordinal:
+            raise ValueError("event ordinals must be gap-free and ordered")
+
+
+class EvaluationTransitionV2(EvaluationModel):
+    """Join adjacent Capture the Flag frames with facts, events, rewards and done flags.
+
+    Attributes
+    ----------
+    schema_id : Literal['marl_battlegrounds.evaluation.transition']
+        Fixed transition identifier.
+    schema_version : Literal[2]
+        Version 2; the default.
+    episode_id, transition_index, transition_id, start_frame_id,
+    successor_frame_id, canonical_reward_by_agent, canonical_reward_by_team,
+    terminated, truncated, owning_task_end_reason
+        Same meaning as in EvaluationTransitionV1.
+    facts : TransitionFactsCaptureTheFlagV2
+        Actual Capture the Flag transition facts; initialization is forbidden.
+    events : tuple[EvaluationEventCaptureTheFlagV1, ...]
+        Ordered atomic events: the shared types and Capture the Flag's own,
+        never Team Deathmatch's.
+
+    Notes
+    -----
+    Pairs with context V5 and frame V4. A separate class, not a subclass of
+    V1; both run the same local checks. Cross-record validation checks
+    epochs, the task authority and the canonical event sequence.
+    """
+
+    schema_id: Literal["marl_battlegrounds.evaluation.transition"] = (
+        TRANSITION_SCHEMA_ID
+    )
+    schema_version: Literal[2] = 2
+    episode_id: _AsciiIdentifier
+    transition_index: _NonNegativeInt
+    transition_id: _AsciiIdentifier
+    start_frame_id: _AsciiIdentifier
+    successor_frame_id: _AsciiIdentifier
+    facts: TransitionFactsCaptureTheFlagV2
+    events: tuple[EvaluationEventCaptureTheFlagV1, ...]
+    canonical_reward_by_agent: _FloatVector
+    canonical_reward_by_team: _FloatVector | None = None
+    terminated: bool
+    truncated: bool
+    owning_task_end_reason: _AsciiText | None = None
+
+    @model_validator(mode="after")
+    def _validate_transition(self) -> EvaluationTransitionV2:
+        """Run the checks every transition version shares; return this transition.
+
+        Raise ValueError on a local mismatch.
+        """
+        _validate_transition_fields(self)
+        return self
+
+
+type EvaluationTransition = EvaluationTransitionV1 | EvaluationTransitionV2
+
+
+def evaluation_transition_type(
+    transition: EvaluationTransition,
+) -> type[EvaluationTransitionV1] | type[EvaluationTransitionV2]:
+    """Return the exact supported transition class after checking its root type.
+
+    Parameters
+    ----------
+    transition : EvaluationTransition
+        Transition V1 (every Team Deathmatch and neutral context) or V2
+        (Capture the Flag).
+
+    Returns
+    -------
+    type[EvaluationTransitionV1] | type[EvaluationTransitionV2]
+        Its exact concrete model class.
+
+    Raises
+    ------
+    TypeError
+        The root is unsupported or an undeclared subclass.
+
+    Notes
+    -----
+    A root-type check only; content and joins are validated elsewhere.
+    """
+    if type(transition) not in (EvaluationTransitionV1, EvaluationTransitionV2):
+        raise TypeError("transition must be an exact supported evaluation transition")
+    return type(transition)
+
+
+def evaluation_transition_type_for_context(
+    context: EvaluationEpisodeContext,
+) -> type[EvaluationTransitionV1] | type[EvaluationTransitionV2]:
+    """Return the one transition class that pairs with an exact episode context.
+
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        Exact context V1, V2, V3, V4 or V5.
+
+    Returns
+    -------
+    type[EvaluationTransitionV1] | type[EvaluationTransitionV2]
+        Transition V2 for context V5, and V1 for every other context.
+
+    Raises
+    ------
+    TypeError
+        The context root is unsupported (from evaluation_context_type).
+
+    Notes
+    -----
+    The twin of evaluation_frame_type_for_context and the one owner of
+    transition and context pairing.
+    """
+    if evaluation_context_type(context) is EvaluationEpisodeContextV5:
+        return EvaluationTransitionV2
+    return EvaluationTransitionV1
 
 
 __all__ = [
@@ -4807,6 +5649,7 @@ __all__ = [
     "REQUIRED_SCHEMA_BINDINGS_V2",
     "REQUIRED_SCHEMA_BINDINGS_V3",
     "REQUIRED_SCHEMA_BINDINGS_V4",
+    "REQUIRED_SCHEMA_BINDINGS_V5",
     "RESOLVED_ENV_CONFIG_SCHEMA_ID",
     "RESOLVED_ENV_CONFIG_SCHEMA_VERSION",
     "TEAM_DEATHMATCH_POINTS_PER_DEATH",
@@ -4832,6 +5675,9 @@ __all__ = [
     "BaseObservationV2",
     "BaseObservationV3",
     "CaptureProfile",
+    "CaptureTheFlagAgentEventBaseV1",
+    "CaptureTheFlagCompletedEventV1",
+    "CaptureTheFlagTransitionFactsV1",
     "ChargePhaseDisplacementEventV1",
     "ClassMechanicsV1",
     "CodeRevisionV1",
@@ -4847,19 +5693,30 @@ __all__ = [
     "EvaluationEpisodeContextV2",
     "EvaluationEpisodeContextV3",
     "EvaluationEpisodeContextV4",
+    "EvaluationEpisodeContextV5",
     "EvaluationEpisodeIdentityV1",
     "EvaluationEventBaseV1",
+    "EvaluationEventCaptureTheFlagV1",
     "EvaluationEventV1",
     "EvaluationFrame",
     "EvaluationFrameV1",
     "EvaluationFrameV2",
     "EvaluationFrameV3",
+    "EvaluationFrameV4",
     "EvaluationModel",
     "EvaluationRole",
     "EvaluationSeedProtocolV1",
     "EvaluationSeedProtocolV2",
+    "EvaluationTransition",
     "EvaluationTransitionV1",
+    "EvaluationTransitionV2",
     "ExecutionInformationMode",
+    "FlagAutomaticallyReturnedEventV1",
+    "FlagCapturedEventV1",
+    "FlagDroppedEventV1",
+    "FlagPickedUpEventV1",
+    "FlagReturnedEventV1",
+    "GlobalAnalysisSnapshotCaptureTheFlagV2",
     "GlobalAnalysisSnapshotV1",
     "HealthRegeneratedEventV1",
     "JointActionV1",
@@ -4872,8 +5729,8 @@ __all__ = [
     "PreviousTimestepActionObservationV1",
     "RecipientHealthResolutionEventV1",
     "RegenerationTransitionFactsV1",
-    "ResolvedCaptureTheFlagConfigV3",
     "ResolvedEnvConfig",
+    "ResolvedEnvConfigCaptureTheFlagV3",
     "ResolvedEnvConfigV1",
     "ResolvedEnvConfigV2",
     "ResolvedObstacleV1",
@@ -4885,6 +5742,7 @@ __all__ = [
     "SchemaVersionEntryV2",
     "SchemaVersionEntryV3",
     "SchemaVersionEntryV4",
+    "SchemaVersionEntryV5",
     "SourceDamageOutputEventV1",
     "SourceHealingOutputEventV1",
     "SpawnLifecycleObservationV1",
@@ -4902,6 +5760,7 @@ __all__ = [
     "TeamDeathmatchCompletedEventV1",
     "TeamDeathmatchScoreChangedEventV1",
     "TeamDeathmatchTransitionFactsV1",
+    "TransitionFactsCaptureTheFlagV2",
     "TransitionFactsV1",
     "VersionedIdentityV1",
     "canonical_digest_sha256",
@@ -4909,7 +5768,11 @@ __all__ = [
     "evaluation_context_type",
     "evaluation_frame_type",
     "evaluation_frame_type_for_context",
+    "evaluation_transition_type",
+    "evaluation_transition_type_for_context",
     "float32_value",
+    "recorded_score_threshold",
+    "recorded_team_scores",
     "red_zone_team_on_right",
     "red_zone_x_range",
 ]

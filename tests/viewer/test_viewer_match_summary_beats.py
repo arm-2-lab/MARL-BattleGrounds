@@ -108,7 +108,10 @@ def _death_tick(
     return (
         start,
         successor,
-        decode_evaluation_events_v1(context, start, facts, successor),
+        cast(
+            tuple[EvaluationEventV1, ...],
+            decode_evaluation_events_v1(context, start, facts, successor),
+        ),
     )
 
 

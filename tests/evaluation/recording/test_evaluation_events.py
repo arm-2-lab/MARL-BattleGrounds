@@ -14,6 +14,7 @@ import json
 from collections import Counter
 from collections.abc import Iterable
 from functools import cache
+from typing import cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -258,11 +259,15 @@ def _decode(
         start_snapshot = _snapshot()
     if successor_snapshot is None:
         successor_snapshot = _snapshot()
-    return decode_evaluation_events_v1(
-        context,
-        _frame(3, 7, start_snapshot),
-        facts,
-        _frame(4, 8, successor_snapshot),
+    # These tests decode Team Deathmatch and neutral transitions only.
+    return cast(
+        tuple[EvaluationEventV1, ...],
+        decode_evaluation_events_v1(
+            context,
+            _frame(3, 7, start_snapshot),
+            facts,
+            _frame(4, 8, successor_snapshot),
+        ),
     )
 
 

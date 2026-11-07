@@ -73,6 +73,7 @@ from marl_battlegrounds.evaluation.models import (
     ContentAddressedIdentityV1,
     EvaluationEpisodeContext,
     EvaluationEpisodeContextV2,
+    EvaluationEpisodeContextV5,
     EvaluationFrame,
     LethalDamageContributionEventV1,
     RecipientHealthResolutionEventV1,
@@ -80,6 +81,8 @@ from marl_battlegrounds.evaluation.models import (
     SourceHealingOutputEventV1,
     TeamDeathmatchCompletedEventV1,
     TeamDeathmatchScoreChangedEventV1,
+    recorded_score_threshold,
+    recorded_team_scores,
     red_zone_team_on_right,
 )
 from marl_battlegrounds.rendering.scene import (
@@ -631,7 +634,8 @@ def build_match_summary_v1(
     Raises
     ------
     ValueError
-        If the frame and context disagree, the start frame is not the frame
+        If the context is a Capture the Flag context V5 (its summary is not
+        built yet), the frame and context disagree, the start frame is not the frame
         just before ``frame``, completion events conflict, a score-change event
         does not join the frame's score, incoming events refer to another
         transition or contain inconsistent attribution, or
@@ -646,6 +650,9 @@ def build_match_summary_v1(
     The result is global researcher data: in Agent POV it may feed docked
     researcher panels only, never anything drawn on or over the arena.
     """
+    if isinstance(context, EvaluationEpisodeContextV5):
+        # The Capture the Flag summary comes with the viewer's CTF checkpoint.
+        raise ValueError("Capture the Flag match summaries are not available yet")
     if frame.episode_id != context.identity.episode_id:
         raise ValueError("match summary frame must join its episode context")
     if transition_start_frame is not None and (
@@ -656,7 +663,7 @@ def build_match_summary_v1(
     if (
         frame.frame_index == 0
         and scores_ten_ticks_ago is not None
-        and tuple(scores_ten_ticks_ago) != tuple(frame.snapshot.team_deathmatch_scores)
+        and tuple(scores_ten_ticks_ago) != recorded_team_scores(frame.snapshot)
     ):
         raise ValueError("on frame zero the scores ten ticks ago are the scores")
     incoming_transition_id = f"{frame.episode_id}:transition:{frame.frame_index - 1}"
@@ -732,11 +739,9 @@ def build_match_summary_v1(
                 "match return must belong to the frame's incoming transition"
             )
         returned_slots.add(event.agent_global_slot)
-    scores = cast("tuple[int, int]", frame.snapshot.team_deathmatch_scores)
+    scores = recorded_team_scores(frame.snapshot)
     if transition_start_frame is not None:
-        previous_scores = cast(
-            "tuple[int, int]", transition_start_frame.snapshot.team_deathmatch_scores
-        )
+        previous_scores = recorded_team_scores(transition_start_frame.snapshot)
     else:
         previous = list(scores)
         for event in incoming_events:
@@ -809,7 +814,7 @@ def build_match_summary_v1(
         source_frame_index=frame.frame_index,
         simulator_step_count=frame.simulator_step_count,
         task_mode=task_mode,
-        score_threshold=context.resolved_env_config.team_deathmatch_score_threshold,
+        score_threshold=recorded_score_threshold(context.resolved_env_config),
         scores=scores,
         previous_scores=previous_scores,
         scores_ten_ticks_ago=(

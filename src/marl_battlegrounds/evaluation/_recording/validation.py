@@ -4,6 +4,9 @@ These host-only checks compare declared wire types, stable identifiers, decision
 epochs, inactive padding, information sharing, task completion, and canonical
 events. They read Core-authored facts; they do not replay simulator physics.
 Historical frame versions remain paired with their declared context version.
+Capture the Flag records (context V5, frame V4, transition V2) get the same
+checks with their own task authority and context columns, written to the C1.C
+contract.
 """
 
 from typing import cast
@@ -11,19 +14,27 @@ from typing import cast
 from pydantic import ValidationError
 
 from marl_battlegrounds.evaluation._recording.events import (
+    _derive_capture_the_flag_authority,  # pyright: ignore[reportPrivateUsage]
     _derive_team_deathmatch_authority_v1,  # pyright: ignore[reportPrivateUsage]
     decode_evaluation_events_v1,
 )
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContext,
     EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
     EvaluationFrame,
+    EvaluationFrameV4,
     EvaluationModel,
-    EvaluationTransitionV1,
+    EvaluationTransition,
+    GlobalAnalysisSnapshotCaptureTheFlagV2,
+    TransitionFactsCaptureTheFlagV2,
     TransitionFactsV1,
     evaluation_context_type,
     evaluation_frame_type_for_context,
+    evaluation_transition_type_for_context,
     float32_value,
+    recorded_score_threshold,
+    recorded_team_scores,
 )
 
 # These are frozen V1 wire-column coordinates, duplicated intentionally so
@@ -103,18 +114,23 @@ def _validate_inactive_frame_padding(
                 global_slot=global_slot,
                 field_name=f"frame.snapshot.{field_name}",
             )
+        if isinstance(snapshot, GlobalAnalysisSnapshotCaptureTheFlagV2) and (
+            global_slot in snapshot.capture_the_flag_flag_carrier_slots
+        ):
+            raise ValueError(f"inactive slot {global_slot} cannot carry a flag")
 
 
 def _validate_inactive_fact_padding(
     context: EvaluationEpisodeContext,
-    transition: EvaluationTransitionV1,
+    transition: EvaluationTransition,
 ) -> None:
     """Check inactive rows and source/recipient routes in Core-authored facts.
 
     Accepted actions, combat, death, shield, regeneration, movement, status, respawn,
-    and aura facts must be neutral for inactive slots. Combat routes cannot name an
-    inactive recipient. Submitted intent is deliberately retained without this
-    neutrality rule. Violations raise ValueError; records are not changed.
+    aura and Capture the Flag agent facts must be neutral for inactive slots.
+    Combat routes cannot name an inactive recipient. Submitted intent is
+    deliberately retained without this neutrality rule. Violations raise
+    ValueError; records are not changed.
     """
     facts = transition.facts
     acceptance = facts.action_acceptance_facts
@@ -186,6 +202,20 @@ def _validate_inactive_fact_padding(
             "status_lifecycle_facts",
         ),
     )
+    if isinstance(facts, TransitionFactsCaptureTheFlagV2):
+        flag_facts = facts.capture_the_flag_facts
+        per_agent_fact_fields += (
+            (
+                flag_facts,
+                (
+                    "flag_was_picked_up_by_agent",
+                    "flag_was_dropped_by_agent",
+                    "ally_flag_was_returned_by_agent",
+                    "enemy_flag_was_captured_by_agent",
+                ),
+                "capture_the_flag_facts",
+            ),
+        )
 
     for recipient_global_slot in combat.combat_effect_recipient_global_slot_by_source:
         if (
@@ -398,13 +428,18 @@ def _validate_task_context_projection(
 
     For each active slot, verify tick, horizon, mode, team-relative scores, threshold,
     and unused task padding; for context V4 also check that column 19 equals the
-    float32 value of the recorded Red Zone depth. Inactive context rows must be
-    neutral. Raise ValueError on disagreement; these frozen wire coordinates keep
-    this reader free of JAX.
+    float32 value of the recorded Red Zone depth. A Capture the Flag row (context
+    V5) follows C1.C: column 8 is 1, column 9 the four objective rows, columns 14
+    and 15 the observer's own and the enemy's captures, column 18 the capture
+    threshold, and every other task column, the depth included, 0. Inactive
+    context rows must be neutral. Raise ValueError on disagreement; these frozen
+    wire coordinates keep this reader free of JAX.
     """
     config = context.resolved_env_config
-    scores = frame.snapshot.team_deathmatch_scores
+    scores = recorded_team_scores(frame.snapshot)
+    threshold = float(recorded_score_threshold(config))
     is_team_deathmatch = config.task_mode == 1
+    is_capture_the_flag = isinstance(context, EvaluationEpisodeContextV5)
     for global_slot, (roster_row, context_row) in enumerate(
         zip(context.roster, frame.base_observation.context_features, strict=True)
     ):
@@ -425,20 +460,28 @@ def _validate_task_context_projection(
         ):
             raise ValueError("policy context horizon must match resolved configuration")
 
+        own = float(scores[roster_row.configured_team_id - 1])
+        enemy = float(scores[2 - roster_row.configured_team_id])
+        # Columns 6-18: is TDM, KOTH, CTF; active objective rows; TDM, KOTH and
+        # CTF scores (own, enemy); TDM, KOTH and CTF thresholds.
         expected_task_slice = (
-            1.0 if is_team_deathmatch else 0.0,
-            0.0,
-            0.0,
-            0.0,
-            float(scores[roster_row.configured_team_id - 1]),
-            float(scores[2 - roster_row.configured_team_id]),
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            float(config.team_deathmatch_score_threshold),
-            0.0,
-            0.0,
+            (0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 0.0, own, enemy, 0.0, 0.0, threshold)
+            if is_capture_the_flag
+            else (
+                1.0 if is_team_deathmatch else 0.0,
+                0.0,
+                0.0,
+                0.0,
+                own,
+                enemy,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                threshold,
+                0.0,
+                0.0,
+            )
         )
         actual_task_slice = context_row[
             _CONTEXT_FEATURE_IS_TDM_V1 : _CONTEXT_FEATURE_TDM_SCORE_THRESHOLD_V1 + 3
@@ -454,32 +497,81 @@ def _validate_task_context_projection(
             raise ValueError(
                 "policy context Red Zone depth must match resolved configuration"
             )
+        if is_capture_the_flag and context_row[_CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH_V2]:
+            raise ValueError("Capture the Flag context rows keep the Red Zone depth 0")
 
 
-def _derive_and_validate_team_deathmatch_authority_v1(
+def derive_and_validate_task_authority(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     successor_frame: EvaluationFrame,
     canonical_reward_by_agent: tuple[float, ...],
     terminated: bool,
     truncated: bool,
 ) -> tuple[tuple[float, float] | None, str | None]:
-    """Check rewards and completion flags against joined task facts.
+    """Check rewards and completion flags against the mode's joined task facts.
 
-    Return per-team reward and owning end reason for TDM, or (None, None) for
-    task-neutral transitions. Active slots receive their configured team's reward;
-    inactive slots receive zero. Threshold and horizon flags can both be true.
-    Raise ValueError on inconsistent flags or rewards. This uses recorded Core facts
-    and the shared event authority rather than rerunning a transition.
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        Exact supported context; a V5 context is a Capture the Flag game, the
+        others Team Deathmatch or neutral games.
+    start_frame, successor_frame : EvaluationFrame
+        The adjacent frames of the context's frame version.
+    facts : TransitionFactsV1 | TransitionFactsCaptureTheFlagV2
+        Real transition facts of the context's version.
+    canonical_reward_by_agent : tuple[float, ...]
+        Ten recorded rewards in global-slot order.
+    terminated, truncated : bool
+        The recorded done flags.
+
+    Returns
+    -------
+    tuple[tuple[float, float] | None, str | None]
+        Per-team reward and owning end reason for Team Deathmatch and Capture
+        the Flag, or (None, None) for task-neutral transitions.
+
+    Raises
+    ------
+    ValueError
+        Flags, rewards, scores or the outcome disagree with the recorded facts.
+
+    Notes
+    -----
+    Both scored modes reward a win +1 and a loss -1 (a draw and an ongoing
+    game 0); active slots get their configured team's reward and inactive
+    slots zero. terminated equals threshold completion and truncated horizon
+    completion; both may hold. End reasons are the mode's prefix plus
+    _score_threshold, _horizon or _score_threshold_at_horizon. Recorded Core
+    facts only; nothing is rerun. The Capture the Flag rule is checked
+    against Core's own rewards at C1.3's acceptance.
     """
-    authority = _derive_team_deathmatch_authority_v1(
-        context,
-        start_frame,
-        facts,
-        successor_frame,
-    )
-    if context.resolved_env_config.task_mode != 1:
+    if isinstance(context, EvaluationEpisodeContextV5):
+        authority = _derive_capture_the_flag_authority(
+            context,
+            cast(EvaluationFrameV4, start_frame),
+            cast(TransitionFactsCaptureTheFlagV2, facts),
+            cast(EvaluationFrameV4, successor_frame),
+        )
+        mode_name, short_name, end_prefix = (
+            "Capture the Flag",
+            "CTF",
+            "capture_the_flag",
+        )
+    else:
+        authority = _derive_team_deathmatch_authority_v1(
+            context,
+            start_frame,
+            cast(TransitionFactsV1, facts),
+            successor_frame,
+        )
+        mode_name, short_name, end_prefix = (
+            "Team Deathmatch",
+            "TDM",
+            "team_deathmatch",
+        )
+    if context.resolved_env_config.task_mode == 0:
         if any(reward != 0.0 for reward in canonical_reward_by_agent):
             raise ValueError("task-neutral canonical reward must remain zero")
         if terminated:
@@ -491,9 +583,9 @@ def _derive_and_validate_team_deathmatch_authority_v1(
         return None, None
 
     if terminated != authority.threshold_reached:
-        raise ValueError("Team Deathmatch terminated must equal threshold completion")
+        raise ValueError(f"{mode_name} terminated must equal threshold completion")
     if truncated != authority.horizon_reached:
-        raise ValueError("Team Deathmatch truncated must equal horizon completion")
+        raise ValueError(f"{mode_name} truncated must equal horizon completion")
 
     reward_by_team_by_outcome = {
         0: (0.0, 0.0),
@@ -512,18 +604,14 @@ def _derive_and_validate_team_deathmatch_authority_v1(
     )
     if canonical_reward_by_agent != expected_reward_by_agent:
         raise ValueError(
-            "per-agent canonical TDM reward must match configured team membership"
+            f"per-agent canonical {short_name} reward must match configured team "
+            "membership"
         )
 
-    end_reason_by_basis = {
-        "score_threshold": "team_deathmatch_score_threshold",
-        "horizon": "team_deathmatch_horizon",
-        "score_threshold_at_horizon": ("team_deathmatch_score_threshold_at_horizon"),
-    }
     owning_task_end_reason = (
         None
         if authority.completion_basis is None
-        else end_reason_by_basis[authority.completion_basis]
+        else f"{end_prefix}_{authority.completion_basis}"
     )
     return canonical_reward_by_team, owning_task_end_reason
 
@@ -537,7 +625,7 @@ def _validate_context_joined_frame(
     """Return a revalidated frame after checking episode, task, and information joins.
 
     Require its context-owned frame version, canonical ID, inactive padding, and
-    policy-visible task fields. Non-TDM frames keep TDM scores zero. Raise ValueError
+    policy-visible task fields. Neutral frames keep TDM scores zero. Raise ValueError
     with the supplied record label on a mismatch; do not mutate the original frame.
     """
     frame = cast(
@@ -554,10 +642,9 @@ def _validate_context_joined_frame(
     expected_frame_id = f"{episode_id}:frame:{frame.frame_index}"
     if frame.frame_id != expected_frame_id:
         raise ValueError(f"{record_name} ID is not canonical")
-    if (
-        context.resolved_env_config.task_mode != 1
-        and frame.snapshot.team_deathmatch_scores != (0, 0)
-    ):
+    if context.resolved_env_config.task_mode == 0 and recorded_team_scores(
+        frame.snapshot
+    ) != (0, 0):
         raise ValueError(
             f"{record_name} must keep Team Deathmatch scores zero outside TDM"
         )
@@ -578,8 +665,8 @@ def validate_context_joined_evaluation_frame_v1(
     context : EvaluationEpisodeContext
         Exact supported episode context with resolved configuration and roster.
     frame : EvaluationFrame
-        Matching frame type from evaluation_frame_type_for_context: V3 for
-        context V4, V2 for context V3, otherwise V1.
+        Matching frame type from evaluation_frame_type_for_context: V4 for
+        context V5, V3 for context V4, V2 for context V3, otherwise V1.
 
     Returns
     -------
@@ -632,14 +719,15 @@ def validate_initial_evaluation_frame_v1(
     ------
     ValueError
         The context/frame join is invalid, the artifact index is not zero,
-        or TDM starts terminal or declares a horizon inconsistent with the
-        remaining simulator ticks.
+        or a Team Deathmatch or Capture the Flag game starts terminal or
+        declares a horizon inconsistent with the remaining simulator ticks.
 
     Notes
     -----
-    Artifact indices and simulator ticks are different coordinates. For TDM,
-    initial simulator tick plus expected_horizon must equal maximum_episode_steps.
-    The frame must precede both score-threshold and horizon completion.
+    Artifact indices and simulator ticks are different coordinates. For TDM and
+    Capture the Flag, initial simulator tick plus expected_horizon must equal
+    maximum_episode_steps, and the frame must precede both score-threshold and
+    horizon completion.
     """
     validate_declared_model_tree(
         context,
@@ -657,18 +745,19 @@ def validate_initial_evaluation_frame_v1(
     if initial_frame.frame_id != expected_frame_id:
         raise ValueError("initial frame ID must identify artifact frame zero")
     config = context.resolved_env_config
-    if config.task_mode == 1:
+    mode_name = {1: "Team Deathmatch", 3: "Capture the Flag"}.get(config.task_mode)
+    if mode_name is not None:
+        threshold = recorded_score_threshold(config)
         if initial_frame.simulator_step_count >= config.maximum_episode_steps or any(
-            score >= config.team_deathmatch_score_threshold
-            for score in initial_frame.snapshot.team_deathmatch_scores
+            score >= threshold for score in recorded_team_scores(initial_frame.snapshot)
         ):
-            raise ValueError("initial Team Deathmatch frame must be preterminal")
+            raise ValueError(f"initial {mode_name} frame must be preterminal")
         if (
             initial_frame.simulator_step_count + context.expected_horizon
             != config.maximum_episode_steps
         ):
             raise ValueError(
-                "Team Deathmatch expected_horizon must equal the remaining "
+                f"{mode_name} expected_horizon must equal the remaining "
                 "simulator transitions"
             )
 
@@ -676,7 +765,7 @@ def validate_initial_evaluation_frame_v1(
 def validate_evaluation_transition_unit_v1(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
-    transition: EvaluationTransitionV1,
+    transition: EvaluationTransition,
     successor_frame: EvaluationFrame,
 ) -> None:
     """Check one complete start/action/result unit from a captured episode.
@@ -687,9 +776,10 @@ def validate_evaluation_transition_unit_v1(
         Exact supported episode context owning configuration and roster.
     start_frame : EvaluationFrame
         Captured decision frame before the transition.
-    transition : EvaluationTransitionV1
-        Exact V1 transition with submitted/accepted action facts, rewards,
-        completion flags, and decoded events.
+    transition : EvaluationTransition
+        Exact transition of the context's version (V2 for context V5, V1
+        otherwise) with submitted/accepted action facts, rewards, completion
+        flags, and decoded events.
     successor_frame : EvaluationFrame
         Context-compatible frame exactly one artifact index and one
         simulator tick after start_frame.
@@ -719,12 +809,12 @@ def validate_evaluation_transition_unit_v1(
 def _canonicalize_evaluation_transition_unit_v1(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
-    transition: EvaluationTransitionV1,
+    transition: EvaluationTransition,
     successor_frame: EvaluationFrame,
 ) -> tuple[
     EvaluationEpisodeContext,
     EvaluationFrame,
-    EvaluationTransitionV1,
+    EvaluationTransition,
     EvaluationFrame,
 ]:
     """Validate a joined transition and return detached context/frame/transition copies.
@@ -744,11 +834,11 @@ def _canonicalize_evaluation_transition_unit_v1(
         ),
     )
     transition = cast(
-        EvaluationTransitionV1,
+        EvaluationTransition,
         validate_declared_model_tree(
             transition,
             record_name="transition",
-            expected_type=EvaluationTransitionV1,
+            expected_type=evaluation_transition_type_for_context(context),
         ),
     )
     start_frame = _validate_context_joined_frame(
@@ -794,16 +884,14 @@ def _canonicalize_evaluation_transition_unit_v1(
 
     _validate_inactive_fact_padding(context, transition)
 
-    expected_team_reward, expected_end_reason = (
-        _derive_and_validate_team_deathmatch_authority_v1(
-            context,
-            start_frame,
-            transition.facts,
-            successor_frame,
-            transition.canonical_reward_by_agent,
-            transition.terminated,
-            transition.truncated,
-        )
+    expected_team_reward, expected_end_reason = derive_and_validate_task_authority(
+        context,
+        start_frame,
+        transition.facts,
+        successor_frame,
+        transition.canonical_reward_by_agent,
+        transition.terminated,
+        transition.truncated,
     )
     if transition.canonical_reward_by_team != expected_team_reward:
         raise ValueError(
@@ -826,13 +914,14 @@ def _canonicalize_evaluation_transition_unit_v1(
 
 
 __all__ = [
+    "derive_and_validate_task_authority",
     "validate_context_joined_evaluation_frame_v1",
     "validate_evaluation_transition_unit_v1",
     "validate_initial_evaluation_frame_v1",
 ]
 
 
-# The unchanged transition wire stays V1; frame admission follows its context.
+# Frame and transition admission follow the context's versions.
 validate_initial_evaluation_frame = validate_initial_evaluation_frame_v1
 validate_context_joined_evaluation_frame = validate_context_joined_evaluation_frame_v1
 validate_evaluation_transition_unit = validate_evaluation_transition_unit_v1

@@ -895,8 +895,9 @@ def test_all_exact_scenarios_complete_save_metrics_and_preserve_replay_start(
     tmp_path: Path,
 ) -> None:
     from marl_battlegrounds.evaluation._recording.capture import (
-        _normalize_snapshot_v1,  # pyright: ignore[reportPrivateUsage]
+        _normalize_snapshot,  # pyright: ignore[reportPrivateUsage]
     )
+    from marl_battlegrounds.evaluation.models import GlobalAnalysisSnapshotV1
     from marl_battlegrounds.evaluation.replay_io import load_replay
 
     results = marl_bgs.evaluate_scenarios(
@@ -916,7 +917,9 @@ def test_all_exact_scenarios_complete_save_metrics_and_preserve_replay_start(
         assert len(saved.table("full_metrics")) > 1000
         replay = load_replay(next(iter(saved.replay_paths))).replay
         scenario = marl_bgs.load_tdm_scenario(identifier)
-        tick, snapshot = _normalize_snapshot_v1(jax.device_get(scenario.initial_state))
+        tick, snapshot = _normalize_snapshot(
+            jax.device_get(scenario.initial_state), GlobalAnalysisSnapshotV1
+        )
         assert replay.frames[0].simulator_step_count == tick
         assert replay.frames[0].snapshot == snapshot
         assert len(snapshot.alive_mask) == 10 and not all(snapshot.alive_mask)

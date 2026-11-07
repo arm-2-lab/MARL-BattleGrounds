@@ -31,6 +31,7 @@ from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     EvaluationEpisodeContext,
     EvaluationModel,
+    ResolvedEnvConfigCaptureTheFlagV3,
     ResolvedEnvConfigV1,
     ResolvedEnvConfigV2,
 )
@@ -260,7 +261,10 @@ class MapLayout(NamedTuple):
 
 
 def _geometry_matches(
-    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout,
+    config: ResolvedEnvConfigV1
+    | ResolvedEnvConfigV2
+    | ResolvedEnvConfigCaptureTheFlagV3
+    | MapLayout,
     geometry: MapGeometry,
     *,
     mode: int,
@@ -310,7 +314,11 @@ def _geometry_matches(
 
 @lru_cache(maxsize=128)
 def registered_map_metadata(
-    map_id: int, config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout
+    map_id: int,
+    config: ResolvedEnvConfigV1
+    | ResolvedEnvConfigV2
+    | ResolvedEnvConfigCaptureTheFlagV3
+    | MapLayout,
 ) -> tuple[AggregationKeyV1, ...]:
     """Verify a declared map's geometry and return stable recording keys.
 
@@ -319,10 +327,11 @@ def registered_map_metadata(
     map_id : int
         Current approved integer map ID in the record's own mode's catalog
         (Team Deathmatch's or Capture the Flag's).
-    config : ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout
+    config : ResolvedEnvConfigV1 | ResolvedEnvConfigV2 |
+    ResolvedEnvConfigCaptureTheFlagV3 | MapLayout
         Frozen resolved config for the actual episode (V2 records the Red Zone
-        depth, which does not affect map geometry), or the episode's MapLayout,
-        which evaluation uses for configs of any mode.
+        depth, which does not affect map geometry; V3 is Capture the Flag's), or
+        the episode's MapLayout, which evaluation uses for configs of any mode.
 
     Returns
     -------
@@ -364,7 +373,10 @@ def registered_map_metadata(
 
 def _snapshot_map_metadata(  # pyright: ignore[reportUnusedFunction]
     map_id: int,
-    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout,
+    config: ResolvedEnvConfigV1
+    | ResolvedEnvConfigV2
+    | ResolvedEnvConfigCaptureTheFlagV3
+    | MapLayout,
     declared: Mapping[str, Any],
 ) -> tuple[AggregationKeyV1, ...]:
     """Verify one pinned map revision without replacing it with today's catalog.
@@ -442,7 +454,7 @@ def _recorded_map(bindings: tuple[tuple[str, str], ...], layout: str) -> Recorde
 
 def _declared_source_geometry(
     context: EvaluationEpisodeContext,
-) -> ResolvedEnvConfigV1 | ResolvedEnvConfigV2:
+) -> ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | ResolvedEnvConfigCaptureTheFlagV3:
     """Return source-order geometry only for an explicit verified spawn marker.
 
     Older records without the namespaced marker keep their exact bank order.

@@ -8,7 +8,7 @@ it does not silently substitute current class defaults or reset the simulator.
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Literal, NotRequired, TypedDict, Unpack, cast
 
 import jax.numpy as jnp
 import numpy as np
@@ -103,6 +103,7 @@ from marl_battlegrounds.evaluation.models import (
     REQUIRED_SCHEMA_BINDINGS_V2,
     REQUIRED_SCHEMA_BINDINGS_V3,
     REQUIRED_SCHEMA_BINDINGS_V4,
+    REQUIRED_SCHEMA_BINDINGS_V5,
     RESOLVED_ENV_CONFIG_SCHEMA_ID,
     RESOLVED_ENV_CONFIG_SCHEMA_VERSION,
     AggregationKeyV1,
@@ -117,6 +118,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV2,
     EvaluationEpisodeContextV3,
     EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
     EvaluationEpisodeIdentityV1,
     EvaluationFrame,
     EvaluationFrameV1,
@@ -127,7 +129,7 @@ from marl_battlegrounds.evaluation.models import (
     ExecutionInformationMode,
     PolicyAssignmentSlotV1,
     PolicyAssignmentSlotV2,
-    ResolvedCaptureTheFlagConfigV3,
+    ResolvedEnvConfigCaptureTheFlagV3,
     ResolvedEnvConfigV1,
     ResolvedEnvConfigV2,
     ResolvedObstacleV1,
@@ -137,6 +139,7 @@ from marl_battlegrounds.evaluation.models import (
     SchemaVersionEntryV2,
     SchemaVersionEntryV3,
     SchemaVersionEntryV4,
+    SchemaVersionEntryV5,
     StaticMechanicsCatalogV1,
     StatusMechanicV1,
     VersionedIdentityV1,
@@ -588,7 +591,7 @@ def build_resolved_env_config_v2(config: EnvConfig) -> ResolvedEnvConfigV2:
 
 def build_resolved_env_config_v3(
     config: EnvConfig,
-) -> ResolvedCaptureTheFlagConfigV3:
+) -> ResolvedEnvConfigCaptureTheFlagV3:
     """Validate one scalar Capture the Flag config and record its resolved values.
 
     Parameters
@@ -599,7 +602,7 @@ def build_resolved_env_config_v3(
 
     Returns
     -------
-    ResolvedCaptureTheFlagConfigV3
+    ResolvedEnvConfigCaptureTheFlagV3
         V2's shared settings plus the five Capture the Flag settings, with a
         SHA-256 digest of those recorded values. It holds no Team Deathmatch
         or King of the Hills field.
@@ -649,12 +652,12 @@ def build_resolved_env_config_v3(
         **_shared_payload(config),
     }
     payload["canonical_digest_sha256"] = canonical_digest_sha256(payload)
-    return ResolvedCaptureTheFlagConfigV3.model_validate(payload)
+    return ResolvedEnvConfigCaptureTheFlagV3.model_validate(payload)
 
 
 def build_resolved_env_config(
     config: EnvConfig,
-) -> ResolvedEnvConfigV2 | ResolvedCaptureTheFlagConfigV3:
+) -> ResolvedEnvConfigV2 | ResolvedEnvConfigCaptureTheFlagV3:
     """Record one scalar config with its mode's current resolved-config version.
 
     Parameters
@@ -665,10 +668,10 @@ def build_resolved_env_config(
 
     Returns
     -------
-    ResolvedEnvConfigV2 | ResolvedCaptureTheFlagConfigV3
+    ResolvedEnvConfigV2 | ResolvedEnvConfigCaptureTheFlagV3
         ResolvedEnvConfigV2 for a Team Deathmatch or neutral config, the same
         record build_resolved_env_config_v2 returns, and
-        ResolvedCaptureTheFlagConfigV3 for a Capture the Flag config. Read
+        ResolvedEnvConfigCaptureTheFlagV3 for a Capture the Flag config. Read
         ``schema_version`` and ``canonical_digest_sha256`` to name the record
         without knowing its mode.
 
@@ -693,19 +696,26 @@ def build_resolved_env_config(
 
 
 def _build_resolved_env_config_for(
-    config: EnvConfig, recorded: ResolvedEnvConfigV1 | ResolvedEnvConfigV2
-) -> ResolvedEnvConfigV1 | ResolvedEnvConfigV2:
+    config: EnvConfig,
+    recorded: ResolvedEnvConfigV1
+    | ResolvedEnvConfigV2
+    | ResolvedEnvConfigCaptureTheFlagV3,
+) -> ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | ResolvedEnvConfigCaptureTheFlagV3:
     """Rebuild a config's record with the builder that matches a recorded version.
 
     config is a validated scalar EnvConfig; recorded is the record it should
-    reproduce. Return a V2 record when recorded is V2 and a V1 record
-    otherwise. The one owner of "use the builder that matches the recorded
-    version" for reprojection and replay checks. Errors propagate from the
-    chosen builder.
+    reproduce. Return a record of recorded's exact class: V1, V2 or the
+    Capture the Flag V3. The one owner of "use the builder that matches the
+    recorded version" for reprojection and replay checks. Errors propagate
+    from the chosen builder; an undeclared record class raises TypeError.
     """
-    if isinstance(recorded, ResolvedEnvConfigV2):
+    if type(recorded) is ResolvedEnvConfigCaptureTheFlagV3:
+        return build_resolved_env_config_v3(config)
+    if type(recorded) is ResolvedEnvConfigV2:
         return build_resolved_env_config_v2(config)
-    return build_resolved_env_config_v1(config)
+    if type(recorded) is ResolvedEnvConfigV1:
+        return build_resolved_env_config_v1(config)
+    raise TypeError("recorded must be an exact resolved config record")
 
 
 def _team_deathmatch_payload(config: EnvConfig) -> dict[str, object]:
@@ -1356,6 +1366,138 @@ def build_evaluation_episode_context_v4(
     )
 
 
+class _EpisodeContextFields(TypedDict):
+    """Every keyword the current context builders take besides config and IDs.
+
+    The same names, types and meanings as build_evaluation_episode_context_v4's
+    parameters; scenario_name may be left out (None).
+    """
+
+    identity: EvaluationEpisodeIdentityV1
+    aggregation_keys: tuple[AggregationKeyV1, ...]
+    expected_horizon: int
+    policy_assignments: tuple[PolicyAssignmentSlotV2, ...]
+    seed_protocol: EvaluationSeedProtocolV1 | EvaluationSeedProtocolV2
+    capture_profile: CaptureProfile
+    execution_information_mode: ExecutionInformationMode
+    actor_projection: VersionedIdentityV1
+    critic_information_regime: VersionedIdentityV1
+    canonical_reward_mode: VersionedIdentityV1
+    shaping_configuration: ContentAddressedIdentityV1
+    code_revision: CodeRevisionV1 | CodeRevisionV2
+    scenario_name: NotRequired[str | None]
+
+
+def build_evaluation_episode_context_v5(
+    *,
+    config: EnvConfig,
+    public_agent_id_by_global_slot: tuple[str, ...],
+    **fields: Unpack[_EpisodeContextFields],
+) -> EvaluationEpisodeContextV5:
+    """Build context V5 for one Capture the Flag game.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        Scalar Capture the Flag config (task_mode 3) that Core accepts.
+    public_agent_id_by_global_slot : tuple[str, ...]
+        Ten unique public agent IDs in global-slot order.
+    **fields : Unpack[_EpisodeContextFields]
+        identity, aggregation_keys, expected_horizon, policy_assignments, seed_protocol,
+        capture_profile, execution_information_mode, actor_projection,
+        critic_information_regime, canonical_reward_mode,
+        shaping_configuration, code_revision and the optional scenario_name,
+        with the same meanings and rules as in
+        build_evaluation_episode_context_v4. Capture the Flag's reward mode
+        is "core-ctf" version 1.
+
+    Returns
+    -------
+    EvaluationEpisodeContextV5
+        Validated context V5 with its exact schema bindings, the Capture the
+        Flag config record V3, the current static mechanics catalog and the
+        ordered roster. It pairs with frame V4 and transition V2.
+
+    Raises
+    ------
+    TypeError
+        The runtime config has an unsupported field type or dtype.
+    ValueError
+        Core refuses the config, it is not a Capture the Flag config, there
+        are not ten assignments, or metadata, roster joins, bindings or the
+        projection fail validation.
+
+    Notes
+    -----
+    Host only, outside JIT; copies runtime arrays to host records. It does not
+    invent policy, seed, reward or revision provenance.
+    """
+    run_config_check(validate_env_config, config)
+    if len(fields["policy_assignments"]) != MAX_AGENT_SLOTS:
+        raise ValueError("policy_assignments must have length 10")
+    return EvaluationEpisodeContextV5(
+        schema_versions=tuple(
+            SchemaVersionEntryV5(schema_id=name, schema_version=version)
+            for name, version in REQUIRED_SCHEMA_BINDINGS_V5
+        ),
+        resolved_env_config=build_resolved_env_config_v3(config),
+        static_mechanics_catalog=build_static_mechanics_catalog_v1(),
+        roster=build_roster_v1(config, public_agent_id_by_global_slot),
+        **fields,
+    )
+
+
+def build_evaluation_episode_context(
+    *,
+    config: EnvConfig,
+    public_agent_id_by_global_slot: tuple[str, ...],
+    **fields: Unpack[_EpisodeContextFields],
+) -> EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5:
+    """Build the current episode context for a config of any mode.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        Scalar config that Core accepts.
+    public_agent_id_by_global_slot : tuple[str, ...]
+        Ten unique public agent IDs in global-slot order.
+    **fields : Unpack[_EpisodeContextFields]
+        The other keywords of build_evaluation_episode_context_v4, with the
+        same meanings.
+
+    Returns
+    -------
+    EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5
+        Context V4 for a Team Deathmatch or neutral config (task_mode the int
+        0 or 1); context V5 for Capture the Flag.
+
+    Raises
+    ------
+    TypeError, ValueError
+        From the chosen builder; a batched or invalid config goes to V5,
+        whose Core check gives the clear error.
+
+    Notes
+    -----
+    The one table of each mode's current context version, the twin of
+    build_resolved_env_config, so recording code never branches on mode.
+    """
+    if type(config.task_mode) is int and config.task_mode in (
+        TASK_MODE_NEUTRAL,
+        TASK_MODE_TDM,
+    ):
+        return build_evaluation_episode_context_v4(
+            config=config,
+            public_agent_id_by_global_slot=public_agent_id_by_global_slot,
+            **fields,
+        )
+    return build_evaluation_episode_context_v5(
+        config=config,
+        public_agent_id_by_global_slot=public_agent_id_by_global_slot,
+        **fields,
+    )
+
+
 _INT32_MIN = int(np.iinfo(np.int32).min)
 _INT32_MAX = int(np.iinfo(np.int32).max)
 
@@ -1398,6 +1540,13 @@ def _wire_float32_array(value: object, *, field_name: str, host: bool = False) -
     return cast(Array, narrowed) if host else jnp.asarray(narrowed, dtype=jnp.float32)
 
 
+# Team Deathmatch's two settings outside Team Deathmatch, which Core requires
+# (validate_env_config) and a mirrored Capture the Flag record leaves out: the
+# one host owner of those values for rebuilding another mode's config.
+_NEUTRAL_TEAM_DEATHMATCH_SCORE_THRESHOLD = 0
+_NEUTRAL_TEAM_DEATHMATCH_RED_ZONE_DEPTH = 0.0
+
+
 def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
     """Restore one scalar runtime config from recorded context values.
 
@@ -1413,9 +1562,10 @@ def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
         Unbatched EnvConfig with Python scalar rules and JAX int32, float32, and bool
         arrays. Recorded profile overrides, geometry, and spawn settings are retained.
         The Red Zone depth is the recorded one for a ResolvedEnvConfigV2 and 0.0
-        (the original one-point rule) for a ResolvedEnvConfigV1. The Capture the
-        Flag and King of the Hills settings are neutral, as in every config
-        these records can hold.
+        (the original one-point rule) for a ResolvedEnvConfigV1. A Capture the
+        Flag record gives its five settings, Team Deathmatch's neutral
+        threshold 0 and depth 0.0; every setting no record holds (King of the
+        Hills', and Capture the Flag's outside it) is neutral.
 
     Raises
     ------
@@ -1516,12 +1666,31 @@ def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
     if np.shape(obstacles) != (MAX_OBSTACLE_SLOTS, OBSTACLE_FEATURES):
         raise AssertionError("resolved obstacle projection changed fixed shape")
 
+    objective = neutral_objective_fields(EnvConfig)
+    if isinstance(resolved, ResolvedEnvConfigCaptureTheFlagV3):
+        threshold = _NEUTRAL_TEAM_DEATHMATCH_SCORE_THRESHOLD
+        red_zone_depth = _NEUTRAL_TEAM_DEATHMATCH_RED_ZONE_DEPTH
+        # One loop over the record's own settings, so a new one follows.
+        objective.update(
+            (name, getattr(resolved, name))
+            for name in type(resolved).model_fields
+            if name.startswith("capture_the_flag_")
+        )
+        objective["capture_the_flag_flag_home_positions"] = _wire_float32_array(
+            resolved.capture_the_flag_flag_home_positions,
+            field_name="resolved_env_config.capture_the_flag_flag_home_positions",
+        )
+    else:
+        threshold = resolved.team_deathmatch_score_threshold
+        # A V1 record predates Red Zone: its original rule is depth 0.0.
+        red_zone_depth = (
+            resolved.team_deathmatch_red_zone_depth
+            if isinstance(resolved, ResolvedEnvConfigV2)
+            else 0.0
+        )
     for field_name, value in (
         ("resolved_env_config.task_mode", resolved.task_mode),
-        (
-            "resolved_env_config.team_deathmatch_score_threshold",
-            resolved.team_deathmatch_score_threshold,
-        ),
+        ("resolved_env_config.team_deathmatch_score_threshold", threshold),
         (
             "resolved_env_config.maximum_episode_steps",
             resolved.maximum_episode_steps,
@@ -1534,13 +1703,8 @@ def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
         _wire_int32_array(value, field_name=field_name)
     config = EnvConfig(
         task_mode=resolved.task_mode,
-        team_deathmatch_score_threshold=resolved.team_deathmatch_score_threshold,
-        # A V1 record predates Red Zone: its original rule is depth 0.0.
-        team_deathmatch_red_zone_depth=(
-            resolved.team_deathmatch_red_zone_depth
-            if isinstance(resolved, ResolvedEnvConfigV2)
-            else 0.0
-        ),
+        team_deathmatch_score_threshold=threshold,
+        team_deathmatch_red_zone_depth=red_zone_depth,
         max_steps=resolved.maximum_episode_steps,
         map_width=resolved.map_width,
         map_height=resolved.map_height,
@@ -1557,7 +1721,7 @@ def reconstruct_env_config_v1(context: EvaluationEpisodeContext) -> EnvConfig:
             resolved.team_respawn_wave_period_steps,
             field_name="resolved_env_config.team_respawn_wave_period_steps",
         ),
-        **neutral_objective_fields(EnvConfig),
+        **objective,
     )
     return config
 
@@ -1685,10 +1849,12 @@ def _validate_official_scenario_context(
 
 __all__ = [
     "build_code_revision_v1",
+    "build_evaluation_episode_context",
     "build_evaluation_episode_context_v1",
     "build_evaluation_episode_context_v2",
     "build_evaluation_episode_context_v3",
     "build_evaluation_episode_context_v4",
+    "build_evaluation_episode_context_v5",
     "build_evaluation_seed_protocol_v1",
     "build_resolved_env_config",
     "build_resolved_env_config_v1",

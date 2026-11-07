@@ -65,6 +65,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV3,
     StaticMechanicsCatalogV1,
     evaluation_context_type,
+    recorded_team_scores,
 )
 from marl_battlegrounds.rendering.authorized_incoming import (
     build_live_no_shared_obs_incoming_summary_v1,
@@ -497,7 +498,7 @@ def advance_live_match_history_v1(
         else agent_pov_tick_rescues_v1(context, oracle_rescues, events, summary)
         for summary in visual
     )
-    scores = view.start_frame.snapshot.team_deathmatch_scores
+    scores = recorded_team_scores(view.start_frame.snapshot)
     moments = moments.advance(
         context,
         start_frame_index=start.frame_index,

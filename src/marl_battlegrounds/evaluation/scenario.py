@@ -57,6 +57,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationModel,
     EvaluationSeedProtocolV1,
     EvaluationSeedProtocolV2,
+    GlobalAnalysisSnapshotCaptureTheFlagV2,
     GlobalAnalysisSnapshotV1,
     NotApplicablePolicySlotV1,
     RosterSlotV1,
@@ -1219,7 +1220,7 @@ _RESOLVED_INITIAL_STATE_DIGEST_DOMAIN_V2 = (
 
 def resolved_initial_state_digest_sha256(
     simulator_step_count: int,
-    snapshot: GlobalAnalysisSnapshotV1,
+    snapshot: GlobalAnalysisSnapshotV1 | GlobalAnalysisSnapshotCaptureTheFlagV2,
 ) -> str:
     """Hash simulator tick and privileged state independently of recording identity.
 
@@ -1227,8 +1228,9 @@ def resolved_initial_state_digest_sha256(
     ----------
     simulator_step_count : int
         Simulator tick belonging to the supplied snapshot.
-    snapshot : GlobalAnalysisSnapshotV1
-        Validated GlobalAnalysisSnapshotV1.
+    snapshot : GlobalAnalysisSnapshotV1 | GlobalAnalysisSnapshotCaptureTheFlagV2
+        Validated snapshot of any mode; its schema version is hashed, so a
+        Capture the Flag state never shares a digest with a Team Deathmatch one.
 
     Returns
     -------

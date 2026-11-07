@@ -31,6 +31,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     EvaluationModel,
     TeamDeathmatchCompletedEventV1,
+    recorded_team_scores,
 )
 
 type _Dimensions = tuple[tuple[str, str], ...]
@@ -311,7 +312,7 @@ class _OutcomeReducer:
             update={
                 "cells": rows.freeze(),
                 "steps": state.steps + 1,
-                "scores": view.successor_frame.snapshot.team_deathmatch_scores,
+                "scores": recorded_team_scores(view.successor_frame.snapshot),
                 "outcome": outcome,
             }
         )

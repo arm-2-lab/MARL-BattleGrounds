@@ -10,6 +10,12 @@ rule check, not physics. ``team_deathmatch_home_fall_slots_v1`` is the one owner
 of which new deaths scored double ("home falls"); the score check here, match
 summaries, presentation events and replay timeline marks all call it on
 recorded positions instead of copying the rule.
+
+Capture the Flag transitions (context V5) decode the same shared events plus
+one event per Core flag fact, each checked against its two frames, and the
+completion event; captures are re-derived from the capture facts. Both modes
+share one outcome rule: at the threshold the higher score wins, a horizon-only
+finish draws.
 """
 
 from __future__ import annotations
@@ -19,6 +25,8 @@ from dataclasses import dataclass
 from typing import cast
 
 from marl_battlegrounds.evaluation.models import (
+    MAX_AGENT_SLOTS,
+    MAX_AGENTS_PER_TEAM,
     TEAM_DEATHMATCH_POINTS_PER_DEATH,
     TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH,
     AbilityActivatedEventV1,
@@ -26,14 +34,24 @@ from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
     AgentLeftCombatEventV1,
     AgentRespawnedEventV1,
+    CaptureTheFlagCompletedEventV1,
     ChargePhaseDisplacementEventV1,
     CombatCountdownResetEventV1,
     CooldownReadyEventV1,
     CooldownStartedEventV1,
     EvaluationEpisodeContext,
+    EvaluationEpisodeContextV5,
     EvaluationEventBaseV1,
+    EvaluationEventCaptureTheFlagV1,
     EvaluationEventV1,
     EvaluationFrame,
+    EvaluationFrameV4,
+    FlagAutomaticallyReturnedEventV1,
+    FlagCapturedEventV1,
+    FlagDroppedEventV1,
+    FlagPickedUpEventV1,
+    FlagReturnedEventV1,
+    GlobalAnalysisSnapshotCaptureTheFlagV2,
     HealthRegeneratedEventV1,
     LethalDamageContributionEventV1,
     OrdinaryMovementPhaseDisplacementEventV1,
@@ -50,7 +68,10 @@ from marl_battlegrounds.evaluation.models import (
     StatusRefreshedOrExtendedEventV1,
     TeamDeathmatchCompletedEventV1,
     TeamDeathmatchScoreChangedEventV1,
+    TransitionFactsCaptureTheFlagV2,
     TransitionFactsV1,
+    recorded_score_threshold,
+    recorded_team_scores,
     red_zone_team_on_right,
     red_zone_x_range,
 )
@@ -62,16 +83,22 @@ _OUTCOME_ONGOING = 0
 _OUTCOME_TEAM_A_WIN = 1
 _OUTCOME_TEAM_B_WIN = 2
 _OUTCOME_DRAW = 3
+_OUTCOME_NAME_BY_VALUE = {
+    _OUTCOME_TEAM_A_WIN: "team_a_win",
+    _OUTCOME_TEAM_B_WIN: "team_b_win",
+    _OUTCOME_DRAW: "draw",
+}
 
 
 @dataclass(frozen=True, slots=True)
-class _TeamDeathmatchAuthorityV1:
+class _TaskAuthorityV1:
     """Hold checked task results for one adjacent pair of frames.
 
     Attributes
     ----------
     score_increments : tuple[int, int]
-        Team A and Team B point gains during this transition.
+        Team A and Team B score gains during this transition: Team Deathmatch
+        points or Capture the Flag captures.
     outcome : int
         0 ongoing, 1 Team A win, 2 Team B win, or 3 draw.
     threshold_reached : bool
@@ -83,8 +110,8 @@ class _TeamDeathmatchAuthorityV1:
 
     Notes
     -----
-    Frozen internal record. Non-TDM transitions have zero gains, ongoing outcome,
-    and no completion basis, but still report horizon_reached.
+    Frozen internal record. Task-neutral transitions have zero gains, ongoing
+    outcome, and no completion basis, but still report horizon_reached.
     """
 
     score_increments: tuple[int, int]
@@ -251,7 +278,7 @@ def _basic_activation_recipient(
 def _validate_decoder_inputs(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     successor_frame: EvaluationFrame,
 ) -> None:
     """Check episode joins, adjacent indices/ticks, and real transition-start facts.
@@ -277,7 +304,7 @@ def _validate_decoder_inputs(
 def _append_action_candidates(
     candidates: list[_EventCandidate],
     context: EvaluationEpisodeContext,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
 ) -> None:
     """Append every flagged rejection and activated Basic/Ultimate to the event list.
 
@@ -386,7 +413,7 @@ def _covering_emitters(
 
 def _append_health_output_candidates(
     candidates: list[_EventCandidate],
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
 ) -> None:
     """Append positive raw damage/healing outputs and their recorded modifiers.
 
@@ -477,7 +504,7 @@ def _append_health_output_candidates(
 def _append_health_resolution_candidates(
     candidates: list[_EventCandidate],
     start_frame: EvaluationFrame,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
 ) -> None:
     """Append one health-resolution event per recipient with damage or healing.
 
@@ -523,7 +550,7 @@ def _append_health_resolution_candidates(
 def _append_regeneration_candidates(
     candidates: list[_EventCandidate],
     start_frame: EvaluationFrame,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     successor_frame: EvaluationFrame,
 ) -> None:
     """Append combat-countdown reset, exit, and positive regeneration events.
@@ -592,7 +619,7 @@ def _append_regeneration_candidates(
 def _append_cooldown_candidates(
     candidates: list[_EventCandidate],
     start_frame: EvaluationFrame,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     successor_frame: EvaluationFrame,
 ) -> None:
     """Append accepted Ultimate starts and positive-to-zero readiness changes.
@@ -646,7 +673,7 @@ def _append_cooldown_candidates(
 
 def _append_displacement_candidates(
     candidates: list[_EventCandidate],
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
 ) -> None:
     """Append nonzero Charge and ordinary-movement displacement vectors separately.
 
@@ -685,7 +712,7 @@ def _append_displacement_candidates(
 
 def _append_death_candidates(
     candidates: list[_EventCandidate],
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
 ) -> None:
     """Append new deaths and one event for each direct positive damage contributor.
 
@@ -750,7 +777,7 @@ def _append_death_candidates(
 
 
 def _status_application_flags_by_source(
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     source_global_slot: int,
 ) -> tuple[bool, ...]:
     """Pack one source's application flags into the catalog's nine-channel order.
@@ -770,7 +797,7 @@ def _status_application_flags_by_source(
 
 def _validate_status_application_source(
     context: EvaluationEpisodeContext,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     source_global_slot: int,
     status_channel: int,
 ) -> None:
@@ -798,7 +825,7 @@ def _validate_status_application_source(
 def _append_status_candidates(
     candidates: list[_EventCandidate],
     context: EvaluationEpisodeContext,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
 ) -> None:
     """Append independent status lifecycle causes and attributed applications.
 
@@ -897,7 +924,7 @@ def _append_status_candidates(
 def _append_respawn_candidates(
     candidates: list[_EventCandidate],
     context: EvaluationEpisodeContext,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     successor_frame: EvaluationFrame,
 ) -> None:
     """Append shield expiry, team-wave events, and realized agent respawns.
@@ -1044,7 +1071,7 @@ def _derive_team_deathmatch_authority_v1(
     start_frame: EvaluationFrame,
     facts: TransitionFactsV1,
     successor_frame: EvaluationFrame,
-) -> _TeamDeathmatchAuthorityV1:
+) -> _TaskAuthorityV1:
     """Check recorded scores and outcome against deaths, roster, and horizon.
 
     Each newly dead configured recipient gives the other team points: 2
@@ -1062,8 +1089,8 @@ def _derive_team_deathmatch_authority_v1(
     tracking horizon completion.
     """
     task_mode = context.resolved_env_config.task_mode
-    start_scores = start_frame.snapshot.team_deathmatch_scores
-    successor_scores = successor_frame.snapshot.team_deathmatch_scores
+    start_scores = recorded_team_scores(start_frame.snapshot)
+    successor_scores = recorded_team_scores(successor_frame.snapshot)
     outcome = facts.team_deathmatch_facts.outcome
 
     if task_mode != _TEAM_DEATHMATCH_TASK_MODE:
@@ -1076,7 +1103,7 @@ def _derive_team_deathmatch_authority_v1(
             >= context.resolved_env_config.maximum_episode_steps
         ):
             raise ValueError("task-neutral transitions cannot start after completion")
-        return _TeamDeathmatchAuthorityV1(
+        return _TaskAuthorityV1(
             score_increments=(0, 0),
             outcome=_OUTCOME_ONGOING,
             threshold_reached=False,
@@ -1087,7 +1114,7 @@ def _derive_team_deathmatch_authority_v1(
             completion_basis=None,
         )
 
-    score_threshold = context.resolved_env_config.team_deathmatch_score_threshold
+    score_threshold = recorded_score_threshold(context.resolved_env_config)
     if (
         start_frame.simulator_step_count
         >= context.resolved_env_config.maximum_episode_steps
@@ -1132,11 +1159,37 @@ def _derive_team_deathmatch_authority_v1(
             "configured opponents"
         )
 
-    threshold_reached = any(score >= score_threshold for score in successor_scores)
-    horizon_reached = (
-        successor_frame.simulator_step_count
-        >= context.resolved_env_config.maximum_episode_steps
+    return _scored_task_authority(
+        mode_name="Team Deathmatch",
+        score_increments=cast(tuple[int, int], actual_score_increments),
+        successor_scores=successor_scores,
+        score_threshold=score_threshold,
+        horizon_reached=(
+            successor_frame.simulator_step_count
+            >= context.resolved_env_config.maximum_episode_steps
+        ),
+        outcome=outcome,
     )
+
+
+def _scored_task_authority(
+    *,
+    mode_name: str,
+    score_increments: tuple[int, int],
+    successor_scores: tuple[int, int],
+    score_threshold: int,
+    horizon_reached: bool,
+    outcome: int,
+) -> _TaskAuthorityV1:
+    """Check a mode's outcome fact against its scores and return the authority.
+
+    The one outcome rule both scored modes share: at the threshold the higher
+    successor score wins and equal scores draw; a horizon-only finish draws
+    (a timeout is never decided by the lead). Both completion conditions may
+    hold. mode_name only labels the ValueError raised when the recorded
+    outcome differs.
+    """
+    threshold_reached = any(score >= score_threshold for score in successor_scores)
     if threshold_reached:
         if successor_scores[0] > successor_scores[1]:
             expected_outcome = _OUTCOME_TEAM_A_WIN
@@ -1150,7 +1203,7 @@ def _derive_team_deathmatch_authority_v1(
         expected_outcome = _OUTCOME_ONGOING
     if outcome != expected_outcome:
         raise ValueError(
-            "Team Deathmatch outcome fact conflicts with successor score authority"
+            f"{mode_name} outcome fact conflicts with successor score authority"
         )
 
     completion_basis: str | None = None
@@ -1160,12 +1213,233 @@ def _derive_team_deathmatch_authority_v1(
         completion_basis = "score_threshold"
     elif horizon_reached:
         completion_basis = "horizon"
-    return _TeamDeathmatchAuthorityV1(
-        score_increments=cast(tuple[int, int], actual_score_increments),
+    return _TaskAuthorityV1(
+        score_increments=score_increments,
         outcome=outcome,
         threshold_reached=threshold_reached,
         horizon_reached=horizon_reached,
         completion_basis=completion_basis,
+    )
+
+
+def _derive_capture_the_flag_authority(
+    context: EvaluationEpisodeContextV5,
+    start_frame: EvaluationFrameV4,
+    facts: TransitionFactsCaptureTheFlagV2,
+    successor_frame: EvaluationFrameV4,
+) -> _TaskAuthorityV1:
+    """Check recorded captures and the outcome against the capture facts and horizon.
+
+    Each team's captures rise by exactly its carriers' entries in
+    enemy_flag_was_captured_by_agent. The outcome follows the rule both modes
+    share (_scored_task_authority). Raise ValueError for a transition that
+    starts at or after completion, a capture count that disagrees, or a
+    conflicting outcome fact.
+    """
+    config = context.resolved_env_config
+    threshold = config.capture_the_flag_score_threshold
+    start_scores = start_frame.snapshot.capture_the_flag_scores
+    successor_scores = successor_frame.snapshot.capture_the_flag_scores
+    if start_frame.simulator_step_count >= config.maximum_episode_steps or any(
+        score >= threshold for score in start_scores
+    ):
+        raise ValueError("Capture the Flag transitions cannot start after completion")
+    captures = [0, 0]
+    for slot, captured in enumerate(
+        facts.capture_the_flag_facts.enemy_flag_was_captured_by_agent
+    ):
+        if captured:
+            captures[slot // MAX_AGENTS_PER_TEAM] += 1
+    increments = (
+        successor_scores[0] - start_scores[0],
+        successor_scores[1] - start_scores[1],
+    )
+    if increments != (captures[0], captures[1]):
+        raise ValueError(
+            "Capture the Flag captures must rise by the recorded capture facts"
+        )
+    return _scored_task_authority(
+        mode_name="Capture the Flag",
+        score_increments=increments,
+        successor_scores=successor_scores,
+        score_threshold=threshold,
+        horizon_reached=(
+            successor_frame.simulator_step_count >= config.maximum_episode_steps
+        ),
+        outcome=facts.capture_the_flag_facts.outcome,
+    )
+
+
+def _flag_is_home(
+    snapshot: GlobalAnalysisSnapshotCaptureTheFlagV2,
+    flag_team: int,
+    home: tuple[float, float],
+) -> bool:
+    """Return whether a team's flag sits at its home: uncarried, not counting down."""
+    return (
+        snapshot.capture_the_flag_flag_carrier_slots[flag_team] is None
+        and snapshot.capture_the_flag_dropped_flag_countdowns[flag_team] == 0
+        and snapshot.capture_the_flag_flag_positions[flag_team] == home
+    )
+
+
+def _append_capture_the_flag_candidates(
+    candidates: list[_EventCandidate],
+    context: EvaluationEpisodeContextV5,
+    start_frame: EvaluationFrameV4,
+    facts: TransitionFactsCaptureTheFlagV2,
+    successor_frame: EvaluationFrameV4,
+) -> None:
+    """Append one event per Capture the Flag fact, then at most one completion.
+
+    Each fact must agree with its frames, by C1.C's flag order: a return or a
+    timed return leaves the flag home (a timed return starts from countdown
+    1); a pickup takes a home or dropped flag and leaves the agent carrying
+    it, unless the same agent captured or dropped it this tick; a capture
+    leaves the enemy flag home and adds one capture; a drop leaves the flag
+    uncarried with a fresh countdown of the configured return ticks. Raise
+    ValueError on any disagreement. Ranks 130-134 and 140 keep that order, so
+    one agent's pickup comes before its drop on the same tick.
+    """
+    authority = _derive_capture_the_flag_authority(
+        context, start_frame, facts, successor_frame
+    )
+    config = context.resolved_env_config
+    homes = config.capture_the_flag_flag_home_positions
+    flag_facts = facts.capture_the_flag_facts
+    start = start_frame.snapshot
+    successor = successor_frame.snapshot
+    for slot in range(MAX_AGENT_SLOTS):
+        team = slot // MAX_AGENTS_PER_TEAM
+        enemy = 1 - team
+        captured = flag_facts.enemy_flag_was_captured_by_agent[slot]
+        dropped = flag_facts.flag_was_dropped_by_agent[slot]
+        picked_up = flag_facts.flag_was_picked_up_by_agent[slot]
+        held_at_start = start.capture_the_flag_flag_carrier_slots[enemy] == slot
+        if flag_facts.ally_flag_was_returned_by_agent[slot]:
+            if start.capture_the_flag_dropped_flag_countdowns[team] == 0 or not (
+                _flag_is_home(successor, team, homes[team])
+            ):
+                raise ValueError("a returned flag must go from the ground to its home")
+            _append_flag_candidate(candidates, 130, FlagReturnedEventV1, slot, team)
+        if picked_up:
+            if start.capture_the_flag_flag_carrier_slots[enemy] is not None or not (
+                captured
+                or dropped
+                or successor.capture_the_flag_flag_carrier_slots[enemy] == slot
+            ):
+                raise ValueError(
+                    "a picked-up flag must be free before and carried after, "
+                    "unless it was captured or dropped the same tick"
+                )
+            ground = start.capture_the_flag_dropped_flag_countdowns[enemy] > 0
+            _append_flag_candidate(
+                candidates,
+                131,
+                FlagPickedUpEventV1,
+                slot,
+                enemy,
+                picked_up_from="ground" if ground else "home",
+            )
+        if captured:
+            if not (held_at_start or picked_up) or not _flag_is_home(
+                successor, enemy, homes[enemy]
+            ):
+                raise ValueError(
+                    "a captured flag must be the carrier's and go home after"
+                )
+            _append_flag_candidate(
+                candidates,
+                132,
+                FlagCapturedEventV1,
+                slot,
+                enemy,
+                previous_score=start.capture_the_flag_scores[team],
+                successor_score=successor.capture_the_flag_scores[team],
+            )
+        if dropped:
+            if (
+                not (held_at_start or picked_up)
+                or successor.capture_the_flag_flag_carrier_slots[enemy] is not None
+                or successor.capture_the_flag_dropped_flag_countdowns[enemy]
+                != config.capture_the_flag_dropped_flag_auto_return_steps
+            ):
+                raise ValueError(
+                    "a dropped flag must be the carrier's and lie with a fresh "
+                    "countdown after"
+                )
+            _append_flag_candidate(candidates, 133, FlagDroppedEventV1, slot, enemy)
+    for flag_team, returned in enumerate(
+        flag_facts.flag_was_automatically_returned_by_team
+    ):
+        if not returned:
+            continue
+        if start.capture_the_flag_dropped_flag_countdowns[
+            flag_team
+        ] != 1 or not _flag_is_home(successor, flag_team, homes[flag_team]):
+            raise ValueError(
+                "a timed return must start from countdown 1 and end with the flag home"
+            )
+        _append_candidate(
+            candidates,
+            phase_rank=134,
+            primary_slot_or_team_index=flag_team,
+            model_type=FlagAutomaticallyReturnedEventV1,
+            payload={"flag_team_index": flag_team, "flag_team_id": flag_team + 1},
+        )
+    _append_completion_candidate(
+        candidates, authority, CaptureTheFlagCompletedEventV1, "Capture the Flag"
+    )
+
+
+def _append_flag_candidate(
+    candidates: list[_EventCandidate],
+    phase_rank: int,
+    model_type: type[EvaluationEventBaseV1],
+    agent_global_slot: int,
+    flag_team: int,
+    **extra: object,
+) -> None:
+    """Append one agent flag event, ordered by its rank and then the agent's slot."""
+    _append_candidate(
+        candidates,
+        phase_rank=phase_rank,
+        primary_slot_or_team_index=agent_global_slot,
+        model_type=model_type,
+        payload={
+            "agent_global_slot": agent_global_slot,
+            "flag_team_index": flag_team,
+            "flag_team_id": flag_team + 1,
+            **extra,
+        },
+    )
+
+
+def _append_completion_candidate(
+    candidates: list[_EventCandidate],
+    authority: _TaskAuthorityV1,
+    model_type: type[TeamDeathmatchCompletedEventV1]
+    | type[CaptureTheFlagCompletedEventV1],
+    mode_name: str,
+) -> None:
+    """Append the mode's completion event when the authority's outcome is final.
+
+    Ongoing transitions append nothing. A final outcome without a completion
+    basis raises ValueError, naming mode_name.
+    """
+    if authority.outcome == _OUTCOME_ONGOING:
+        return
+    if authority.completion_basis is None:
+        raise ValueError(f"terminal {mode_name} outcome requires a completion basis")
+    _append_candidate(
+        candidates,
+        phase_rank=140,
+        primary_slot_or_team_index=0,
+        model_type=model_type,
+        payload={
+            "outcome": _OUTCOME_NAME_BY_VALUE[authority.outcome],
+            "completion_basis": authority.completion_basis,
+        },
     )
 
 
@@ -1199,42 +1473,26 @@ def _append_team_deathmatch_candidates(
                 "team_index": team_index,
                 "team_id": team_index + 1,
                 "score_increment": score_increment,
-                "previous_score": (
-                    start_frame.snapshot.team_deathmatch_scores[team_index]
-                ),
-                "successor_score": (
-                    successor_frame.snapshot.team_deathmatch_scores[team_index]
-                ),
+                "previous_score": recorded_team_scores(start_frame.snapshot)[
+                    team_index
+                ],
+                "successor_score": recorded_team_scores(successor_frame.snapshot)[
+                    team_index
+                ],
             },
         )
 
-    if authority.outcome == _OUTCOME_ONGOING:
-        return
-    outcome_name_by_value = {
-        _OUTCOME_TEAM_A_WIN: "team_a_win",
-        _OUTCOME_TEAM_B_WIN: "team_b_win",
-        _OUTCOME_DRAW: "draw",
-    }
-    if authority.completion_basis is None:
-        raise ValueError("terminal Team Deathmatch outcome requires a completion basis")
-    _append_candidate(
-        candidates,
-        phase_rank=140,
-        primary_slot_or_team_index=0,
-        model_type=TeamDeathmatchCompletedEventV1,
-        payload={
-            "outcome": outcome_name_by_value[authority.outcome],
-            "completion_basis": authority.completion_basis,
-        },
+    _append_completion_candidate(
+        candidates, authority, TeamDeathmatchCompletedEventV1, "Team Deathmatch"
     )
 
 
 def decode_evaluation_events_v1(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
-    facts: TransitionFactsV1,
+    facts: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     successor_frame: EvaluationFrame,
-) -> tuple[EvaluationEventV1, ...]:
+) -> tuple[EvaluationEventV1 | EvaluationEventCaptureTheFlagV1, ...]:
     """Decode one captured transition into deterministic atomic events.
 
     Parameters
@@ -1243,16 +1501,19 @@ def decode_evaluation_events_v1(
         Supported episode context with roster and recorded mechanics catalog.
     start_frame : EvaluationFrame
         Frame immediately before the transition.
-    facts : TransitionFactsV1
-        Real V1 transition facts whose start tick matches start_frame.
+    facts : TransitionFactsV1 | TransitionFactsCaptureTheFlagV2
+        Real transition facts of the context's version whose start tick
+        matches start_frame.
     successor_frame : EvaluationFrame
         Frame from the same episode, exactly one artifact index
         and simulator tick after start_frame.
 
     Returns
     -------
-    tuple[EvaluationEventV1, ...]
-        Tuple of strict V1 events sorted by family rank and stable slot coordinates.
+    tuple[EvaluationEventV1 | EvaluationEventCaptureTheFlagV1, ...]
+        Tuple of strict events sorted by family rank and stable slot coordinates:
+        the shared events plus Team Deathmatch's score and completion events, or,
+        for a context V5, the Capture the Flag flag and completion events.
         Ordinals start at zero; IDs use the episode, start-frame index, and a
         zero-padded event ordinal. No-event transitions return an empty tuple.
 
@@ -1280,19 +1541,28 @@ def decode_evaluation_events_v1(
     _append_death_candidates(candidates, facts)
     _append_status_candidates(candidates, context, facts)
     _append_respawn_candidates(candidates, context, facts, successor_frame)
-    _append_team_deathmatch_candidates(
-        candidates,
-        context,
-        start_frame,
-        facts,
-        successor_frame,
-    )
+    if isinstance(context, EvaluationEpisodeContextV5):
+        _append_capture_the_flag_candidates(
+            candidates,
+            context,
+            cast(EvaluationFrameV4, start_frame),
+            cast(TransitionFactsCaptureTheFlagV2, facts),
+            cast(EvaluationFrameV4, successor_frame),
+        )
+    else:
+        _append_team_deathmatch_candidates(
+            candidates,
+            context,
+            start_frame,
+            cast(TransitionFactsV1, facts),
+            successor_frame,
+        )
 
     candidates.sort(key=lambda candidate: candidate.sort_key)
     transition_id = (
         f"{context.identity.episode_id}:transition:{start_frame.frame_index}"
     )
-    events: list[EvaluationEventV1] = []
+    events: list[EvaluationEventV1 | EvaluationEventCaptureTheFlagV1] = []
     for ordinal, candidate in enumerate(candidates):
         event = candidate.model_type.model_validate(
             {
@@ -1303,7 +1573,7 @@ def decode_evaluation_events_v1(
                 **candidate.payload,
             }
         )
-        events.append(cast(EvaluationEventV1, event))
+        events.append(cast(EvaluationEventV1 | EvaluationEventCaptureTheFlagV1, event))
     return tuple(events)
 
 
