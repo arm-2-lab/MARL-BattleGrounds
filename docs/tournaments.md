@@ -194,7 +194,10 @@ ends by itself without saving anything fails. The speed test is decided on our
 RTX 5090; on other machines it says "not measured". Your load function must load
 what your run last saved as its choice; for the built-in trainer,
 [`training.current_choice`](training.md#validation-and-the-best-checkpoint)
-names it.
+names it. For a built-in run, we export that choice itself, not what your load
+function returns, so a wrapper added in `load()` is not what plays.
+A custom training loop must save only models in its output folder (logs go
+elsewhere), because the check treats any file there as a saved model.
 
 **Models Your Run Uses:** commit small outside weights to your repository
 (ordinary Git files of up to 100 MB each; our machine does not fetch Git LFS).
@@ -211,6 +214,10 @@ and cannot measure the speed test. Passing the check does not test the full 8
 hours, RAM or disk. A method name is taken once an entry under it has run this
 season or waits in the queue; you may reuse your own only to resend a run that
 saved nothing. So a new version needs a new name, for example `hydra-mappo-2`.
+An entry made with 1.0.3 still runs 1.0.3's `entry check` and `entry submit`,
+with the old rule numbers and form, because its `uv.lock` pins 1.0.3. To get the
+new ones, change `==1.0.3` to `==1.0.4` on both marl-battlegrounds lines in
+`pyproject.toml`, then run `uv lock` and commit both files.
 
 ### How We Run and Score
 
@@ -230,9 +237,10 @@ them.
 threads), 48 GB of RAM and 50 GB of disk for what your run writes (temporary
 files count; your installed environment and downloaded models do not). Each run
 is sealed: it can write only to its own folder, and once the clock starts it has
-no network. Before the clock starts, we clone your commit, install from
-`uv.lock` and download every model `entry.yaml` lists, without the GPU, in at
-most 1 hour. Nothing else is downloaded.
+no network. Before the clock starts, we clone your commit, then install from
+`uv.lock` and download every model `entry.yaml` lists, without the GPU. The
+install and the downloads must finish within 1 hour together. Nothing else is
+downloaded.
 
 **Our Run.**
 
@@ -244,8 +252,7 @@ most 1 hour. Nothing else is downloaded.
   trained or recorded.
 - Our run is the same check on our RTX 5090, training for up to 8 hours. Nothing
   else runs on the card. At 8 hours we send SIGINT, wait 60 seconds, then kill
-  it. Its speed test is the one that counts, and we check its play speed again in
-  the official games.
+  it. Its speed test is the one that counts.
 - Our games play the portable model file that `marl_bgs.export_model` writes
   from your entry: a JAX `Policy` that acts per agent, or a built-in actor
   trained with `parameter_sharing="all"`. A system that runs on the host, such
