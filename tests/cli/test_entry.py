@@ -33,9 +33,10 @@ removed, then once more offline behind sandbox(clone, False). An outside
 hf:// address downloads in a child of the check's own isolated Python, behind
 no sandbox, and that child's code fails a path with no files. A failed
 download fails step 4, and so does running past step 4's hour. Children in
-steps 5 to 9 run behind sandbox(clone, False) with HF_HOME and HF_HUB_OFFLINE
-kept, and step 7's sealed export writes inside the clone before the check
-moves it to the work folder's model.zip.
+steps 5 to 9 run behind sandbox(clone, False) with exactly
+entry_environment(clone, offline=True), HF_HOME and HF_HUB_OFFLINE included,
+and step 7's sealed export writes inside the clone before the check copies it
+to the work folder's model.zip.
 
 After step 5 the waiting rule holds: a run stopped at its time limit with
 nothing saved to enter (an empty own-loop output folder, or a built-in run
@@ -378,6 +379,7 @@ def test_downloads_and_children_run_behind_the_sandbox(
     assert Path(command[-1]) == exported
     assert (starter.parent / "model.zip").read_bytes() == exported.read_bytes()
     assert env["HF_HUB_OFFLINE"] == "1" and env["HF_HOME"] == str(checker.hf_home)
+    assert env == entry.entry_environment(starter, offline=True)
     reply[0] = (1, "", "no such model")
     with pytest.raises(entry._StepFailedError, match="no such model"):
         checker.fetch(QMIX, time.monotonic() + 60)

@@ -113,6 +113,7 @@ _MAX_REPO_NAME = 64
 _REPO_PATTERN = "tdm-season-<N>-{}"
 _INSTALL_LIMIT = "Installing and downloading took more than 1 hour."
 _EXPORT_FILE = ".entry-check-model.zip"
+_HF_FOLDER = ".entry-check-hf"
 
 Sandbox = Callable[[Path, bool], Sequence[str]]
 """A maintainers' seal: ``sandbox(clone, online)`` returns a command prefix.
@@ -911,6 +912,47 @@ def _own_environment() -> dict[str, str]:
     }
 
 
+def entry_environment(clone: Path, *, offline: bool) -> dict[str, str]:
+    """Return the environment for a child that runs in a clone's own environment.
+
+    ``check_entry`` gives it to every child that runs the entry's code, and a
+    maintainers' script that runs more of the entry's code after a check (for
+    example an export) must use it too, so both see the same model cache.
+
+    Parameters
+    ----------
+    clone : Path
+        The entry's clone. Its ``.venv`` comes first on ``PATH`` and becomes
+        ``VIRTUAL_ENV``, and its ``.entry-check-hf`` folder is ``HF_HOME``, the
+        model cache that step 4 fills.
+    offline : bool
+        True sets ``HF_HUB_OFFLINE=1`` and ``UV_OFFLINE=1``, as in steps 5 to 9
+        and our run. False removes both, even when this process has them.
+
+    Returns
+    -------
+    dict of str to str
+        A new dict: this process's environment without the settings that would
+        point the entry at another Python environment or model cache (see
+        _own_environment), plus ``VIRTUAL_ENV``, ``PATH``, ``HF_HOME``,
+        ``UV_NO_SYNC=1`` and the offline settings. Nothing is read from disk.
+    """
+    env = _own_environment()
+    venv = clone / ".venv"
+    env.update(
+        VIRTUAL_ENV=str(venv),
+        PATH=f"{venv / 'bin'}{os.pathsep}{env.get('PATH', '')}",
+        HF_HOME=str(clone / _HF_FOLDER),
+        UV_NO_SYNC="1",
+    )
+    for key in ("HF_HUB_OFFLINE", "UV_OFFLINE"):
+        if offline:
+            env[key] = "1"
+        else:
+            env.pop(key, None)
+    return env
+
+
 def _released_package(lock: Mapping[str, Any]) -> str:
     """Return the marl-battlegrounds version that a parsed uv.lock installs.
 
@@ -1052,7 +1094,7 @@ class _Checker:
         self.source, self.commit, self.train_minutes = source, commit, train_minutes
         self.work, self.clone, self.bundle = work, work / "entry", bundle
         self.sandbox = sandbox
-        self.hf_home = self.clone / ".entry-check-hf"
+        self.hf_home = self.clone / _HF_FOLDER
         self.entry: _Entry | None = None
         self.stopped = False
         self.train_seconds = 0.0
@@ -1098,30 +1140,6 @@ class _Checker:
         prefix = () if self.sandbox is None else self.sandbox(self.clone, online)
         return [*prefix, *command]
 
-    def env(self, *, offline: bool) -> dict[str, str]:
-        """Return the environment for children in the entry's own environment.
-
-        The clone's .venv comes first on PATH, uv never syncs again, and
-        HF_HOME is the check's own fresh cache. Offline sets HF_HUB_OFFLINE
-        and UV_OFFLINE; online removes them, even when the caller set them.
-        Settings that would point the entry at another environment or model
-        cache are dropped (see _own_environment).
-        """
-        env = _own_environment()
-        venv = self.clone / ".venv"
-        env.update(
-            VIRTUAL_ENV=str(venv),
-            PATH=f"{venv / 'bin'}{os.pathsep}{env.get('PATH', '')}",
-            HF_HOME=str(self.hf_home),
-            UV_NO_SYNC="1",
-        )
-        for key in ("HF_HUB_OFFLINE", "UV_OFFLINE"):
-            if offline:
-                env[key] = "1"
-            else:
-                env.pop(key, None)
-        return env
-
     def python(
         self,
         code: str,
@@ -1140,7 +1158,7 @@ class _Checker:
         code_out, out, err = _run(
             self.sealed(command, online=False),
             cwd=self.clone,
-            env={**self.env(offline=True), **(extra or {})},
+            env={**entry_environment(self.clone, offline=True), **(extra or {})},
             timeout=timeout,
         )
         lines = out.strip().splitlines()
@@ -1278,7 +1296,7 @@ class _Checker:
                     f"Downloading {model}",
                     deadline,
                     cwd=self.work,
-                    env=self.env(offline=False),
+                    env=entry_environment(self.clone, offline=False),
                 )
                 return
         command = ["uv", "run", "--no-sync", "python", "-m", "marl_battlegrounds"]
@@ -1289,7 +1307,7 @@ class _Checker:
                 f"models download {model}" + (" offline" if offline else ""),
                 deadline,
                 cwd=self.clone,
-                env=self.env(offline=offline),
+                env=entry_environment(self.clone, offline=offline),
             )
 
     def child(
@@ -1324,7 +1342,7 @@ class _Checker:
             process = subprocess.Popen(
                 self.sealed(["/bin/sh", "-c", self.entry.train], online=False),
                 cwd=self.clone,
-                env=self.env(offline=True),
+                env=entry_environment(self.clone, offline=True),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
