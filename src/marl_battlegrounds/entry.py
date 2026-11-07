@@ -5,37 +5,42 @@ calls these functions (``python -m marl_battlegrounds entry new|check|submit``):
 
 - ``new_entry`` writes a starter repository that trains the released Recurrent
   MAPPO recipe, runs ``git init`` and locks it with ``uv lock``.
-- ``check_entry`` runs the public check of the tournament rulebook on one
-  commit, in nine numbered steps. Steps 1 to 7 must pass on any machine and
-  block ``entry submit``. Steps 8 and 9 are measured here but decided on our
+- ``check_entry`` checks one commit the way we check every entry, in nine
+  numbered steps. Steps 1 to 7 must pass on any machine and block
+  ``entry submit``. Steps 8 and 9 are measured here but decided on our
   RTX 5090, so they never block. The result is saved under the repository's
-  ``.git`` folder, so it is never committed.
-- ``submit_entry`` refuses unfinished work, then opens the GitHub issue form
-  with the entry's details filled in.
-- ``play_limits`` measures Rule 4: the system plays itself and we time it.
+  ``.git`` folder, so it is never committed. Maintainers run the same function
+  for the intake test and for the official run.
+- ``submit_entry`` refuses unfinished work and the unchanged starter, then
+  opens the GitHub issue form with the method name, repository and commit
+  filled in.
+- ``play_limits`` measures the play limits: the system plays itself and we
+  time it.
 
-Who owns what. The rules live in ``docs/tournament_rules.md``; the rule numbers
-here are that file's numbers. Existing owners do the real work: the entry's own
-train command trains, ``load_factory`` (``module:function`` loading) loads,
-``export_model`` exports, ``models download`` fetches released models and
-training-opponent pools (``released_models`` decides which name is a pool),
+Who owns what. The rules live in ``docs/tournament_rules.md``; the tools state
+facts and cite no rule numbers, so a rule can change without making a message
+here wrong. Existing owners do the real work: the entry's own train command
+trains, ``load_factory`` (``module:function`` loading) loads, ``export_model``
+exports, ``models download`` fetches released models and training-opponent
+pools, ``huggingface_hub`` fetches outside ``hf://`` models (``released_models``
+owns released names and parses ``hf://`` addresses),
 ``training.current_choice`` names a built-in run's choice, and ``evaluate``
-plays the games. Researcher code (train, load, export, play) always runs in
-child processes inside the entry's own locked environment, never in the
-caller's Python. This module is POSIX only (it stops process groups), like the
-rest of the package's run files.
+plays the games. Researcher code (install, train, load, export, play) always
+runs in child processes inside the entry's own locked environment, never in
+the caller's Python. This module is POSIX only (it stops process groups), like
+the rest of the package's run files.
 """
 
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import os
 import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -50,7 +55,10 @@ from typing import Any, Literal, cast
 
 from marl_battlegrounds._browser import open_in_browser
 from marl_battlegrounds.released_models import (
+    RELEASE_ORGANIZATION,
+    _parse_address,  # pyright: ignore[reportPrivateUsage]
     _pool,  # pyright: ignore[reportPrivateUsage]
+    _typed_name,  # pyright: ignore[reportPrivateUsage]
 )
 
 FORM_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds/issues/new"
@@ -59,35 +67,22 @@ FORM_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds/issues/new"
 FORM_TEMPLATE = "leaderboard_submission.yml"
 """The issue form's file name in ``.github/ISSUE_TEMPLATE``."""
 
-FORM_FIELDS = (
-    "repository",
-    "commit",
-    "train-command",
-    "lock-file",
-    "load-function",
-    "config-and-maps",
-    "starting-models",
-)
-"""The form's text fields ``submit_entry`` fills, by their IDs in the form file.
-
-The form's other text field, ``team``, and its dropdown and checkboxes cannot
-be filled by the team's computer: the team fills them in on the page.
-"""
-
-MAX_LINK_LENGTH = 8000
-"""Longest link ``submit_entry`` opens, in characters. GitHub refuses longer ones."""
+OFFICIAL_TRAIN_MINUTES = 480.0
+"""How long our official run trains each entry, in minutes (8 hours)."""
 
 MIN_GAME_STEPS_PER_SECOND = 5000
-"""Rule 4.1: the least playing speed, in game steps per second."""
+"""The slowest allowed playing speed, in game steps per second (one tick of one
+game)."""
 
 MAX_GPU_MEMORY_BYTES = 10 * 10**9
-"""Rule 4.2: the most GPU memory, in bytes (10 GB, with 1 GB = 10**9 bytes)."""
+"""The most GPU memory a system may use while playing, in bytes (10 GB, with
+1 GB = 10**9 bytes)."""
 
 PLAY_MAPS = (42, 43, 44, 45, 46)
 """The validation maps ``play_limits`` plays on."""
 
 ENTRY_TYPES = ("learned", "scripted", "hybrid", "language model")
-"""The entry types of Rule 1.2, as written in ``entry.yaml`` (any letter case)."""
+"""The entry types the table shows, as written in ``entry.yaml`` (any letter case)."""
 
 UV_INSTALL = "curl -LsSf https://astral.sh/uv/install.sh | sh"
 """The one-line uv install for Linux and macOS, from uv's own guide."""
@@ -111,16 +106,26 @@ _LOAD_SECONDS = 600.0
 _EXPORT_SECONDS = 600.0
 _PLAY_SECONDS = 1800.0
 _DETERMINISTIC = "--xla_gpu_deterministic_ops=true"
-_SETTINGS = (
-    "name",
-    "train",
-    "output",
-    "load",
-    "entry_type",
-    "training_maps",
-    "config",
-    "starting_models",
-)
+_SETTINGS = ("name", "train", "output", "load", "entry_type", "starting_models")
+# 1.0.3's entry.yaml also had these two; they are accepted and ignored.
+_OLD_SETTINGS = ("training_maps", "config")
+_MAX_REPO_NAME = 64
+_REPO_PATTERN = "tdm-season-<N>-{}"
+_INSTALL_LIMIT = "Installing and downloading took more than 1 hour."
+_EXPORT_FILE = ".entry-check-model.zip"
+
+Sandbox = Callable[[Path, bool], Sequence[str]]
+"""A maintainers' seal: ``sandbox(clone, online)`` returns a command prefix.
+
+``check_entry`` puts the prefix (a list of strings, for example a ``bwrap``
+command) in front of every child that runs the entry's code. ``clone`` is the
+clone's folder, the only folder such a child writes. ``online`` is True in
+step 4 (the install and the released-model downloads need the network) and
+False in steps 5 to 9. The prefix must keep the environment the check gives
+the child, keep the child in the check's process group (no new session) and
+let SIGINT reach it, or step 5 cannot stop the run politely. Outside ``hf://``
+models are not downloaded behind it: the check's own Python fetches them.
+"""
 
 StepGroup = Literal["must pass", "measured here"]
 """Must-pass steps block ``entry submit``; measured-here steps never do."""
@@ -128,21 +133,16 @@ StepGroup = Literal["must pass", "measured here"]
 StepStatus = Literal["passed", "failed", "skipped", "not measured"]
 """What happened to one step. "skipped" means it was not run; its detail says why."""
 
-_STEPS: tuple[tuple[int, str, str, StepGroup], ...] = (
-    (1, "6.3", "The tree is clean and the commit is recorded", "must pass"),
-    (2, "6.3", "A fresh clone of the commit", "must pass"),
-    (3, "3.1, 3.4, 6.3", "entry.yaml is present and valid", "must pass"),
-    (4, "2.3, 6.3", "Install from uv.lock and fetch starting models", "must pass"),
-    (
-        5,
-        "2.2, 6.5",
-        "The train command runs with downloads off, then stops",
-        "must pass",
-    ),
-    (6, "6.3", "The load function returns a Policy or System", "must pass"),
-    (7, "6.6", "Export to a portable model file", "must pass"),
-    (8, "7.1", "A choice saved within the training time", "measured here"),
-    (9, "4.1, 4.2", "Play limits", "measured here"),
+_STEPS: tuple[tuple[int, str, StepGroup], ...] = (
+    (1, "The tree is clean and the commit is recorded", "must pass"),
+    (2, "A fresh clone of the commit", "must pass"),
+    (3, "entry.yaml is present and valid", "must pass"),
+    (4, "Install from uv.lock and fetch starting models", "must pass"),
+    (5, "The train command runs with downloads off, then stops", "must pass"),
+    (6, "The load function returns a Policy or System", "must pass"),
+    (7, "Export to a portable model file", "must pass"),
+    (8, "Something to enter saved within the training time", "measured here"),
+    (9, "Play limits", "measured here"),
 )
 
 
@@ -155,8 +155,6 @@ class CheckStep:
     number : int
         The step number, 1 to 9, as in ``check_entry``'s list and the lines it
         prints.
-    rules : str
-        The rulebook rules this step checks, for example ``"2.3, 6.3"``.
     title : str
         What the step checks, in a few words.
     group : {"must pass", "measured here"}
@@ -165,14 +163,14 @@ class CheckStep:
         block.
     status : {"passed", "failed", "skipped", "not measured"}
         "skipped" means the step did not run, for example because an earlier
-        step failed. "not measured" means this machine cannot measure it, for
-        example step 9 without a GPU.
+        step failed or nothing was saved to check yet. "not measured" means
+        this machine or this short run cannot measure it, for example step 9
+        without an RTX 5090.
     detail : str
         A plain-English explanation: what was found, or what to fix.
     """
 
     number: int
-    rules: str
     title: str
     group: StepGroup
     status: StepStatus
@@ -181,7 +179,7 @@ class CheckStep:
 
 @dataclass(frozen=True)
 class PlayLimits:
-    """One reading of Rule 4: a system playing itself, timed.
+    """One reading of the play limits: a system playing itself, timed.
 
     Attributes
     ----------
@@ -191,8 +189,8 @@ class PlayLimits:
         JAX's name for the device that played, for example
         ``"NVIDIA GeForce RTX 5090"`` or ``"cpu"``.
     on_gpu : bool
-        True when the games ran on a GPU. Only a GPU reading is a measurement
-        of Rule 4.
+        True when the games ran on a GPU. Only a GPU reading measures the
+        play limits.
     games : int
         Games in the timed call (the warm-up batch is not counted).
     game_steps : int
@@ -223,10 +221,11 @@ class PlayLimits:
 
     @property
     def within_limits(self) -> bool | None:
-        """True when both Rule 4 limits hold, False when one fails.
+        """True when both play limits hold, False when one fails.
 
-        None when this is not a GPU reading or the memory is unknown, because
-        then Rule 4 was not measured.
+        The limits are at least MIN_GAME_STEPS_PER_SECOND and at most
+        MAX_GPU_MEMORY_BYTES. None when this is not a GPU reading or the memory
+        is unknown, because then the limits were not measured.
         """
         if not self.on_gpu or self.peak_memory_bytes is None:
             return None
@@ -252,16 +251,19 @@ class PlayLimits:
 
 @dataclass(frozen=True)
 class EntryCheck:
-    """The result of ``check_entry``: every step, by rule number, in two groups.
+    """The result of ``check_entry``: every step, in two groups.
 
     Attributes
     ----------
     repository : str
         The folder or URL that was checked.
     commit : str or None
-        The full commit SHA that was checked. None when there was no commit.
+        The full commit SHA that was checked. None when step 1 found no commit
+        (none yet, or the folder is not in a Git repository).
     machine : str
-        This machine's GPU name from ``nvidia-smi``, or "No NVIDIA GPU found".
+        The name ``nvidia-smi`` gives the first GPU this process may use, "No
+        GPU visible" when ``CUDA_VISIBLE_DEVICES`` hides them all, or "No
+        NVIDIA GPU found". It is only recorded; no step is judged by it.
     checked_at : str
         When the check finished, in UTC, ISO 8601.
     package_version : str
@@ -272,7 +274,8 @@ class EntryCheck:
         Step 9's GPU reading, or None when step 9 did not measure on a GPU.
     record : str or None
         Where the result was saved as JSON. None when nothing was saved
-        (no commit, or the tree was not clean).
+        because step 1 failed (no commit, a tree that is not clean, or a
+        folder outside a Git repository).
     """
 
     repository: str
@@ -311,7 +314,6 @@ class EntryCheck:
             "steps": [
                 {
                     "step": step.number,
-                    "rules": step.rules,
                     "title": step.title,
                     "group": step.group,
                     "status": step.status,
@@ -325,17 +327,19 @@ class EntryCheck:
 
 @dataclass(frozen=True)
 class _Entry:
-    """The checked contents of one ``entry.yaml`` (see _read_entry)."""
+    """The checked contents of one ``entry.yaml`` (see _read_entry).
+
+    ``repo`` is the method name's part of its Hugging Face repo name (see
+    _repo_name). ``starting_models`` holds the downloads in their listed order.
+    """
 
     name: str
+    repo: str
     train: str
     output: str
     load: str
     entry_type: str
-    training_maps: tuple[int, ...]
-    validation_maps: tuple[int, ...]
-    config: str
-    starting_models: tuple[tuple[str, str], ...]
+    starting_models: tuple[str, ...]
 
 
 class _StepFailedError(RuntimeError):
@@ -463,85 +467,102 @@ def _run(
     return process.returncode, out, err
 
 
-def _maps(value: object, key: str) -> tuple[int, ...]:
-    """Read one list of maps: whole numbers or ranges such as ``"0-41"``, in 0-46."""
-    if not isinstance(value, list):
-        raise ValueError(f"training_maps.{key} must be a list, for example [42, 43]")
-    maps: list[int] = []
-    for item in cast(list[object], value):
-        if isinstance(item, int) and not isinstance(item, bool):
-            maps.append(item)
-        elif isinstance(item, str) and re.fullmatch(r"\d+-\d+", item.strip()):
-            first, last = (int(part) for part in item.strip().split("-"))
-            if first > last:
-                raise ValueError(f"training_maps.{key}: {item!r} runs backward")
-            maps.extend(range(first, last + 1))
-        else:
-            raise ValueError(
-                f"training_maps.{key}: {item!r} is not a map number or a range "
-                'such as "0-41"'
-            )
-    outside = sorted({m for m in maps if not 0 <= m <= 46})
-    if outside:
+def _repo_name(name: str) -> str:
+    """Return the method name's part of the entry's Hugging Face repo name.
+
+    The repo is ``tdm-season-<N>-<part>``, where ``<N>`` is the season the
+    entry is sent to. The part is ``name`` in lowercase, with each run of
+    characters other than ``a`` to ``z`` and ``0`` to ``9`` turned into one
+    hyphen and the hyphens at both ends removed: "My_MAPPO" gives "my-mappo".
+    ``entry new`` and step 3 print it; the maintainers refuse a part another
+    entry already uses this season.
+
+    Raises
+    ------
+    ValueError
+        The part is empty or longer than 64 characters.
+    """
+    part = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not part or len(part) > _MAX_REPO_NAME:
         raise ValueError(
-            f"training_maps.{key} uses maps {outside}; only maps 0 to 46 are "
-            "yours to use (Rule 3.4)"
+            f"The method name {name!r} gives the repo name {part!r}. Choose a "
+            f"name that gives 1 to {_MAX_REPO_NAME} letters, digits and hyphens."
         )
-    return tuple(maps)
-
-
-def _map_text(maps: Sequence[int]) -> str:
-    """Write maps briefly: runs of three or more become ranges ("0-41, 44")."""
-    parts: list[str] = []
-    ordered = sorted(set(maps))
-    start = 0
-    while start < len(ordered):
-        end = start
-        while end + 1 < len(ordered) and ordered[end + 1] == ordered[end] + 1:
-            end += 1
-        if end - start >= 2:
-            parts.append(f"{ordered[start]}-{ordered[end]}")
-        else:
-            parts.extend(str(m) for m in ordered[start : end + 1])
-        start = end + 1
-    return ", ".join(parts) if parts else "none"
+    return part
 
 
 def _read_entry(folder: Path) -> _Entry:
     """Read and check ``folder/entry.yaml``; raise ValueError at the first problem.
 
-    The file must be a mapping with exactly the keys ``name``, ``train``,
-    ``output``, ``load``, ``entry_type``, ``training_maps``, ``config`` and
-    ``starting_models``. ``output`` is a relative path inside the repository.
-    ``load`` is ``module:function``. ``training_maps`` holds the lists
-    ``training`` (not empty) and ``validation``, each map inside 0-46
-    (Rule 3.4). Each starting model is ``{model: ..., sha256: <64 hex>}``
-    (Rules 3.1 and 6.3), except a released training-opponent pool, such as
-    ``MARL-BattleGrounds/tdm-season-0-results/training-opponents``, which is
-    ``{model: ..., commit: <40 hex>}``: a folder has no single SHA-256, and its
-    commit fixes every byte. ``starting_models`` keeps (model, digest) pairs,
-    the digest lowercased. Needs PyYAML, which the hydra extra installs.
-    Raises FileNotFoundError when the file is missing.
+    Parameters
+    ----------
+    folder : Path
+        The entry's top folder. A starting model that is neither a released
+        name nor an ``hf://`` address but names a path inside it is a
+        repository file.
+
+    Returns
+    -------
+    _Entry
+        The settings, trimmed, with the method name's repo part.
+        ``starting_models`` keeps the downloads only, in the listed order.
+
+    Raises
+    ------
+    FileNotFoundError
+        There is no ``entry.yaml``.
+    ValueError
+        The file is not valid YAML or not ``key: value`` lines; a key is
+        missing or unknown; ``name``, ``train``, ``output``, ``load`` or
+        ``entry_type`` is empty or not text; the name gives no repo name (see
+        _repo_name); ``output`` is not a folder inside the repository;
+        ``load`` is not ``module:function``; ``entry_type`` is not one of
+        ENTRY_TYPES; ``starting_models`` is not a list; or a starting model is
+        not a released name, an ``hf://`` address with a full commit, or a path
+        inside the repository.
+
+    Notes
+    -----
+    The keys are ``name`` (the method name), ``train``, ``output``,
+    ``load``, ``entry_type`` and ``starting_models``. 1.0.3's
+    ``training_maps`` and ``config`` are accepted and ignored. Each starting
+    model is one string: a released name, as ``models download`` takes it
+    (``MARL-BattleGrounds/<repo>@final`` or a training-opponent pool such as
+    ``MARL-BattleGrounds/tdm-season-0-results/training-opponents``), or an
+    exact address, ``hf://<owner>/<repo>@<40-character commit>/<path>``.
+    1.0.3's mapping form, ``{model: ..., sha256: ...}`` (``commit:`` for a
+    pool), is read by ``model`` alone. A path inside the repository needs no
+    line, because the commit fixes its bytes; one that is listed is left
+    out. Needs PyYAML, which the hydra extra installs.
     """
     import yaml
 
     path = folder / _ENTRY_FILE
-    raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        raw: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise ValueError(f"{_ENTRY_FILE} is not valid YAML: {error}") from None
     if not isinstance(raw, dict):
         raise ValueError(f"{_ENTRY_FILE} must hold the settings as key: value lines")
     data = cast(dict[str, object], raw)
     missing = [key for key in _SETTINGS if key not in data]
-    extra = sorted(str(key) for key in data if key not in _SETTINGS)
+    known = (*_SETTINGS, *_OLD_SETTINGS)
+    extra = sorted(str(key) for key in data if key not in known)
     if missing or extra:
         raise ValueError(
-            f"{_ENTRY_FILE}: missing {missing or 'nothing'}; unknown {extra or 'none'}"
+            f"{_ENTRY_FILE} needs the keys {', '.join(_SETTINGS)}; missing "
+            f"{', '.join(missing) or 'none'}, unknown {', '.join(extra) or 'none'}"
         )
     text: dict[str, str] = {}
-    for key in ("name", "train", "output", "load", "entry_type", "config"):
+    for key in ("name", "train", "output", "load", "entry_type"):
         value = data[key]
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{_ENTRY_FILE}: {key} must be text that is not empty")
+            raise ValueError(f"{_ENTRY_FILE}: {key} is empty or not text")
         text[key] = value.strip()
+    try:
+        repo = _repo_name(text["name"])
+    except ValueError as error:
+        raise ValueError(f"{_ENTRY_FILE}: {error}") from None
     output = Path(text["output"])
     if output.is_absolute() or ".." in output.parts:
         raise ValueError(
@@ -552,52 +573,48 @@ def _read_entry(folder: Path) -> _Entry:
             f"{_ENTRY_FILE}: load must be module:function, like my_entry:load"
         )
     if text["entry_type"].lower() not in ENTRY_TYPES:
-        raise ValueError(f"{_ENTRY_FILE}: entry_type must be one of {ENTRY_TYPES}")
-    maps = data["training_maps"]
-    if not isinstance(maps, dict) or set(cast(dict[str, object], maps)) != {
-        "training",
-        "validation",
-    }:
-        raise ValueError(f"{_ENTRY_FILE}: training_maps needs training and validation")
-    maps = cast(dict[str, object], maps)
-    training, validation = (
-        _maps(maps["training"], "training"),
-        _maps(maps["validation"], "validation"),
-    )
-    if not training:
-        raise ValueError(f"{_ENTRY_FILE}: training_maps.training is empty")
-    models: list[tuple[str, str]] = []
+        raise ValueError(
+            f"{_ENTRY_FILE}: entry_type must be Learned, Scripted, Hybrid or "
+            "Language Model"
+        )
     listed = data["starting_models"]
     if not isinstance(listed, list):
         raise ValueError(f"{_ENTRY_FILE}: starting_models must be a list ([] for none)")
+    top = folder.resolve()
+    models: list[str] = []
     for item in cast(list[object], listed):
-        fields = cast(dict[str, object], item) if isinstance(item, dict) else {}
-        model = fields.get("model")
-        pool = isinstance(model, str) and _pool(model.strip()) is not None
-        key, length = ("commit", 40) if pool else ("sha256", 64)
-        digest = fields.get(key)
-        if (
-            set(fields) != {"model", key}
-            or not isinstance(model, str)
-            or not model.strip()
-            or not isinstance(digest, str)
-            or not re.fullmatch(f"[0-9a-fA-F]{{{length}}}", digest)
-        ):
+        model: object = (
+            cast(dict[str, object], item).get("model")
+            if isinstance(item, dict)
+            else item
+        )
+        if not isinstance(model, str) or not model.strip():
             raise ValueError(
-                f"{_ENTRY_FILE}: each starting model needs model and sha256 "
-                "(64 hex characters), and a training-opponent pool needs model "
-                f"and commit (40 hex characters); found {item!r} (Rules 3.1, 6.3)"
+                f"{_ENTRY_FILE}: write each starting model as one line of text, "
+                f"a released name or an hf:// address; found {item!r}"
             )
-        models.append((model.strip(), digest.lower()))
+        model = model.strip()
+        try:
+            if model.startswith("hf://"):
+                _parse_address(model)
+            elif _typed_name(model) is None and _pool(model) is None:
+                inside = (folder / model).resolve()
+                if inside.is_relative_to(top) and inside.exists():
+                    continue
+                raise ValueError(
+                    f"{model!r} is not a released name, an hf:// address or a "
+                    "path inside this repository"
+                )
+        except ValueError as error:
+            raise ValueError(f"{_ENTRY_FILE}: starting_models: {error}") from None
+        models.append(model)
     return _Entry(
         name=text["name"],
+        repo=repo,
         train=text["train"],
         output=output.as_posix(),
         load=text["load"],
         entry_type=text["entry_type"],
-        training_maps=training,
-        validation_maps=validation,
-        config=text["config"],
         starting_models=tuple(models),
     )
 
@@ -610,12 +627,17 @@ _STARTER_TRAIN = (
 
 
 def _starter_files(name: str, project: str, version: str) -> dict[str, str]:
-    """Return the starter's files, by path relative to the entry folder."""
+    """Return the starter's files, by path relative to the entry folder.
+
+    ``name`` is the method name, ``project`` the Python project name and
+    ``version`` the marl-battlegrounds version the starter depends on.
+    """
     train = json.dumps(_STARTER_TRAIN)
     return {
         "pyproject.toml": f"""\
-# This entry's dependencies. uv.lock pins every version (Rule 6.3).
-# On Linux it installs the CUDA 13 build of JAX, which the official run needs.
+# This entry's dependencies. uv.lock pins every version, and our run installs
+# exactly those. On Linux it installs the CUDA 13 build of JAX, which our run
+# needs.
 [project]
 name = "{project}"
 version = "0.1.0"
@@ -634,41 +656,40 @@ runs/
 __pycache__/
 """,
         _ENTRY_FILE: f"""\
-# Your leaderboard entry. `entry check` reads this file and `entry submit`
-# copies it into the submission form.
+# Your leaderboard entry. `entry check` and our run read this file.
 
-# Your system's name. It becomes the title of your submission.
+# Your method's name: your submission's title, your name on the leaderboard
+# and the end of your Hugging Face repo's name. "My_MAPPO" becomes
+# tdm-season-<N>-my-mappo, where <N> is the season's number.
 name: {json.dumps(name)}
 
-# The one command we run to train (Rule 6.3). It keeps its choice saved in
+# The one command our run trains with. Change it to train your own method:
+# `entry submit` refuses this starter's command. It must save its models in
 # the output folder below.
 train: {train}
 
-# The folder the train command writes, inside this repository.
+# The folder the train command saves into, inside this repository. Commit
+# nothing in it: our run needs it empty.
 output: runs/entry
 
-# The function that loads only your chosen entry, written as module:function.
+# The function that loads the model your run chose, written as
+# module:function. It must finish within 10 minutes. This one is in
+# my_entry/__init__.py.
 load: my_entry:load
 
-# Learned, Scripted, Hybrid or Language Model (Rule 1.2).
+# Learned, Scripted, Hybrid or Language Model, in any letter case. The
+# leaderboard shows it beside your entry.
 entry_type: learned
 
-# The maps your run trains and validates on. Maps 0 to 46 are yours (Rule 3.4).
-training_maps:
-  training: ["0-41"]
-  validation: [42, 43, 44, 46]
-
-# Your config: a path in this repository, or, as here, the train command.
-config: {train}
-
-# Every model your run uses (opponents, teammates and starting weights), each
-# with its SHA-256 (Rules 3.1 and 6.3): a released name or a file in this
-# repository. A released opponent pool is a folder, so it takes the commit that
-# `models download` prints instead. The scripted pool needs none. For example:
-#   - model: MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final
-#     sha256: <the file's 64-character SHA-256>
-#   - model: MARL-BattleGrounds/tdm-season-0-results/training-opponents
-#     commit: <the pool's 40-character commit>
+# Every model your run needs from Hugging Face. Our run has no internet, so we
+# download these before it starts: each released model it trains with or
+# against, and each public outside model by its exact address. Your code must
+# load an outside model at that same commit. Files in this repository need no
+# line, and this starter needs none. To add some, write them like this:
+#   starting_models:
+#     - MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final
+#     - MARL-BattleGrounds/tdm-season-0-results/training-opponents
+#     - hf://<owner>/<repo>@<40-character commit>/<file, folder or *>
 starting_models: []
 """,
         "my_entry/__init__.py": '''\
@@ -705,33 +726,40 @@ def load() -> marl_bgs.System:
 # {name}
 
 A MARL-BattleGrounds leaderboard entry, made by `entry new`. It trains the
-released Recurrent MAPPO recipe against the scripted pool.
+released Recurrent MAPPO recipe against itself, its past saves and the three
+scripted bots.
 
-## The Three Commands
+## Enter It
 
-Run them in this folder. Commit your work before `entry check`, and push it
-before `entry submit`:
+Read the [rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md)
+first. Then put your own method in: change the `train` command in
+`entry.yaml`, and `my_entry/` if your run saves its models another way.
+`entry submit` refuses the starter unchanged. A copy that changes only its
+settings, such as the seed, is a duplicate, and we skip it.
+
+Then, in this folder:
 
 ```sh
-{_STARTER_TRAIN}   # train at home
-uv run python -m marl_battlegrounds entry check     # check it like we will
+git add . && git commit -m "My method"
+uv run python -m marl_battlegrounds entry check     # check it the way we will
+git remote add origin <your GitHub repository URL>  # once
+git push -u origin HEAD
 uv run python -m marl_battlegrounds entry submit    # open the submission form
 ```
 
-`entry check` installs your commit in a fresh folder, trains for 15 minutes,
-loads and exports the choice and measures the play limits. `entry submit`
-works only after `git push` and a passing check of the same commit.
+No training at home is needed. `entry check` installs your commit in a fresh
+folder, trains it for 15 minutes, then loads and exports your model and
+measures its play speed; our run trains it for up to
+{OFFICIAL_TRAIN_MINUTES / 60:g} hours. To train at home anyway, run the
+`train` command in `entry.yaml`.
 
-## Facts About This Starter
+## About This Starter
 
-- Budget: 250,675,200 training steps plus at most 1,065,600 validation steps
-  (31 routine checks of 96 games and up to 3 confirmations of 192 games, at
-  most 300 steps a game), under the 255 million of Rule 2.1.
-- `retain_all_actors: true` exports a model at every save (every 409,600
-  steps), so it keeps one at least every 5,000,000 steps (Rule 6.6).
-- It is not timed yet. Season 0's four PPO baselines took 3.6 to 4.3 hours
-  each to reach 250 million steps on one RTX 5090, as a 40 million step run
-  plus its continuation. Rule 2.1 allows 8 hours.
+- It trains for 250,675,200 game steps, and its validation games add at most
+  1,065,600 more, so it stays under the limit of 255 million.
+- It exports a model at every save, every 409,600 steps
+  (`retain_all_actors: true`). The rules ask for one at least every 5 million
+  steps, so your method must save that often too.
 - The output folder must be new or empty. For a second run at home, change
   `runs/entry` everywhere in `entry.yaml` and in `my_entry/__init__.py`.
 """,
@@ -742,14 +770,18 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
     """Write a starter entry in a new folder, make it a Git repository and lock it.
 
     The starter trains the released Recurrent MAPPO recipe against the
-    scripted pool and is meant to pass ``entry check`` on an RTX 5090.
+    scripted pool (itself, its past saves and the three scripted bots) and is
+    meant to pass ``entry check`` on an RTX 5090. ``entry submit`` refuses it
+    until its train command changes.
 
     Parameters
     ----------
     path : str or os.PathLike
         The folder to create. It must not exist yet, or be an empty folder.
     name : str or None, default=None
-        The system's name, which becomes the submission's title. None uses the
+        The method name: the submission's title and the end of its Hugging
+        Face repo name, ``tdm-season-<N>-<name>``, with the name in lowercase
+        and each run of other characters made one hyphen. None uses the
         folder's name.
 
     Returns
@@ -760,7 +792,9 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
     Raises
     ------
     ValueError
-        ``path`` is a file or a folder that is not empty, or ``name`` is blank.
+        ``path`` is a file or a folder that is not empty, or the method name
+        gives no repo name (it is blank, has no letters or digits, or gives
+        more than 64 characters).
     RuntimeError
         Git is not installed, ``git init`` failed, or ``uv lock`` failed (its
         last lines are in the message; the written files stay).
@@ -774,30 +808,34 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
     ``uv lock``, which downloads package metadata from PyPI. When uv is
     missing it prints the one-line uv install (``UV_INSTALL``) and
     ``UV_INSTALL_NOTE``, and stops before locking.
-    It prints the next commands. Nothing is committed. No GPU is used.
+    It prints the method's repo name and the next commands. Nothing is
+    committed. No GPU is used.
 
     Examples
     --------
     >>> from marl_battlegrounds import entry
-    >>> entry.new_entry("my-entry", name="My Team's MAPPO")  # doctest: +SKIP
+    >>> entry.new_entry("my-mappo", name="My MAPPO")  # doctest: +SKIP
     """
     folder = Path(path).expanduser().absolute()
     if folder.exists() and (not folder.is_dir() or any(folder.iterdir())):
         raise ValueError(f"{folder} must be a new or empty folder")
-    chosen = folder.name if name is None else name
-    if not chosen.strip():
-        raise ValueError("The entry's name must not be blank")
+    chosen = (folder.name if name is None else name).strip()
+    repo = _repo_name(chosen)
     if shutil.which("git") is None:
         raise RuntimeError("entry new needs Git. Install Git, then run it again.")
     project = re.sub(r"[^A-Za-z0-9._-]+", "-", folder.name).strip("-._") or "entry"
     for relative, content in _starter_files(
-        chosen.strip(), project, _package_version()
+        chosen, project, _package_version()
     ).items():
         target = folder / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
     _git(folder, "init", "--quiet")
     print(f"Wrote a starter entry in {folder}")
+    print(
+        f"Your method {chosen!r} gets the Hugging Face repo "
+        f"{_REPO_PATTERN.format(repo)}, where <N> is the season's number."
+    )
     if shutil.which("uv") is None:
         print(f"uv is not installed. Install it with:\n  {UV_INSTALL}")
         print(UV_INSTALL_NOTE)
@@ -821,15 +859,27 @@ def new_entry(path: str | os.PathLike[str], *, name: str | None = None) -> Path:
 
 
 def _machine() -> str:
-    """Return the first GPU name ``nvidia-smi`` lists, or "No NVIDIA GPU found"."""
+    """Return the name of the first GPU this process may use, for the record.
+
+    An empty or "-1" first entry in ``CUDA_VISIBLE_DEVICES`` hides every GPU,
+    so the result is "No GPU visible". Otherwise ``nvidia-smi`` is asked for
+    the first visible device (its index or UUID), or for the first GPU when
+    the variable is not set. "No NVIDIA GPU found" when nvidia-smi is missing,
+    fails or lists nothing. With mixed cards, CUDA numbers devices fastest
+    first unless ``CUDA_DEVICE_ORDER=PCI_BUS_ID``, and nvidia-smi numbers them
+    by PCI bus, so the name can be another card's; it is only a record.
+    """
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    command = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
+    if visible is not None:
+        first = visible.split(",")[0].strip()
+        if first in ("", "-1"):
+            return "No GPU visible"
+        command.append(f"--id={first}")
     if shutil.which("nvidia-smi") is not None:
         with contextlib.suppress(OSError, subprocess.TimeoutExpired):
             done = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=60,
+                command, capture_output=True, text=True, check=False, timeout=60
             )
             names = done.stdout.strip().splitlines()
             if done.returncode == 0 and names:
@@ -861,20 +911,11 @@ def _own_environment() -> dict[str, str]:
     }
 
 
-def _sha256(path: Path) -> str:
-    """Return a file's SHA-256 as 64 lowercase hex characters."""
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _released_package(lock: Mapping[str, Any]) -> str:
     """Return the marl-battlegrounds version that a parsed uv.lock installs.
 
-    Rule 6.3: an entry trains and plays on a released marl-battlegrounds from
-    PyPI, never on a changed copy. Every package named marl-battlegrounds in
+    An entry trains and plays on a released marl-battlegrounds from PyPI,
+    never on a changed copy. Every package named marl-battlegrounds in
     the lock must come from the PyPI index, and each of its files must be that
     version's own file on PyPI's file server
     (``https://files.pythonhosted.org/``), so ``uv sync --locked`` can only
@@ -920,8 +961,7 @@ def _released_package(lock: Mapping[str, Any]) -> str:
             raise _StepFailedError(
                 f"uv.lock installs marl-battlegrounds from {where or 'nowhere'}, "
                 "not from PyPI. Depend on a released version, for example "
-                f"marl-battlegrounds=={_package_version()}, then run uv lock "
-                "(Rule 6.3)."
+                f"marl-battlegrounds=={_package_version()}, then run uv lock."
             )
         stem = f"marl_battlegrounds-{version}"
         files = [package.get("sdist"), *package.get("wheels", [])]
@@ -932,7 +972,7 @@ def _released_package(lock: Mapping[str, Any]) -> str:
             ):
                 raise _StepFailedError(
                     f"uv.lock fetches marl-battlegrounds {version} from {url}, "
-                    "which is not its file on PyPI. Run uv lock again (Rule 6.3)."
+                    "which is not its file on PyPI. Run uv lock again."
                 )
         versions.add(version)
     return ", ".join(sorted(versions))
@@ -960,6 +1000,25 @@ if ":" in source and "/" not in source:
 export_model(source, target)
 print(json.dumps({"exported": True}))
 """
+_FETCH_CODE = """\
+import sys
+from pathlib import Path
+from huggingface_hub import snapshot_download
+from marl_battlegrounds.released_models import _parse_address
+address = _parse_address(sys.argv[1])
+kind = "dataset" if address.dataset else "model"
+patterns = [address.path, address.path + "/*"]
+root = Path(snapshot_download(
+    address.repo, repo_type=kind, revision=address.commit,
+    allow_patterns=patterns, token=False,
+))
+if address.path == "*":
+    found = any(path.is_file() for path in root.rglob("*"))
+else:
+    found = (root / address.path).exists()
+if not found:
+    sys.exit(f"{sys.argv[1]} has no file or folder {address.path} at that commit.")
+"""
 _PLAY_CODE = """\
 import json, sys
 import jax
@@ -974,10 +1033,11 @@ print(json.dumps(play_limits(sys.argv[1]).to_dict()))
 class _Checker:
     """Run the steps of one entry check and keep their results (see check_entry).
 
-    One checker serves one call. ``work`` is the call's temporary folder;
-    the clone goes to ``work/entry`` and its Hugging Face cache to
-    ``entry/.entry-check-hf``. ``bundle`` is where step 2 keeps a copy of the
-    commit (maintainers only), or None.
+    One checker serves one call. ``work`` is the call's work folder (temporary,
+    or the kept folder); the clone goes to ``work/entry`` and its Hugging Face
+    cache to ``entry/.entry-check-hf``. ``bundle`` is where step 2 keeps a copy
+    of the commit (maintainers only), or None. ``sandbox`` seals every child
+    that runs the entry's code (see Sandbox), or None.
     """
 
     def __init__(
@@ -987,28 +1047,32 @@ class _Checker:
         work: Path,
         train_minutes: float,
         bundle: Path | None,
+        sandbox: Sandbox | None = None,
     ) -> None:
         self.source, self.commit, self.train_minutes = source, commit, train_minutes
         self.work, self.clone, self.bundle = work, work / "entry", bundle
+        self.sandbox = sandbox
         self.hf_home = self.clone / ".entry-check-hf"
         self.entry: _Entry | None = None
+        self.stopped = False
+        self.train_seconds = 0.0
         self.builtin_run = False
         self.choice: Path | None = None
-        self.loaded = False
         self.play: PlayLimits | None = None
         self.steps: dict[int, CheckStep] = {}
 
     def record(self, number: int, status: StepStatus, detail: str) -> None:
         """Save one step's result and print it as one line."""
-        _, rules, title, group = _STEPS[number - 1]
-        self.steps[number] = CheckStep(number, rules, title, group, status, detail)
-        print(f"Step {number} (Rule {rules}) {title}: {status}. {detail}", flush=True)
+        _, title, group = _STEPS[number - 1]
+        self.steps[number] = CheckStep(number, title, group, status, detail)
+        print(f"Step {number}. {title}: {status}. {detail}", flush=True)
 
     def attempt(self, number: int, step: Callable[[], str]) -> bool:
         """Run one must-pass step, record passed or failed, and say if it passed.
 
         A _StepFailedError message becomes the detail as written; any other error
-        is shown with its type, so researcher code cannot crash the check.
+        (from researcher code or the sandbox) is shown with its type, so it
+        cannot crash the check.
         """
         try:
             detail = step()
@@ -1029,13 +1093,19 @@ class _Checker:
             if number not in self.steps:
                 self.record(number, "skipped", reason)
 
+    def sealed(self, command: Sequence[str], *, online: bool) -> list[str]:
+        """Return ``command`` behind the sandbox's prefix (see Sandbox), if any."""
+        prefix = () if self.sandbox is None else self.sandbox(self.clone, online)
+        return [*prefix, *command]
+
     def env(self, *, offline: bool) -> dict[str, str]:
         """Return the environment for children in the entry's own environment.
 
         The clone's .venv comes first on PATH, uv never syncs again, and
-        HF_HOME is the check's own fresh cache. Offline adds HF_HUB_OFFLINE
-        and UV_OFFLINE. Settings that would point the entry at another
-        environment or model cache are dropped (see _own_environment).
+        HF_HOME is the check's own fresh cache. Offline sets HF_HUB_OFFLINE
+        and UV_OFFLINE; online removes them, even when the caller set them.
+        Settings that would point the entry at another environment or model
+        cache are dropped (see _own_environment).
         """
         env = _own_environment()
         venv = self.clone / ".venv"
@@ -1045,8 +1115,11 @@ class _Checker:
             HF_HOME=str(self.hf_home),
             UV_NO_SYNC="1",
         )
-        if offline:
-            env.update(HF_HUB_OFFLINE="1", UV_OFFLINE="1")
+        for key in ("HF_HUB_OFFLINE", "UV_OFFLINE"):
+            if offline:
+                env[key] = "1"
+            else:
+                env.pop(key, None)
         return env
 
     def python(
@@ -1056,15 +1129,16 @@ class _Checker:
         timeout: float,
         extra: Mapping[str, str] | None = None,
     ) -> tuple[int | None, dict[str, Any] | None, str]:
-        """Run ``code`` offline with ``uv run --no-sync python -c`` in the clone.
+        """Run ``code`` offline and sealed with ``uv run --no-sync python -c``.
 
         ``args`` follow the code as ``sys.argv[1:]``; ``extra`` adds
         environment variables. Returns (exit code, or None after ``timeout``
         seconds; the JSON object on the last line of output, or None; the
         last lines of its error output).
         """
+        command = ["uv", "run", "--no-sync", "python", "-c", code, *args]
         code_out, out, err = _run(
-            ["uv", "run", "--no-sync", "python", "-c", code, *args],
+            self.sealed(command, online=False),
             cwd=self.clone,
             env={**self.env(offline=True), **(extra or {})},
             timeout=timeout,
@@ -1096,14 +1170,14 @@ class _Checker:
         return f"Commit {self.commit}."
 
     def step_2(self) -> str:
-        """Clone the commit into the temporary folder; keep a bundle if asked."""
+        """Clone the commit into the work folder; keep a bundle if asked."""
         assert self.commit is not None
         _git(self.work, "clone", "--quiet", "--no-checkout", self.source, "entry")
         _git(self.clone, "checkout", "--quiet", "--detach", self.commit)
         if _git(self.clone, "rev-parse", "HEAD") != self.commit:
             raise _StepFailedError(f"The clone is not at {self.commit}.")
         if self.bundle is None:
-            return f"Cloned {self.commit} into a temporary folder."
+            return f"Cloned {self.commit} into {self.clone}."
         self.bundle.parent.mkdir(parents=True, exist_ok=True)
         _git(self.clone, "bundle", "create", str(self.bundle), "HEAD")
         return f"Cloned {self.commit}; kept a copy in {self.bundle}."
@@ -1122,16 +1196,19 @@ class _Checker:
                 f"The commit already has files in the output folder "
                 f"{self.entry.output}; the run needs it new or empty."
             )
-        return f"Name {self.entry.name!r}; load {self.entry.load}."
+        return (
+            f"Method {self.entry.name!r} (Hugging Face repo "
+            f"{_REPO_PATTERN.format(self.entry.repo)}); load {self.entry.load}."
+        )
 
     def step_4(self) -> str:
-        """Check the locked marl-battlegrounds, install, then check JAX and models.
+        """Check the locked marl-battlegrounds, install, then fetch the models.
 
         Before installing, uv.lock must exist and install a released
         marl-battlegrounds from PyPI (``_released_package``). Then
         ``uv sync --locked`` runs with the GPU hidden, uv.lock must hold a CUDA
-        build of JAX, and every starting model is fetched and its SHA-256 (a
-        pool's commit) compared (see fetch).
+        build of JAX, and every starting model is downloaded (see fetch). The
+        install and every download share one hour.
         """
         assert self.entry is not None
         if shutil.which("uv") is None:
@@ -1150,15 +1227,16 @@ class _Checker:
         env = _own_environment()
         env["CUDA_VISIBLE_DEVICES"] = ""
         started = time.monotonic()
+        deadline = started + _INSTALL_SECONDS
         code, _, err = _run(
-            ["uv", "sync", "--locked"],
+            self.sealed(["uv", "sync", "--locked"], online=True),
             cwd=self.clone,
             env=env,
             timeout=_INSTALL_SECONDS,
         )
         seconds = time.monotonic() - started
         if code is None:
-            raise _StepFailedError("Installing took more than 1 hour (Rule 2.3).")
+            raise _StepFailedError(_INSTALL_LIMIT)
         if code != 0:
             raise _StepFailedError(f"uv sync --locked failed:\n{_tail(err)}")
         # uv sync --locked never rewrites uv.lock, so the parse above still holds.
@@ -1169,83 +1247,82 @@ class _Checker:
                 "marl-battlegrounds[cuda13] (or cuda12), then run uv lock."
             )
         self.hf_home.mkdir(parents=True, exist_ok=True)
-        for model, digest in self.entry.starting_models:
-            self.fetch(model, digest)
+        for model in self.entry.starting_models:
+            self.fetch(model, deadline)
         return (
             f"marl-battlegrounds {version} from PyPI. Installed in "
             f"{seconds / 60:.1f} minutes without the GPU; "
-            f"{len(self.entry.starting_models)} starting models checked."
+            f"{len(self.entry.starting_models)} starting models downloaded."
         )
 
-    def fetch(self, model: str, digest: str) -> None:
-        """Find or download one starting model and compare its digest (step 4).
+    def fetch(self, model: str, deadline: float) -> None:
+        """Download one starting model into the check's HF_HOME (step 4).
 
-        A path that exists inside the clone must be a file. A released name
-        (``MARL-BattleGrounds/...`` or ``hf://...``) is downloaded with the
-        entry's own ``models download`` into the check's HF_HOME, which the
-        offline training in step 5 reads. A file's SHA-256 must equal
-        ``digest``. A training-opponent pool's commit, read from the address
-        ``models download`` prints, must equal ``digest``. Anything else fails.
+        A MARL-BattleGrounds name or address goes through the entry's own
+        ``models download``, sealed with the network on, then once more
+        offline: a name the entry's package does not fix to one commit cannot
+        load in our offline run, so step 4 fails it now with released_models'
+        own advice. Any other owner's ``hf://`` address is fetched by the
+        check's own Python in a child (no entry code runs): one
+        ``snapshot_download`` of the path (a file, a folder, or ``*`` for the
+        whole repo) at its commit, with no token, so only public files pass,
+        and a path with no files fails. Every child stops when step 4's hour
+        ends.
         """
-        local = (self.clone / model).resolve()
-        if local.is_relative_to(self.clone.resolve()) and local.exists():
-            if not local.is_file():
-                raise _StepFailedError(f"{model}: give a file, not a folder.")
-            path = local
-        elif model.startswith("hf://") or model.lower().startswith(
-            "marl-battlegrounds/"
-        ):
-            code, out, err = _run(
-                [
-                    *("uv", "run", "--no-sync", "python", "-m", "marl_battlegrounds"),
-                    *("models", "download", model),
-                ],
-                cwd=self.clone,
-                env=self.env(offline=False),
-                timeout=_INSTALL_SECONDS,
-            )
-            if _pool(model) is not None:
-                pools = [
-                    _pool(line.removeprefix(f"{model}: "))
-                    for line in out.splitlines()
-                    if line.startswith(f"{model}: ")
-                ]
-                if code != 0 or not pools or pools[-1] is None:
-                    raise _StepFailedError(
-                        f"models download {model} failed:\n{_tail(err)}"
-                    )
-                if pools[-1][1] != digest:
-                    raise _StepFailedError(
-                        f"{model}: its commit is not the one in entry.yaml."
-                    )
+        address = _parse_address(model) if model.startswith("hf://") else None
+        if address is not None:
+            owner = address.repo.split("/")[0]
+            if owner.lower() != RELEASE_ORGANIZATION.lower():
+                self.child(
+                    [sys.executable, "-I", "-c", _FETCH_CODE, model],
+                    f"Downloading {model}",
+                    deadline,
+                    cwd=self.work,
+                    env=self.env(offline=False),
+                )
                 return
-            found = [
-                line.split(":", 1)[1].strip()
-                for line in out.splitlines()
-                if line.startswith("Local File:")
-            ]
-            if code != 0 or not found:
-                raise _StepFailedError(f"models download {model} failed:\n{_tail(err)}")
-            path = Path(found[-1])
-        else:
-            raise _StepFailedError(
-                f"{model}: the check cannot fetch this yet. Use a released name "
-                "or a file inside your repository."
+        command = ["uv", "run", "--no-sync", "python", "-m", "marl_battlegrounds"]
+        download = [*command, "models", "download", model]
+        for offline in (False, True):
+            self.child(
+                self.sealed(download, online=not offline),
+                f"models download {model}" + (" offline" if offline else ""),
+                deadline,
+                cwd=self.clone,
+                env=self.env(offline=offline),
             )
-        if _sha256(path) != digest:
-            raise _StepFailedError(
-                f"{model}: its SHA-256 is not the one in entry.yaml."
-            )
+
+    def child(
+        self,
+        command: Sequence[str],
+        what: str,
+        deadline: float,
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+    ) -> None:
+        """Run one step 4 child until ``deadline`` (a ``time.monotonic`` value).
+
+        Raises _StepFailedError with the hour's message when the time runs
+        out, or with ``what`` and the last lines of its error output when it
+        fails.
+        """
+        timeout = max(deadline - time.monotonic(), 0.0)
+        code, _, err = _run(command, cwd=cwd, env=env, timeout=timeout)
+        if code is None:
+            raise _StepFailedError(_INSTALL_LIMIT)
+        if code != 0:
+            raise _StepFailedError(f"{what} failed:\n{_tail(err)}")
 
     def step_5(self) -> str:
         """Train offline for train_minutes, then stop the run's process group."""
         assert self.entry is not None
         log_path = self.work / "train.log"
         calm = True
+        started = time.monotonic()
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
-                self.entry.train,
-                shell=True,
+                self.sealed(["/bin/sh", "-c", self.entry.train], online=False),
                 cwd=self.clone,
                 env=self.env(offline=True),
                 stdout=log,
@@ -1259,17 +1336,31 @@ class _Checker:
                 except subprocess.TimeoutExpired:
                     code = None
                     calm = _stop_group(process, _STOP_GRACE_SECONDS)
+                else:
+                    # Programs the train command left behind in its group stop too.
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+        self.train_seconds = time.monotonic() - started
+        self.stopped = code is None
         if code is not None and code != 0:
             output = _tail(log_path.read_text(encoding="utf-8", errors="replace"))
             raise _StepFailedError(
-                f"The train command failed (exit code {code}):\n{output}"
+                f"The train command failed after {self.train_seconds / 60:.1f} "
+                f"minutes (exit code {code}):\n{output}"
             )
         if code == 0:
-            return "The train command finished before the time was up."
-        return f"Trained for {self.train_minutes:g} minutes, then " + (
-            "stopped within 60 seconds of the stop signal."
-            if calm
-            else "did not stop within 60 seconds of the stop signal and was killed."
+            return (
+                f"The train command ended by itself after "
+                f"{self.train_seconds / 60:.1f} minutes."
+            )
+        return (
+            f"Trained for {self.train_minutes:g} minutes with downloads off "
+            "(our run is offline), then "
+            + (
+                "stopped within 60 seconds of the stop signal."
+                if calm
+                else "did not stop within 60 seconds of the stop signal and was killed."
+            )
         )
 
     def find_choice(self) -> None:
@@ -1286,6 +1377,24 @@ class _Checker:
         if self.builtin_run:
             self.choice = current_choice(run)
 
+    def saved(self) -> str | None:
+        """Step 8's detail when the run saved something to enter, else None.
+
+        A built-in run must have a choice; an own training loop must have
+        written something into its output folder.
+        """
+        assert self.entry is not None
+        if self.builtin_run:
+            return (
+                None
+                if self.choice is None
+                else f"The run's choice is {self.choice.name}."
+            )
+        output = self.clone / self.entry.output
+        if output.is_dir() and any(output.iterdir()):
+            return f"The output folder {self.entry.output} holds the run's saves."
+        return None
+
     def step_6(self) -> str:
         """Call the load function in a fresh process, within 10 minutes."""
         assert self.entry is not None
@@ -1293,16 +1402,20 @@ class _Checker:
             _LOAD_CODE, self.entry.load, timeout=_LOAD_SECONDS
         )
         if code is None:
-            raise _StepFailedError("Loading took more than 10 minutes (Rule 6.3).")
+            raise _StepFailedError("Loading took more than 10 minutes.")
         if result is None:
             raise _StepFailedError(f"{self.entry.load} failed:\n{err}")
-        self.loaded = True
         return f"{self.entry.load} returned a {result['kind']}."
 
     def step_7(self) -> str:
-        """Export the choice (or the loaded Policy); refuse local paths inside it."""
+        """Export the choice (or the loaded Policy); refuse local paths inside it.
+
+        The sealed export child writes inside the clone, the only folder it
+        may write, and step 9 plays that file. This process keeps a copy at
+        ``work/model.zip``.
+        """
         assert self.entry is not None
-        target = self.work / "model.zip"
+        target = self.clone / _EXPORT_FILE
         source = str(self.choice) if self.choice is not None else self.entry.load
         code, result, err = self.python(
             _EXPORT_CODE, source, str(target), timeout=_EXPORT_SECONDS
@@ -1320,41 +1433,35 @@ class _Checker:
             _local_path_findings,  # pyright: ignore[reportPrivateUsage]
         )
 
-        findings: list[str] = _local_path_findings(target.name, target.read_bytes())
+        kept = self.work / "model.zip"
+        shutil.copyfile(target, kept)
+        findings: list[str] = _local_path_findings(kept.name, kept.read_bytes())
         if findings:
             raise _StepFailedError(
                 " ".join(
-                    f"{target.name} names {finding}. Train against a released "
+                    f"{kept.name} names {finding}. Train against a released "
                     "name or a model inside your repository, or lock a newer "
                     "marl-battlegrounds, whose export leaves local folders out."
                     for finding in findings
                 )
             )
-        return f"Exported {target.stat().st_size:,} bytes from {Path(source).name}."
+        return (
+            f"Exported {kept.stat().st_size:,} bytes from {Path(source).name} "
+            f"to {kept}."
+        )
 
-    def step_8(self, machine: str) -> tuple[StepStatus, str]:
-        """Say whether a choice was saved within the training time."""
-        if self.builtin_run:
-            if self.choice is not None:
-                return (
-                    "passed",
-                    f"On {machine}: the run's choice is {self.choice.name}.",
-                )
-            return "failed", (
-                f"On {machine}: the run saved no choice yet. Our RTX 5090 reaches "
-                "its first validation sooner."
-            )
-        if self.loaded:
-            return "passed", f"On {machine}: the load function found a saved entry."
-        return "failed", f"On {machine}: the load function found no saved entry."
+    def step_9(self) -> tuple[StepStatus, str]:
+        """Time the exported model (the file our games play) with deterministic XLA.
 
-    def step_9(self, machine: str) -> tuple[StepStatus, str]:
-        """Measure the play limits in a fresh process with deterministic XLA."""
+        Only a reading on an RTX 5090, the card our run uses, with its memory
+        known, passes or fails; any other reading is "not measured". A crash
+        or games past 30 minutes fail on any machine.
+        """
         assert self.entry is not None
         flags = f"{os.environ.get('XLA_FLAGS', '')} {_DETERMINISTIC}".strip()
         code, result, err = self.python(
             _PLAY_CODE,
-            self.entry.load,
+            str(self.clone / _EXPORT_FILE),
             timeout=_PLAY_SECONDS,
             extra={"XLA_FLAGS": flags},
         )
@@ -1364,7 +1471,7 @@ class _Checker:
             return "failed", f"The play check failed:\n{err}"
         if not result["on_gpu"]:
             return "not measured", (
-                f"No GPU here (JAX found {result['device']}). We measure it on "
+                f"No GPU here (JAX found {result['device']}). We measure this on "
                 "our RTX 5090."
             )
         self.play = PlayLimits(
@@ -1372,40 +1479,68 @@ class _Checker:
         )
         speed, peak = self.play.game_steps_per_second, self.play.peak_memory_bytes
         detail = (
-            f"On {result['device']}: {speed:,.0f} game steps per second (Rule 4.1: "
-            f"at least {MIN_GAME_STEPS_PER_SECOND:,}); peak "
+            f"On {self.play.device}: {speed:,.0f} game steps per second (at least "
+            f"{MIN_GAME_STEPS_PER_SECOND:,} needed); peak "
             + ("unknown" if peak is None else f"{peak / 1e9:.2f} GB")
-            + " of GPU memory (Rule 4.2: at most 10 GB)."
+            + " of GPU memory (at most 10 GB allowed)."
         )
-        if "RTX 5090" not in machine:
-            detail += " Advice only: the limits are decided on our RTX 5090."
+        if "RTX 5090" not in self.play.device:
+            return "not measured", detail + " We decide this on our RTX 5090."
+        if peak is None:
+            return "not measured", detail + " The GPU did not report its memory."
         return ("passed" if self.play.within_limits else "failed"), detail
 
-    def after_training(self, machine: str) -> None:
+    def after_training(self) -> None:
         """Run steps 6 to 9 once step 5 passed.
 
-        Steps 6, 7 and 9 wait (are skipped, not failed) when a built-in run
-        saved no choice yet; step 8 then says so. A run whose records cannot
-        be read fails step 6.
+        When the run saved nothing to enter (see saved), steps 6, 7 and 9
+        wait (are skipped, not failed) if step 5 stopped it at its time limit,
+        and step 8 says so; a run that ended by itself with nothing saved
+        fails step 6. A run whose records or output folder cannot be read
+        fails step 6. An error in step 9 itself (for example from the
+        sandbox) fails step 9.
         """
+        assert self.entry is not None
         try:
             self.find_choice()
+            saved = self.saved()
         except Exception as error:
             self.record(6, "failed", f"The run's records could not be read: {error}")
-            self.record(8, *self.step_8(machine))
             self.skip_rest()
             return
-        if self.builtin_run and self.choice is None:
-            waiting = "Not checked: no choice was saved yet (see step 8)."
+        if saved is None and not self.stopped:
+            self.record(
+                6,
+                "failed",
+                f"The train command ended after {self.train_seconds / 60:.1f} "
+                f"minutes with nothing saved to enter in {self.entry.output}.",
+            )
+            self.skip_rest()
+            return
+        if saved is None:
+            waiting = "Not checked: nothing was saved to enter yet (see step 8)."
+            later = (
+                f" Our run trains for up to {OFFICIAL_TRAIN_MINUTES / 60:g} hours."
+                if self.train_minutes < OFFICIAL_TRAIN_MINUTES
+                else ""
+            )
             self.record(6, "skipped", waiting)
             self.record(7, "skipped", waiting)
-            self.record(8, *self.step_8(machine))
+            self.record(
+                8,
+                "not measured",
+                f"Nothing saved to enter in {self.train_minutes:g} minutes of "
+                f"training.{later}",
+            )
             self.record(9, "skipped", waiting)
             return
         ok = self.attempt(6, self.step_6) and self.attempt(7, self.step_7)
-        self.record(8, *self.step_8(machine))
+        self.record(8, "passed", saved)
         if ok:
-            self.record(9, *self.step_9(machine))
+            try:
+                self.record(9, *self.step_9())
+            except Exception as error:
+                self.record(9, "failed", f"{type(error).__name__}: {error}")
         self.skip_rest()
 
 
@@ -1415,6 +1550,8 @@ def check_entry(
     repository: str | None = None,
     commit: str | None = None,
     train_minutes: float = 15.0,
+    sandbox: Sandbox | None = None,
+    keep_folder: str | os.PathLike[str] | None = None,
 ) -> EntryCheck:
     """Check one commit of an entry the way we will, and save the result.
 
@@ -1422,30 +1559,41 @@ def check_entry(
     Steps 8 and 9 are measured here and decided on our RTX 5090; they never
     block. Each step prints one line as it finishes.
 
-    1. The tree is clean and the commit is recorded (Rule 6.3).
-    2. A fresh clone of that commit in a temporary folder.
-    3. ``entry.yaml`` is present and valid (Rules 3.1, 3.4, 6.3).
+    1. The tree is clean and the commit is recorded.
+    2. A fresh clone of that commit.
+    3. ``entry.yaml`` is present and valid: the six keys ``name``,
+       ``train``, ``output``, ``load``, ``entry_type`` and
+       ``starting_models`` (1.0.3's ``training_maps`` and ``config`` are
+       ignored), and the output folder holds no committed files.
     4. ``uv.lock`` installs a released marl-battlegrounds from PyPI, any
        version (checked before installing); ``uv sync --locked`` with the
-       GPU hidden, in at most 1 hour; ``uv.lock`` holds a CUDA build of JAX;
-       every starting model is fetched into a fresh ``HF_HOME`` in the clone
-       and its SHA-256 checked, or a training-opponent pool's commit
-       (Rules 2.3, 6.3).
+       GPU hidden; ``uv.lock`` holds a CUDA build of JAX; every starting
+       model is downloaded into a fresh ``HF_HOME`` in the clone. A released
+       name must also load offline: one the locked package does not fix to a
+       commit fails here with the advice to list its exact ``hf://``
+       address, in ``starting_models`` and wherever the run names it. An
+       outside path with no files fails. The install and the downloads share
+       1 hour.
     5. The train command runs for ``train_minutes`` with ``HF_HUB_OFFLINE=1``,
        then gets a stop signal (SIGINT) to its process group, 60 seconds'
-       grace, then a kill (Rules 2.2, 6.5).
+       grace, then a kill.
     6. The load function, in a fresh process, returns a Policy or System
-       within 10 minutes (Rule 6.3).
+       within 10 minutes.
     7. Export to a portable model file: from the actor folder
        ``training.current_choice`` names when the output is a built-in run,
        else from the Policy that the load function returns. The file must
-       name no folder on this computer (Rule 6.6).
-    8. A choice was saved within the training time (Rule 7.1). When a
-       built-in run saved none yet (a slower card may not reach its first
-       validation), steps 6, 7 and 9 say so instead of failing.
-    9. ``play_limits`` in a fresh process, with XLA's deterministic mode
-       (Rules 4.1, 4.2). "Not measured" without a GPU; advice only on any
-       card but an RTX 5090.
+       name no folder on this computer.
+    8. Something to enter was saved: a built-in run's choice (never its
+       step-0 save), or files in an own training loop's output folder. When
+       step 5 stopped the run before it saved anything (a slower card may
+       not reach the first save), steps 6, 7 and 9 wait and step 8 is "not
+       measured"; a run that ended by itself with nothing saved fails step 6.
+    9. ``play_limits`` on the exported file, the one our games play, in a
+       fresh process, with XLA's deterministic mode.
+       Its reading passes or fails only on an RTX 5090 that reports its
+       memory; on another GPU it is "not measured" with the reading, and
+       without a GPU "not measured". A crash, or games that run past 30
+       minutes, fail it on any machine.
 
     Parameters
     ----------
@@ -1459,7 +1607,25 @@ def check_entry(
     commit : str or None, default=None
         The full 40-character commit SHA to check, with ``repository``.
     train_minutes : float, default=15.0
-        How long step 5 trains, in minutes (Rule 6.5 uses 15). Must be above 0.
+        How long step 5 trains, in minutes: 15 for the check,
+        OFFICIAL_TRAIN_MINUTES (480) for our official run. Must be above 0.
+    sandbox : callable or None, default=None
+        For maintainers: a function ``sandbox(clone, online)`` that returns a
+        command prefix (a list of strings, for example a ``bwrap`` command).
+        The check puts it in front of every child that runs the entry's code
+        (see Sandbox). ``clone`` is the clone's folder, the only folder those
+        children write. ``online`` is True for step 4's install and
+        released-model downloads and False for every child in steps 5 to 9.
+        The prefix must keep the environment the check gives each child
+        (``HF_HOME``, ``HF_HUB_OFFLINE`` and the rest) and keep the child in
+        the check's process group. An error it raises fails that step. None
+        runs the children unsealed.
+    keep_folder : str or os.PathLike or None, default=None
+        For maintainers: a new folder to work in and keep, for our official
+        run. It holds the clone (``entry``, with its environment, the run's
+        output and the Hugging Face cache), ``train.log`` and the exported
+        ``model.zip``. Nothing in it is removed, even after an interrupt.
+        None works in a temporary folder that is removed at the end.
 
     Returns
     -------
@@ -1470,16 +1636,18 @@ def check_entry(
     ------
     ValueError
         Only one of ``repository`` and ``commit`` is given, the commit is not
-        a full SHA, or ``train_minutes`` is not above 0.
+        a full SHA, ``train_minutes`` is not above 0, or ``keep_folder``
+        already exists.
     RuntimeError
         Git is not installed. Problems inside the steps never raise: they
         become failed steps.
     OSError
-        The record could not be written.
+        The record could not be written, or ``keep_folder`` could not be made.
     KeyboardInterrupt
         Ctrl-C, SIGTERM or SIGHUP stopped the check. The running child's whole
         process group (the training run in step 5) is killed first, and the
-        temporary folder is removed. The CLI prints "Interrupted" and exits 130.
+        temporary folder is removed (a kept folder stays). The CLI prints
+        "Interrupted" and exits 130.
 
     Notes
     -----
@@ -1491,18 +1659,20 @@ def check_entry(
     ``.git/marl-bgs-entry-check/<commit>.json`` of the checked repository
     (never committed). With ``repository``, it goes to
     ``<path>/marl-bgs-entry-check/<commit>.json`` beside
-    ``<commit>.bundle``, a ``git bundle`` of the commit kept for Rule 6.6.
-    Nothing is saved when step 1 fails. The clone, its environment (several
-    GB with CUDA) and the run live in a temporary folder (set ``TMPDIR`` to
-    choose where) that is removed at the end.
+    ``<commit>.bundle``, a ``git bundle`` of the commit, kept so the code we
+    ran can be released. Nothing is saved when step 1 fails. Without
+    ``keep_folder``, the clone, its environment (several GB with CUDA) and
+    the run live in a temporary folder (set ``TMPDIR`` to choose where).
 
     Processes and network: steps 4 to 9 run the entry's own code in child
     processes inside the clone's locked environment (``uv run --no-sync``).
-    Only steps 2 and 4 use the network. Steps 5 to 9 set
-    ``HF_HUB_OFFLINE=1`` and ``UV_OFFLINE=1``; this asks tools to stay
-    offline but does not seal the network. Steps 5 to 9 may use the GPU.
-    Outside code runs on this machine: maintainers run an entry only after
-    reading its code (Rule 2.2).
+    Only steps 2 and 4 use the network: step 2 clones, step 4 installs and
+    downloads. An outside ``hf://`` model (any owner but MARL-BattleGrounds) is
+    downloaded by a child of this Python, with no token and outside any
+    ``sandbox``; no entry code runs there. Steps 5 to 9 set
+    ``HF_HUB_OFFLINE=1`` and ``UV_OFFLINE=1``;
+    this asks tools to stay offline but does not cut the network unless a
+    ``sandbox`` does. Steps 5 to 9 may use the GPU.
 
     Examples
     --------
@@ -1517,23 +1687,30 @@ def check_entry(
         raise ValueError("commit must be the full 40-character SHA, in lowercase")
     if not train_minutes > 0:
         raise ValueError("train_minutes must be above 0")
+    kept = None if keep_folder is None else Path(keep_folder).expanduser().absolute()
+    if kept is not None and kept.exists():
+        raise ValueError(f"keep_folder {kept} already exists; give a new folder")
     if shutil.which("git") is None:
         raise RuntimeError("entry check needs Git. Install Git, then run it again.")
     folder = Path(path).expanduser().absolute()
     machine = _machine()
     records = None if repository is None else folder / _RECORD_FOLDER
-    with (
-        _stop_signals_interrupt(),
-        tempfile.TemporaryDirectory(
+    work_folder: contextlib.AbstractContextManager[str]
+    if kept is None:
+        work_folder = tempfile.TemporaryDirectory(
             prefix="marl-bgs-entry-check-", ignore_cleanup_errors=True
-        ) as work,
-    ):
+        )
+    else:
+        kept.mkdir(parents=True)
+        work_folder = contextlib.nullcontext(str(kept))
+    with _stop_signals_interrupt(), work_folder as work:
         checker = _Checker(
             repository or str(folder),
             commit,
             Path(work),
             train_minutes,
             None if records is None else records / f"{commit}.bundle",
+            sandbox,
         )
         if repository is None:
             ok = checker.attempt(1, lambda: checker.step_1(folder))
@@ -1550,7 +1727,7 @@ def check_entry(
         ):
             ok = ok and checker.attempt(number, step)
         if ok:
-            checker.after_training(machine)
+            checker.after_training()
         checker.skip_rest()
     result = EntryCheck(
         repository=repository or checker.source,
@@ -1575,8 +1752,8 @@ def check_entry(
     waiting = [step.number for step in result.must_pass if step.status == "skipped"]
     if result.passed and waiting:
         verdict += (
-            f" Steps {', '.join(map(str, waiting))} were not checked: no choice was "
-            "saved yet (see step 8)."
+            f" Steps {', '.join(map(str, waiting))} were not checked: nothing was "
+            "saved to enter yet (see step 8)."
         )
     print(verdict + (f" Record: {result.record}" if result.record else ""))
     return result
@@ -1596,8 +1773,8 @@ def _remote_url(root: Path, commit: str) -> str:
     """Return the web address of the remote whose branch holds ``commit``.
 
     Raises ValueError when no remote branch holds the commit. An SSH address
-    such as ``git@github.com:team/entry.git`` becomes
-    ``https://github.com/team/entry``. A user name or token inside the
+    such as ``git@github.com:you/entry.git`` becomes
+    ``https://github.com/you/entry``. A user name or token inside the
     address (``https://user:TOKEN@github.com/...``) is removed, so it never
     reaches the printed link or the public issue.
     """
@@ -1605,7 +1782,9 @@ def _remote_url(root: Path, commit: str) -> str:
     branches = [line.strip() for line in branches if "->" not in line]
     if not branches:
         raise ValueError(
-            "This commit is on no remote branch. Push it first (git push)."
+            "This commit is on no remote branch. Push it first: git push -u "
+            "origin HEAD (add the remote once with git remote add origin "
+            "<your GitHub repository URL>)."
         )
     url = _git(root, "remote", "get-url", branches[0].split("/", 1)[0])
     ssh = re.fullmatch(r"(?:ssh://)?git@([^:/]+)[:/](.+)", url)
@@ -1645,30 +1824,30 @@ def submit_entry(
     Returns
     -------
     str
-        The link that was printed (and opened). When the filled-in link would
-        be longer than ``MAX_LINK_LENGTH`` characters, this is the form with
-        only the title filled in, and the other values are printed to copy.
+        The link that was printed (and opened).
 
     Raises
     ------
     ValueError
-        The tree has uncommitted changes, the commit is on no remote branch
-        (push it first), or this commit has no passing ``entry check`` record.
-        Also raised when ``entry.yaml`` is not valid.
+        There is no commit yet; the tree has uncommitted changes;
+        ``entry.yaml`` is not valid; the train command is still the starter's
+        (it trains Season 0's Recurrent MAPPO recipe unchanged); the commit is
+        on no remote branch (push it first); or this commit has no passing
+        ``entry check`` record.
+    FileNotFoundError
+        There is no ``entry.yaml`` at the top of the repository.
     RuntimeError
         Git is not installed, or a Git command failed (for example, the
         folder is not inside a Git repository).
 
     Notes
     -----
-    Fills the title (the entry's name) and the text fields ``repository``,
-    ``commit``, ``train-command``, ``lock-file`` (``uv.lock``),
-    ``load-function``, ``config-and-maps`` (paths and map numbers, not pasted
-    files) and ``starting-models``. The team adds its members, the entry type
-    and the agreements on the page, and ticks "My repository is private" if
-    it is. Nothing is sent until the team presses the button on GitHub; the
-    issue's number and time are the public arrival receipt (Rule 7.3).
-    Reads only local Git data: it does not fetch from the remote.
+    Fills the title (the method name) and the form's two text fields,
+    ``repository`` and ``commit``; the maintainers read everything else from
+    ``entry.yaml`` at that commit. On the page you tick the license box,
+    and "My repository is private" if it is. Nothing is sent until you press
+    the button on GitHub; the issue's number and time are the public arrival
+    receipt. Reads only local Git data: it does not fetch from the remote.
 
     Examples
     --------
@@ -1680,9 +1859,19 @@ def submit_entry(
     root = Path(
         _git(Path(path).expanduser().absolute(), "rev-parse", "--show-toplevel")
     )
-    commit = _git(root, "rev-parse", "--verify", "HEAD")
+    try:
+        commit = _git(root, "rev-parse", "--verify", "HEAD")
+    except _StepFailedError:
+        raise ValueError("There is no commit yet. Commit your entry first.") from None
     if _git(root, "status", "--porcelain"):
         raise ValueError("Commit your changes first: the tree has uncommitted changes.")
+    entry = _read_entry(root)
+    if entry.train == _STARTER_TRAIN:
+        raise ValueError(
+            "This is the starter: it trains Season 0's Recurrent MAPPO recipe "
+            "unchanged. Put your own method into the train command in "
+            "entry.yaml, then commit, check and push it before you submit."
+        )
     repository = _remote_url(root, commit)
     record = _record_folder(root) / f"{commit}.json"
     passed = record.is_file() and json.loads(record.read_text(encoding="utf-8")).get(
@@ -1693,36 +1882,13 @@ def submit_entry(
             "This commit has no passing check. Run "
             "`uv run python -m marl_battlegrounds entry check` first."
         )
-    entry = _read_entry(root)
-    maps = (
-        f"Training maps: {_map_text(entry.training_maps)}\n"
-        f"Validation maps: {_map_text(entry.validation_maps)}"
+    link = _issue_link(
+        {"title": entry.name, "repository": repository, "commit": commit}
     )
-    values = {
-        "title": entry.name,
-        "repository": repository,
-        "commit": commit,
-        "train-command": entry.train,
-        "lock-file": "uv.lock",
-        "load-function": entry.load,
-        "config-and-maps": f"Config: {entry.config}\n{maps}",
-        "starting-models": "\n".join(
-            f"{m} {'commit' if _pool(m) else 'sha256'}:{d}"
-            for m, d in entry.starting_models
-        )
-        or "none",
-    }
-    link = _issue_link(values)
-    if len(link) > MAX_LINK_LENGTH:
-        link = _issue_link({"title": entry.name})
-        print("The filled-in link would be too long, so copy these into the form:")
-        for key in FORM_FIELDS:
-            print(f"\n{key}:\n{values[key]}")
     print(f"\nSubmission form for {entry.name} at {commit}:\n{link}")
     print(
-        "\nOn the page, add your team members and labs, choose the entry type "
-        f'({entry.entry_type}), tick the agreements, and tick "My repository is '
-        'private" if it is. Then press Submit new issue.'
+        '\nOn the page, tick the license box, and "My repository is private" if '
+        "it is. Then press Submit new issue."
     )
     if open_browser:
         open_in_browser(link)
@@ -1730,7 +1896,7 @@ def submit_entry(
 
 
 def play_limits(reference: str, *, games: int = 512, batches: int = 4) -> PlayLimits:
-    """Measure Rule 4: a system plays itself; time it and read its peak memory.
+    """Measure the play limits: a system plays itself; time it, read its peak memory.
 
     The system plays itself on maps 42-46 with paired spawns and priority
     metrics. A first call of ``games`` games compiles and warms up; then one
@@ -1752,7 +1918,7 @@ def play_limits(reference: str, *, games: int = 512, batches: int = 4) -> PlayLi
     -------
     PlayLimits
         The device, games, game steps, seconds and peak memory.
-        ``within_limits`` says whether Rule 4 holds on a GPU.
+        ``within_limits`` says whether both limits hold on a GPU.
 
     Raises
     ------
@@ -1766,7 +1932,7 @@ def play_limits(reference: str, *, games: int = 512, batches: int = 4) -> PlayLi
     Notes
     -----
     Runs on JAX's default device; on the CPU it still plays every game, but
-    ``on_gpu`` is False, so it is not a Rule 4 measurement. The peak memory is
+    ``on_gpu`` is False, so it does not measure the limits. The peak memory is
     the whole process's peak so far, so call this in a fresh process (as
     ``entry check`` does) for a reading of this system alone. Seeds are fixed
     (1 for the warm-up, 2 for the timed call). Loading may download a

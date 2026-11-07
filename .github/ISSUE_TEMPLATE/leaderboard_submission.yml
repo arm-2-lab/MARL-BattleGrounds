@@ -1,29 +1,28 @@
 name: Leaderboard Submission
-description: Enter your system in a Team Deathmatch season.
+description: Enter your method in a Team Deathmatch season.
 labels: ["submission"]
 body:
   - type: markdown
     attributes:
       value: |
-        Read the [Tournament Rulebook](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) first. The rule numbers on this form are the rulebook's numbers.
-        This form asks for everything Rule 6.3 needs. Use your system's name as the issue title.
-        `python -m marl_battlegrounds entry submit` opens this form with your answers filled in, after `entry check` passes (Rule 6.4).
-        Submissions for a season close 72 hours before its table is published.
-
-  - type: textarea
-    id: team
-    attributes:
-      label: Team Members and Labs
-      description: Every person on your team, each with their lab. A team is its people and their labs (Rule 6.1).
-    validations:
-      required: true
+        Read the [rules](https://github.com/arm-2-lab/MARL-BattleGrounds/blob/main/docs/tournament_rules.md) first.
+        In your entry's folder, `uv run python -m marl_battlegrounds entry submit` opens this form filled in, once `entry check` passes on your commit.
+        The issue title is your method's name, the `name` in `entry.yaml`. We read everything else from `entry.yaml` at your commit.
 
   - type: input
     id: repository
     attributes:
       label: Repository URL
-      description: The Git repository we clone (Rule 6.3).
-      placeholder: https://github.com/your-team/your-system
+      description: The Git repository we clone.
+      placeholder: https://github.com/you/your-method
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: The full 40-character commit SHA we run. Not a branch or a tag.
     validations:
       required: true
 
@@ -31,87 +30,15 @@ body:
     id: private-repository
     attributes:
       label: Private Repository
-      description: Tick this only if we need a key to clone your repository. We post a read-only key for this one entry in the issue. Add it under Settings > Deploy keys with write access off, within 7 days of our reply, and your arrival time stays this issue's time (Rule 6.4).
+      description: Tick this only if we need a key to clone your repository. We reply with a read-only key for this one entry. Add it under Settings > Deploy keys, with write access off. If you add it within 7 days of our reply, your place in the queue is this issue's time; after that, it is the time you add the key.
       options:
-        - label: My repository is private (we reply with a read-only key)
+        - label: My repository is private
           required: false
 
-  - type: input
-    id: commit
-    attributes:
-      label: Commit SHA
-      description: The full 40-character commit SHA we run (Rule 6.3). Not a branch or a tag.
-    validations:
-      required: true
-
-  - type: textarea
-    id: train-command
-    attributes:
-      label: Train Command
-      description: The one command we run to train. It must keep its chosen entry saved in its output folder (Rule 6.3).
-      render: shell
-    validations:
-      required: true
-
-  - type: input
-    id: lock-file
-    attributes:
-      label: Lock File
-      description: The path, inside your repository, of the uv lock file that pins every dependency and installs a CUDA build of JAX and a released marl-battlegrounds from PyPI (Rule 6.3).
-      placeholder: uv.lock
-    validations:
-      required: true
-
-  - type: input
-    id: load-function
-    attributes:
-      label: Load Function
-      description: Written as `module:function`. It loads only your chosen entry, in at most 10 minutes (Rule 6.3).
-      placeholder: my_system.entry:load
-    validations:
-      required: true
-
-  - type: textarea
-    id: config-and-maps
-    attributes:
-      label: Config and Training Maps
-      description: Your config, pasted or as a path in your repository, and the maps your run trains and validates on (Rule 6.3). Maps 0 to 46 are yours to use (Rule 3.4).
-    validations:
-      required: true
-
-  - type: dropdown
-    id: entry-type
-    attributes:
-      label: Entry Type
-      description: The type the table shows beside your entry (Rule 1.2).
-      options:
-        - Learned
-        - Scripted
-        - Hybrid
-        - Language Model
-    validations:
-      required: true
-
-  - type: textarea
-    id: starting-models
-    attributes:
-      label: Starting Models
-      description: Every model your run downloads or uses (opponents, teammates and starting weights), each with its SHA-256 hash (Rules 2.3 and 6.3). This includes released MARL-BGs models (Rule 3.1) and outside pretrained models (Rule 3.2). Write none if there are none.
-    validations:
-      required: true
-
   - type: checkboxes
-    id: agreements
+    id: license
     attributes:
-      label: Agreements
+      label: License
       options:
-        - label: I read the Tournament Rulebook, Version 1.
-          required: true
-        - label: My run never touched test maps 47 to 51 or the scenarios, and I chose nothing by results on maps 47 to 51 (Rule 3.4).
-          required: true
-        - label: This is my team's only submission this season (Rule 6.1).
-          required: true
-        - label: My code, results and every saved model are released under Apache-2.0, whether or not my system is admitted (Rule 6.6).
-          required: true
-        - label: My entry joins the general pool that anyone can download, whether or not it joins the field (Rule 6.7).
+        - label: I release this entry's code, results and saved models under Apache-2.0, entered or not.
           required: true
