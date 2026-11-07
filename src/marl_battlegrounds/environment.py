@@ -29,8 +29,6 @@ from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
     TASK_MODE_CTF,
     TASK_MODE_KOTH,
-    TASK_MODE_NEUTRAL,
-    TASK_MODE_TDM,
     TEAM_A_ID,
     TEAM_B_ID,
     Action,
@@ -83,13 +81,13 @@ from marl_battlegrounds.spaces import (
     observation_space as describe_observation_space,
 )
 from marl_battlegrounds.tasks import (
-    DEFAULT_TDM_RED_ZONE_DEPTH,
+    TASK_MODES,
     AgentClassName,
     TDMScenario,
     balanced_spawn_configs,
     canonical_tournament_rosters,
-    make_standard_capture_the_flag_config,
-    make_standard_team_deathmatch_config,
+    check_config_task,
+    make_standard_config,
     prepare_exact_env_config,
 )
 
@@ -1846,8 +1844,7 @@ def make(
         raise TypeError("balance_spawn_locations must be a boolean")
     if type(training_facts) is not bool:
         raise TypeError("training_facts must be a boolean")
-    capture_the_flag = task == "ctf"
-    if capture_the_flag and not isinstance(red_zone_depth, Omitted):
+    if task == "ctf" and not isinstance(red_zone_depth, Omitted):
         raise ValueError("red_zone_depth is a Team Deathmatch rule; ctf has none")
     has_rules = (
         team_a_roster is not None
@@ -1868,31 +1865,17 @@ def make(
         rosters = canonical_tournament_rosters()
         team_a = rosters[0] if team_a_roster is None else team_a_roster
         team_b = rosters[1] if team_b_roster is None else team_b_roster
-        if capture_the_flag:
-            source = make_standard_capture_the_flag_config(
-                map_id=map_id,
-                team_a_roster=team_a,
-                team_b_roster=team_b,
-                max_steps=max_steps,
-                **(
-                    {}
-                    if score_threshold is None
-                    else {"score_threshold": score_threshold}
-                ),
-            )
-        else:
-            source = make_standard_team_deathmatch_config(
-                map_id=map_id,
-                team_a_roster=team_a,
-                team_b_roster=team_b,
-                score_threshold=20 if score_threshold is None else score_threshold,
-                max_steps=max_steps,
-                red_zone_depth=(
-                    DEFAULT_TDM_RED_ZONE_DEPTH
-                    if isinstance(red_zone_depth, Omitted)
-                    else red_zone_depth
-                ),
-            )
+        source = make_standard_config(
+            task,
+            map_id=map_id,
+            team_a_roster=team_a,
+            team_b_roster=team_b,
+            score_threshold=score_threshold,
+            max_steps=max_steps,
+            red_zone_depth=None
+            if isinstance(red_zone_depth, Omitted)
+            else red_zone_depth,
+        )
         if balance_spawn_locations:
             if num_envs is None:
                 raise ValueError(
@@ -1912,16 +1895,11 @@ def make(
     replay_array = np.asarray(replay_ids, np.int32)
     full_array.flags.writeable = False
     replay_array.flags.writeable = False
-    task_mode = TASK_MODE_CTF if capture_the_flag else TASK_MODE_TDM
+    task_mode = TASK_MODES[task]
     if defaults is not None:
         config_mode = _config_task_mode(defaults)
         assert config_mode is not None  # make runs on the host; never traced
-        allowed = (task_mode,) if capture_the_flag else (task_mode, TASK_MODE_NEUTRAL)
-        if config_mode not in allowed:
-            raise ValueError(
-                f"env_config has task_mode {config_mode}, which task {task!r} "
-                "does not play; use the task of the config's own mode"
-            )
+        check_config_task(task, config_mode, neutral=task == "tdm")
         task_mode = config_mode
     return Environment(
         _Execution(

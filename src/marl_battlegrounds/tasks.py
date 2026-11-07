@@ -1,8 +1,11 @@
-"""Discover packaged TDM content and prepare exact episode configurations.
+"""Discover packaged content and prepare exact episode configurations.
 
 Use list_tdm_maps and list_tdm_scenarios for the installed catalog, the config
-factories for ordinary matches, and load_tdm_scenario for an exact authored
-start. balanced_spawn_configs prepares both complete spawn-bank choices without
+factories for ordinary matches (one per mode, and make_standard_config, which
+picks a task's own), and load_tdm_scenario for an exact authored start.
+maps_for_task, TASK_MODES and task_for_mode say which listing and Core mode
+each task name has, and check_config_task is the one rule for which configs a
+task plays. balanced_spawn_configs prepares both complete spawn-bank choices without
 changing team identity, roster order or any other game rule.
 
 Map loading and physical validation happen during host setup. Prepared numerical
@@ -13,6 +16,7 @@ physical validity and simulation rules.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Integral
@@ -32,6 +36,8 @@ from marl_battlegrounds._task_settings import (
     DEFAULT_CTF_FLAG_HOME_POSITIONS,
     DEFAULT_CTF_FLAG_INTERACTION_DISTANCE,
     DEFAULT_CTF_SCORE_THRESHOLD,
+    DEFAULT_SCORE_THRESHOLDS,
+    DEFAULT_TDM_SCORE_THRESHOLD,
     TASK_NAMES,
     TaskName,
 )
@@ -216,6 +222,64 @@ def maps_for_task(task: TaskName) -> tuple[TDMMapInfo, ...]:
         return list_ctf_maps()
     raise ValueError(
         f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+    )
+
+
+# The Core mode each task name plays (EnvConfig.task_mode). King of the Hills
+# joins with its task name.
+TASK_MODES: dict[TaskName, int] = {"tdm": TASK_MODE_TDM, "ctf": TASK_MODE_CTF}
+
+
+def task_for_mode(task_mode: int) -> TaskName | None:
+    """Return the task name that plays one Core mode, or None if none does.
+
+    Parameters
+    ----------
+    task_mode : int
+        An EnvConfig.task_mode value, for example 3.
+
+    Returns
+    -------
+    TaskName | None
+        ``"tdm"`` for 1 and ``"ctf"`` for 3. None for the neutral mode 0, King
+        of the Hills (2) and any other value. Host-only.
+    """
+    return next((name for name, mode in TASK_MODES.items() if mode == task_mode), None)
+
+
+def check_config_task(
+    task: TaskName, config_task_mode: int, *, neutral: bool = False
+) -> None:
+    """Refuse a config whose mode the task does not play.
+
+    Parameters
+    ----------
+    task : TaskName
+        The task the caller asked for, ``"tdm"`` or ``"ctf"``.
+    config_task_mode : int
+        The config's EnvConfig.task_mode, as a host integer.
+    neutral : bool, default=False
+        Also accept the neutral mode 0. make's ``"tdm"`` handle built from an
+        env_config plays neutral configs; evaluate does not, because it builds
+        its handle without a config.
+
+    Raises
+    ------
+    ValueError
+        The mode is not the task's, for example "env_config has task_mode 3,
+        which task 'tdm' does not play; pass task='ctf'". The last clause
+        names the task that plays the mode, when one does.
+
+    Notes
+    -----
+    The one rule for make, evaluate and evaluate_episodes. Host-only.
+    """
+    if config_task_mode == TASK_MODES[task] or (neutral and config_task_mode == 0):
+        return
+    other = task_for_mode(config_task_mode)
+    raise ValueError(
+        f"env_config has task_mode {config_task_mode}, which task {task!r} does "
+        "not play" + (f"; pass task={other!r}" if other is not None else "")
     )
 
 
@@ -849,7 +913,7 @@ def make_standard_team_deathmatch_config(
     map_id: int,
     team_a_roster: Sequence[AgentClassName],
     team_b_roster: Sequence[AgentClassName],
-    score_threshold: int = 20,
+    score_threshold: int = DEFAULT_TDM_SCORE_THRESHOLD,
     max_steps: int = 300,
     red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH,
 ) -> EnvConfig:
@@ -981,6 +1045,90 @@ def make_standard_capture_the_flag_config(
             dropped_flag_auto_return_steps=dropped_flag_auto_return_steps,
         ),
         max_steps=max_steps,
+    )
+
+
+def make_standard_config(
+    task: TaskName,
+    *,
+    map_id: int,
+    team_a_roster: Sequence[AgentClassName],
+    team_b_roster: Sequence[AgentClassName],
+    score_threshold: int | None = None,
+    max_steps: int = 300,
+    red_zone_depth: float | None = None,
+) -> EnvConfig:
+    """Build one task's standard game on an installed map.
+
+    Parameters
+    ----------
+    task : TaskName
+        ``"tdm"`` or ``"ctf"``; picks the task's own factory.
+    map_id : int
+        Map ID from 0 through 51 in the task's listing (maps_for_task).
+    team_a_roster, team_b_roster : sequence of str
+        Each team's ordered one-to-five class names.
+    score_threshold : int | None, default=None
+        Score a team needs to win: TDM points or CTF captures. None uses the
+        task's default (DEFAULT_SCORE_THRESHOLDS: 20 or 3).
+    max_steps : int, default=300
+        Episode step limit; reaching it without a winner is a draw.
+    red_zone_depth : float | None, default=None
+        TDM's Red Zone depth in map units; None uses 5.0. CTF has no Red Zone,
+        so it accepts only None or exactly 0.0 (a Python float, not -0.0).
+
+    Returns
+    -------
+    EnvConfig
+        The config make_standard_team_deathmatch_config or
+        make_standard_capture_the_flag_config builds, with each task's other
+        settings at their defaults.
+
+    Raises
+    ------
+    ValueError
+        task is not a task name, a CTF red_zone_depth is not exactly 0.0, or
+        the factory refuses a map, roster or rule.
+    TypeError
+        The factory refuses an argument's type.
+
+    Notes
+    -----
+    The one dispatcher from a task name to its factory, shared by make and
+    evaluation. Host-only.
+    """
+    if task not in TASK_MODES:
+        raise ValueError(
+            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+        )
+    threshold = (
+        DEFAULT_SCORE_THRESHOLDS[task] if score_threshold is None else score_threshold
+    )
+    if task == "ctf":
+        if red_zone_depth is not None and (
+            type(red_zone_depth) is not float
+            or red_zone_depth != 0.0
+            or math.copysign(1.0, red_zone_depth) < 0
+        ):
+            raise ValueError(
+                "red_zone_depth is a Team Deathmatch rule; ctf takes only 0.0"
+            )
+        return make_standard_capture_the_flag_config(
+            map_id=map_id,
+            team_a_roster=team_a_roster,
+            team_b_roster=team_b_roster,
+            score_threshold=threshold,
+            max_steps=max_steps,
+        )
+    return make_standard_team_deathmatch_config(
+        map_id=map_id,
+        team_a_roster=team_a_roster,
+        team_b_roster=team_b_roster,
+        score_threshold=threshold,
+        max_steps=max_steps,
+        red_zone_depth=(
+            DEFAULT_TDM_RED_ZONE_DEPTH if red_zone_depth is None else red_zone_depth
+        ),
     )
 
 

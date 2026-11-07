@@ -14,7 +14,7 @@ import re
 from array import array
 from collections.abc import Mapping
 from functools import lru_cache
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NamedTuple
 
 from pydantic import Field
 
@@ -208,45 +208,80 @@ def _authored_map(
     return None
 
 
-def _geometry_matches(
-    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2, geometry: MapGeometry
-) -> bool:
-    """Compare a recorded config with one exact packaged geometry on the host.
+class MapLayout(NamedTuple):
+    """A map's geometry alone, for checking a config that has no resolved record.
 
-    Check TDM mode, dimensions, every ordered float32 obstacle row and both
-    ordered spawn banks. Roster and other rules do not change map identity.
-    Neither immutable input is changed; this does not simulate or read files.
+    Attributes
+    ----------
+    map_width, map_height : float
+        World-space map dimensions.
+    obstacles : tuple[tuple[float, ...], ...]
+        Ordered obstacle rows: type, x, y, radius, width, height, angle in
+        radians and activity, each as its float32 value.
+    team_spawn_pad_positions : tuple[tuple[tuple[float, ...], ...], ...]
+        Team A then Team B's ordered (x, y) spawn banks, as float32 values.
+
+    Notes
+    -----
+    It holds no mode and no rules, because map identity is geometry only: a
+    Capture the Flag config on a map has that map's layout. Flag homes are
+    not map geometry. evaluation_conditions builds it from an EnvConfig.
+    Immutable and hashable, so registered_map_metadata can cache it.
     """
-    actual_obstacles = tuple(
-        (
-            float(row.obstacle_type_id),
-            row.x,
-            row.y,
-            row.radius,
-            row.width,
-            row.height,
-            row.theta,
-            float(row.is_active),
+
+    map_width: float
+    map_height: float
+    obstacles: tuple[tuple[float, ...], ...]
+    team_spawn_pad_positions: tuple[tuple[tuple[float, ...], ...], ...]
+
+
+def _geometry_matches(
+    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout,
+    geometry: MapGeometry,
+) -> bool:
+    """Compare a recorded config or a layout with one exact packaged geometry.
+
+    Check dimensions, every ordered float32 obstacle row and both ordered
+    spawn banks. A resolved record must also be in TDM mode; a MapLayout has
+    no mode, so its caller has already checked it. Roster and other rules do
+    not change map identity. Neither immutable input is changed; this does
+    not simulate or read files.
+    """
+    if not isinstance(config, MapLayout):
+        if config.task_mode != 1:
+            return False
+        config = MapLayout(
+            config.map_width,
+            config.map_height,
+            tuple(
+                (
+                    float(row.obstacle_type_id),
+                    row.x,
+                    row.y,
+                    row.radius,
+                    row.width,
+                    row.height,
+                    row.theta,
+                    float(row.is_active),
+                )
+                for row in config.obstacle_slots
+            ),
+            config.team_spawn_pad_positions,
         )
-        for row in config.obstacle_slots
-    )
-    expected_obstacles = tuple(_float32(row) for row in geometry.obstacles)
-    expected_pads = tuple(
-        tuple(_float32(point) for point in team)
-        for team in geometry.team_spawn_pad_positions
-    )
-    return (
-        config.task_mode == 1
-        and config.map_width == geometry.map_width
-        and config.map_height == geometry.map_height
-        and actual_obstacles == expected_obstacles
-        and config.team_spawn_pad_positions == expected_pads
+    return config == MapLayout(
+        geometry.map_width,
+        geometry.map_height,
+        tuple(_float32(row) for row in geometry.obstacles),
+        tuple(
+            tuple(_float32(point) for point in team)
+            for team in geometry.team_spawn_pad_positions
+        ),
     )
 
 
 @lru_cache(maxsize=128)
 def registered_map_metadata(
-    map_id: int, config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2
+    map_id: int, config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout
 ) -> tuple[AggregationKeyV1, ...]:
     """Verify a declared map's geometry and return stable recording keys.
 
@@ -254,9 +289,10 @@ def registered_map_metadata(
     ----------
     map_id : int
         Current approved integer map ID.
-    config : ResolvedEnvConfigV1 | ResolvedEnvConfigV2
+    config : ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout
         Frozen resolved config for the actual episode (V2 records the Red Zone
-        depth, which does not affect map geometry).
+        depth, which does not affect map geometry), or the episode's MapLayout,
+        which evaluation uses for configs of any mode.
 
     Returns
     -------
@@ -267,8 +303,9 @@ def registered_map_metadata(
     Raises
     ------
     ValueError
-        The map ID is invalid, the task is not TDM, or dimensions,
-        ordered obstacle slots or ordered spawn banks differ from the asset.
+        The map ID is invalid, a resolved record's task is not TDM, or
+        dimensions, ordered obstacle slots or ordered spawn banks differ from
+        the asset.
 
     Notes
     -----
@@ -290,13 +327,14 @@ def registered_map_metadata(
 
 def _snapshot_map_metadata(  # pyright: ignore[reportUnusedFunction]
     map_id: int,
-    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2,
+    config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout,
     declared: Mapping[str, Any],
 ) -> tuple[AggregationKeyV1, ...]:
     """Verify one pinned map revision without replacing it with today's catalog.
 
     The private tournament bridge supplies serialized TDMMapInfo and the actual
-    source configuration, before any spawn exchange. Require an approved current
+    source configuration (a resolved record or a MapLayout), before any spawn
+    exchange. Require an approved current
     or historical source, exact name/ID/split and exact geometry. Return the same
     recording keys as registered_map_metadata. Invalid evidence raises ValueError;
     no files, model calls or simulator work occur here.

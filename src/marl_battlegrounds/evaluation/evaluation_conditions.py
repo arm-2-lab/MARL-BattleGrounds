@@ -2,7 +2,8 @@
 
 The evaluator uses these host helpers for new schedules and saved-first resume.
 Saved-first options (option, and red_zone_depth_option for the Red Zone depth),
-exact configurations, source banks, pair claims and capture selections have one
+exact configurations, source banks, map evidence (map_layout), pair claims and
+capture selections have one
 owner here, and so does the refusal to resume a pass saved before the Red Zone
 rule (refuse_pass_saved_before_red_zone). No helper runs a method, advances a
 game, opens a writer or changes a saved file. Numerical execution remains in the
@@ -26,6 +27,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from marl_battlegrounds._config_checks import run_config_check
+from marl_battlegrounds._task_settings import DEFAULT_RED_ZONE_DEPTHS, TaskName
 from marl_battlegrounds.core.config import (
     neutral_objective_fields,
     validate_env_config,
@@ -36,15 +38,14 @@ from marl_battlegrounds.evaluation.run_writer import (
     configuration_identity,
 )
 from marl_battlegrounds.tasks import (
-    CANONICAL_TDM_EVALUATION_MAP_IDS,
-    DEFAULT_TDM_RED_ZONE_DEPTH,
     AgentClassName,
     canonical_tournament_rosters,
-    list_tdm_maps,
+    maps_for_task,
     spawn_locations_for_source,
 )
 
 if TYPE_CHECKING:
+    from marl_battlegrounds.evaluation._recording.map_identity import MapLayout
     from marl_battlegrounds.evaluation.evaluate import EpisodeSpec
     from marl_battlegrounds.evaluation.run_writer import RunWriter
 
@@ -139,7 +140,10 @@ def option(
 
 
 def red_zone_depth_option(
-    value: float | Omitted, saved: Mapping[str, object] | None
+    value: float | Omitted,
+    saved: Mapping[str, object] | None,
+    *,
+    task: TaskName = "tdm",
 ) -> float:
     """Resolve the red_zone_depth option of evaluate or run_tournament.
 
@@ -152,11 +156,15 @@ def red_zone_depth_option(
     saved : Mapping[str, object] or None
         The selected saved pass's scientific options (they hold
         "red_zone_depth" when saved with the rule), or None for a new pass.
+    task : TaskName, default="tdm"
+        The pass's task. Capture the Flag has no Red Zone, so under ``"ctf"``
+        a supplied value must be exactly 0.0 and the default is 0.0.
 
     Returns
     -------
     float
-        Omitted: DEFAULT_TDM_RED_ZONE_DEPTH (5.0) for a new pass, the saved
+        Omitted: the task's default (DEFAULT_RED_ZONE_DEPTHS: 5.0 in TDM, 0.0
+        in CTF) for a new pass, the saved
         depth on resume, or 0.0 when saved has no "red_zone_depth" (a
         completed tournament run saved before the Red Zone rule; evaluate
         refuses to resume such a pass before it gets here). Supplied: the
@@ -173,7 +181,9 @@ def red_zone_depth_option(
         A supplied value has a different float32 value from the saved depth
         (0.0 when saved has no "red_zone_depth"): "red_zone_depth differs
         from the saved evaluation conditions". The float32 bytes are
-        compared, so -0.0 differs from a saved 0.0.
+        compared, so -0.0 differs from a saved 0.0. Under ``"ctf"``, a
+        supplied value other than exactly 0.0 (-0.0 included): "red_zone_depth
+        is a Team Deathmatch rule; ctf takes only 0.0".
 
     Notes
     -----
@@ -186,6 +196,10 @@ def red_zone_depth_option(
             raise TypeError(
                 f"red_zone_depth must be a Python float, not {type(value).__name__}"
             )
+        if task == "ctf" and not same_float32(value, 0.0):
+            raise ValueError(
+                "red_zone_depth is a Team Deathmatch rule; ctf takes only 0.0"
+            )
         if saved is not None:
             recorded = saved.get("red_zone_depth", 0.0)
             if type(recorded) is float:
@@ -197,7 +211,9 @@ def red_zone_depth_option(
                 value = recorded
     return cast(
         float,
-        option(value, saved, "red_zone_depth", DEFAULT_TDM_RED_ZONE_DEPTH, missing=0.0),
+        option(
+            value, saved, "red_zone_depth", DEFAULT_RED_ZONE_DEPTHS[task], missing=0.0
+        ),
     )
 
 
@@ -484,12 +500,17 @@ def capture_ids(
     return tuple(i for i in episode_ids if i in selected)
 
 
-def default_maps(phase: str) -> tuple[int, ...]:
-    """Select new-pass maps only for the two supported automatic phase labels."""
-    if phase == "validation":
-        return tuple(row.map_id for row in list_tdm_maps() if row.split == "validation")
-    if phase == "evaluation":
-        return CANONICAL_TDM_EVALUATION_MAP_IDS
+def default_maps(phase: str, task: TaskName = "tdm") -> tuple[int, ...]:
+    """Select a new pass's automatic maps from the task's own listing.
+
+    phase "validation" returns the listing's validation maps and "evaluation"
+    its test maps, in ID order: 42-46 and 47-51 in both "tdm" and "ctf"
+    today (TDM's test maps are CANONICAL_TDM_EVALUATION_MAP_IDS). Any other
+    phase raises ValueError, naming it; task must be a task name. Host-only.
+    """
+    split = {"validation": "validation", "evaluation": "test"}.get(phase)
+    if split is not None:
+        return tuple(row.map_id for row in maps_for_task(task) if row.split == split)
     raise ValueError(
         'Automatic maps require phase="validation" or phase="evaluation". '
         f"Supply maps explicitly for custom phase {phase!r}."
@@ -501,6 +522,44 @@ def roster_default(
 ) -> tuple[AgentClassName, ...]:
     """Return supplied ordered classes or this team's canonical setup roster."""
     return tuple(value) if value is not None else canonical_tournament_rosters()[team]
+
+
+def map_layout(config: EnvConfig, pads: object) -> MapLayout:
+    """Read a config's map geometry for map evidence, in any mode.
+
+    Parameters
+    ----------
+    config : EnvConfig
+        One scalar config; its map_width, map_height and obstacles are read.
+    pads : array-like
+        The (2, N, 2) spawn banks to record, Team A first, in world units:
+        the config's own, or for an exchanged game its source's.
+
+    Returns
+    -------
+    MapLayout
+        The geometry as Python floats of their float32 values, which is how
+        recorded geometry is compared (map_identity.registered_map_metadata).
+
+    Notes
+    -----
+    Host-only; reads device values once. No mode or rule is read, so a
+    Capture the Flag config gets its map's identity like a TDM config.
+    """
+    from marl_battlegrounds.evaluation._recording.map_identity import MapLayout
+
+    return MapLayout(
+        float(config.map_width),
+        float(config.map_height),
+        tuple(
+            tuple(float(x) for x in row)
+            for row in np.asarray(config.obstacles, np.float32)
+        ),
+        tuple(
+            tuple(tuple(float(x) for x in pad) for pad in bank)
+            for bank in np.asarray(pads, np.float32)
+        ),
+    )
 
 
 def prepare_schedule(
@@ -564,9 +623,9 @@ def prepare_schedule(
     A comparison needs two exact games and explicit equal seeds. Only
     unambiguous source-bank pairs without authored starts earn verified credit
     ("verified_spawn_pair"); other comparisons are "custom". Map evidence
-    compares map geometry only; the V2 resolved config records any Red Zone
-    depth, so every depth passes that check. Host-only: each distinct live
-    config is hashed once, and source checks read device values to the host.
+    compares map geometry only (map_layout), so every mode, rule and Red Zone
+    depth passes that check. Host-only: each distinct live config is hashed
+    once, and source checks read device values to the host.
     """
     records: dict[str, dict[str, object]] = {}
     cached: dict[int, str] = {}
@@ -659,27 +718,17 @@ def prepare_schedule(
                 _snapshot_map_metadata,
                 registered_map_metadata,
             )
-            from marl_battlegrounds.evaluation.catalog import (
-                build_resolved_env_config_v2,
-            )
 
-            # V2 records any Red Zone depth; only the map geometry is compared.
-            actual = build_resolved_env_config_v2(spec.env_config)
-            source_pads = (
+            # An exchanged game's map is its source's: the same obstacles and
+            # the source's own pad order.
+            source_geometry = map_layout(
+                spec.env_config,
                 spec.env_config.team_spawn_pad_positions
                 if spec.source_config is None
-                else spec.source_config.team_spawn_pad_positions
-            )
-            source_geometry = actual.model_copy(
-                update={
-                    "team_spawn_pad_positions": tuple(
-                        tuple(tuple(float(x) for x in pad) for pad in bank)
-                        for bank in np.asarray(source_pads)
-                    )
-                }
+                else spec.source_config.team_spawn_pad_positions,
             )
             map_rows = (
-                registered_map_metadata(spec.map_id, source_geometry)  # pyright: ignore[reportArgumentType]
+                registered_map_metadata(spec.map_id, source_geometry)
                 if registered_maps is None or spec.map_id not in registered_maps
                 else _snapshot_map_metadata(
                     spec.map_id, source_geometry, registered_maps[spec.map_id]
@@ -772,13 +821,12 @@ def prepare_source_choices(
     Notes
     -----
     This host setup helper changes only the caller's temporary dictionaries
-    and opens no files. Map evidence uses the V2 resolved config, which records
-    any Red Zone depth.
+    and opens no files. Map evidence compares map geometry only (map_layout),
+    so a config of any mode or Red Zone depth passes that check.
     """
     from marl_battlegrounds.evaluation._recording.map_identity import (
         registered_map_metadata,
     )
-    from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 
     evidence = {
         (row["map_id"], row["source_config_id"]): row.get("map_metadata", [])
@@ -801,7 +849,10 @@ def prepare_source_choices(
                     row.model_dump(mode="json")
                     for row in registered_map_metadata(
                         source.map_id,
-                        build_resolved_env_config_v2(source.env_config),  # pyright: ignore[reportArgumentType]
+                        map_layout(
+                            source.env_config,
+                            source.env_config.team_spawn_pad_positions,
+                        ),
                     )
                 ]
             )

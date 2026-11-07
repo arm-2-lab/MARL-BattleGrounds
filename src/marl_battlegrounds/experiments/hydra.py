@@ -1110,6 +1110,7 @@ _EVALUATION_FIELDS = frozenset(
         "score_threshold",
         "max_steps",
         "red_zone_depth",
+        "task",
         "phase",
         "pass_id",
         "chunk_size",

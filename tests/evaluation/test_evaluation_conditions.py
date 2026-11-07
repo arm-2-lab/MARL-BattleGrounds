@@ -26,6 +26,13 @@ the one clear message, changing no file, whether maps and red_zone_depth are
 omitted or supplied (0.0 or 5.0). A pass counts as saved before the rule when
 its generated contract lacks the depth option or its content has 12 keys;
 each sign alone is enough, and a pass with no contract is covered too.
+
+Map evidence and each task's maps: default_maps reads each task's own listing
+(validation 42-46 and test 47-51 in both modes today). Map evidence reads each
+config's own geometry (map_layout): a TDM config gets the same keys its V2
+record gives, an exchanged game passes with its source's pads and fails with
+its own, a Capture the Flag config on map 47 gets map 47's keys, and a moved
+obstacle fails.
 """
 
 # Host setup tests intentionally inspect the private resolver boundary.
@@ -38,12 +45,19 @@ from pathlib import Path
 from typing import Any, cast
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.evaluation import evaluation_conditions
-from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v1
+from marl_battlegrounds.evaluation._recording.map_identity import (
+    registered_map_metadata,
+)
+from marl_battlegrounds.evaluation.catalog import (
+    build_resolved_env_config_v1,
+    build_resolved_env_config_v2,
+)
 from marl_battlegrounds.evaluation.evaluate import (
     EpisodeSpec,
     evaluate,
@@ -54,6 +68,7 @@ from marl_battlegrounds.evaluation.evaluation_conditions import (
     Omitted,
     config_record,
     default_maps,
+    map_layout,
     option,
     prepare_schedule,
     red_zone_depth_option,
@@ -65,12 +80,16 @@ from marl_battlegrounds.evaluation.evaluation_conditions import (
 from marl_battlegrounds.evaluation.policy_execution import independent_policies, policy
 from marl_battlegrounds.tasks import (
     CANONICAL_TDM_EVALUATION_MAP_IDS,
+    AgentClassName,
     _swap_spawn_banks,
     list_tdm_maps,
+    make_standard_capture_the_flag_config,
     make_standard_team_deathmatch_config,
 )
 
 runner = import_module("marl_battlegrounds.evaluation.evaluate")
+_MAGE: tuple[AgentClassName, ...] = ("mage",)
+_ROGUE: tuple[AgentClassName, ...] = ("rogue",)
 # Four raw configs saved before the Red Zone rule, keyed by their recorded IDs.
 _PRE_RED_ZONE_RUN_DETAILS = (
     Path(__file__).parents[1] / "fixtures" / "scalar_schema_2" / "run_details.json"
@@ -135,6 +154,33 @@ def test_validation_and_evaluation_default_maps_have_single_owner() -> None:
         m.map_id for m in list_tdm_maps() if m.split == "validation"
     )
     assert default_maps("evaluation") == CANONICAL_TDM_EVALUATION_MAP_IDS
+    assert default_maps("validation", "ctf") == (42, 43, 44, 45, 46)
+    assert default_maps("evaluation", "ctf") == CANONICAL_TDM_EVALUATION_MAP_IDS
+
+
+def test_map_evidence_reads_each_configs_own_geometry() -> None:
+    tdm = make_standard_team_deathmatch_config(
+        map_id=42, team_a_roster=_MAGE, team_b_roster=_ROGUE
+    )
+    pads = tdm.team_spawn_pad_positions
+    keys = registered_map_metadata(42, build_resolved_env_config_v2(tdm))  # pyright: ignore[reportArgumentType]
+    assert registered_map_metadata(42, map_layout(tdm, pads)) == keys
+    exchanged = _swap_spawn_banks(tdm)
+    assert registered_map_metadata(42, map_layout(exchanged, pads)) == keys
+    with pytest.raises(ValueError, match="does not match the episode geometry"):
+        registered_map_metadata(
+            42, map_layout(exchanged, exchanged.team_spawn_pad_positions)
+        )
+    ctf = make_standard_capture_the_flag_config(
+        map_id=47, team_a_roster=_MAGE, team_b_roster=_ROGUE
+    )
+    ctf_pads = ctf.team_spawn_pad_positions
+    assert registered_map_metadata(47, map_layout(ctf, ctf_pads))[0].value == "47"
+    obstacles = np.asarray(ctf.obstacles).copy()
+    obstacles[0, 1] += 0.5
+    moved = ctf._replace(obstacles=jnp.asarray(obstacles))
+    with pytest.raises(ValueError, match="does not match the episode geometry"):
+        registered_map_metadata(47, map_layout(moved, ctf_pads))
 
 
 @pytest.mark.parametrize("mode", ["default", "swapped"])

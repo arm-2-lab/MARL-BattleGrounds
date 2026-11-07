@@ -5,7 +5,7 @@ The tasks module owns class-ID conversion and re-exports the existing names.
 This module imports no JAX, so record readers can use it too.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal, cast, get_args
 
 type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
@@ -15,6 +15,9 @@ type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
 type TaskName = Literal["tdm", "ctf"]
 TASK_NAMES: tuple[TaskName, ...] = get_args(TaskName.__value__)
 
+
+# The points a Team Deathmatch team needs to win.
+DEFAULT_TDM_SCORE_THRESHOLD = 20
 
 # The one default Team Deathmatch Red Zone depth, in map units. Fresh map
 # configs, default evaluation, new training runs and new DevClient drafts use it;
@@ -31,6 +34,19 @@ DEFAULT_CTF_FLAG_INTERACTION_DISTANCE = 0.75
 DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 1.25
 DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS = 30
 DEFAULT_CTF_FLAG_HOME_POSITIONS = ((0.5, 5.0), (19.5, 5.0))
+
+# Each task's defaults, read by every caller that serves more than one mode:
+# the score a team needs to win (TDM points, CTF captures), and the Red Zone
+# depth in map units (CTF has no Red Zone, so 0.0). King of the Hills joins
+# with its task name.
+DEFAULT_SCORE_THRESHOLDS: Mapping[TaskName, int] = {
+    "tdm": DEFAULT_TDM_SCORE_THRESHOLD,
+    "ctf": DEFAULT_CTF_SCORE_THRESHOLD,
+}
+DEFAULT_RED_ZONE_DEPTHS: Mapping[TaskName, float] = {
+    "tdm": DEFAULT_TDM_RED_ZONE_DEPTH,
+    "ctf": 0.0,
+}
 
 # The EnvConfig fields whose team axis, each game's first axis, a spawn exchange
 # reverses, so each team takes the other's spawn pads and flag home. Every

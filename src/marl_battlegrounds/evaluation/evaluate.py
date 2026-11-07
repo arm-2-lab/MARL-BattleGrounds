@@ -5,7 +5,9 @@ JAX policies run in batches; host methods use synchronous Python calls with
 the same decision inputs. Optional metrics/replays go to memory or RunWriter.
 A saved run of a System with members (``scalar_reports.has_members``) also
 records which member played each slot of each game.
-Map defaults and saved-first conditions resolve before execution. This module
+Map defaults and saved-first conditions resolve before execution. Every pass
+plays one mode, Team Deathmatch or Capture the Flag, chosen by evaluate's task
+or by an exact schedule's configs. This module
 does not train methods or use training trackers, automatic resets or collectors.
 """
 
@@ -28,6 +30,11 @@ from jax import Array
 from numpy.typing import NDArray
 
 from marl_battlegrounds._config_checks import run_config_check
+from marl_battlegrounds._task_settings import (
+    DEFAULT_SCORE_THRESHOLDS,
+    TASK_NAMES,
+    TaskName,
+)
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.config import (
     validate_env_config,
@@ -41,6 +48,7 @@ from marl_battlegrounds.environment import (
     InitialSnapshot,
     MetricMode,
     make,
+    score_threshold_for_mode,
 )
 from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
 from marl_battlegrounds.evaluation._metrics.scalar_reports import has_members
@@ -125,13 +133,14 @@ from marl_battlegrounds.evaluation.system_evaluation import (
 from marl_battlegrounds.modes.team_deathmatch._assets import current_map_id
 from marl_battlegrounds.policies.input import Observations
 from marl_battlegrounds.tasks import (
-    CANONICAL_TDM_EVALUATION_MAP_IDS,
     AgentClassName,
     TDMMapInfo,
     _roster_ids,
     _swap_spawn_banks,
     canonical_tournament_rosters,
-    make_standard_team_deathmatch_config,
+    check_config_task,
+    make_standard_config,
+    task_for_mode,
 )
 
 type Columns = dict[str, NDArray[np.generic]]
@@ -874,6 +883,7 @@ def normalize_episode_specs(
     max_steps: int,
     *,
     red_zone_depth: float,
+    task: TaskName = "tdm",
 ) -> tuple[EpisodeSpec, ...]:
     """Resolve map choices into an exact cyclic episode schedule.
 
@@ -881,7 +891,8 @@ def normalize_episode_specs(
     ----------
     maps : Iterable[MapInput] | None
         Integer IDs, TDMMapInfo or scalar EnvConfig entries. None uses the
-        canonical evaluation map IDs; an explicit sequence must not be empty.
+        task's test maps (47-51 in both modes today); an explicit sequence
+        must not be empty.
     num_episodes : int
         Positive total count, already validated by the caller.
     team_a_roster : Sequence[AgentClassName]
@@ -889,14 +900,20 @@ def normalize_episode_specs(
     team_b_roster : Sequence[AgentClassName]
         Ordered classes for map-built Team B configs.
     score_threshold : int
-        Score target for map-built configs.
+        Score target for map-built configs: TDM points, or CTF captures (pass
+        DEFAULT_CTF_SCORE_THRESHOLD, 3, for CTF's default).
     max_steps : int
         Horizon in ticks for map-built configs.
     red_zone_depth : float
         Required keyword: Red Zone depth in map units for map-built configs
         (a Python float; 0.0 keeps one point per death). There is no default,
         so every caller states the rule it means; pass
-        tasks.DEFAULT_TDM_RED_ZONE_DEPTH (5.0) for today's default.
+        tasks.DEFAULT_TDM_RED_ZONE_DEPTH (5.0) for today's default. Under
+        ``"ctf"`` it must be exactly 0.0, because CTF has no Red Zone.
+    task : TaskName, default="tdm"
+        The mode map-built configs play: ``"tdm"`` or ``"ctf"``, built with
+        tasks.make_standard_config. Explicit EnvConfig entries keep their own
+        mode; evaluate checks it against its task.
 
     Returns
     -------
@@ -912,8 +929,9 @@ def normalize_episode_specs(
         red_zone_depth is not a Python float (Core's check on a map-built
         config).
     ValueError
-        Choices are empty or a map-built config is invalid, including a
-        red_zone_depth that Core rejects.
+        Choices are empty, task is not a task name, or a map-built config is
+        invalid, including a red_zone_depth that Core rejects or a CTF depth
+        other than 0.0.
 
     Notes
     -----
@@ -922,7 +940,7 @@ def normalize_episode_specs(
         against them separately. No bank exchange, phase-based map selection or
         random episode sampling occurs.
     """
-    choices = tuple(CANONICAL_TDM_EVALUATION_MAP_IDS if maps is None else maps)
+    choices = tuple(default_maps("evaluation", task) if maps is None else maps)
     if not choices:
         raise ValueError("maps must contain at least one map or configuration")
     resolved: list[tuple[int | None, EnvConfig]] = []
@@ -938,7 +956,8 @@ def normalize_episode_specs(
             )
         map_id = int(map_id)
         if map_id not in cache:
-            cache[map_id] = make_standard_team_deathmatch_config(
+            cache[map_id] = make_standard_config(
+                task,
                 map_id=map_id,
                 team_a_roster=team_a_roster,
                 team_b_roster=team_b_roster,
@@ -1033,6 +1052,30 @@ class _MetricTable:
         return {name: columns[name] for name in (*IDENTITY_COLUMNS, *self.names)}
 
 
+def _played_task(specs: Sequence[EpisodeSpec]) -> TaskName:
+    """Return the one task an exact schedule plays.
+
+    specs is a nonempty EpisodeSpec sequence. Every config must be in one
+    task's mode: Team Deathmatch ("tdm") or Capture the Flag ("ctf"). Raise
+    ValueError for a neutral or King of the Hills config ("evaluation plays
+    only 'tdm' and 'ctf' configs, not task_mode 0") and for a schedule that
+    mixes the two modes. Host-only; reads each config's task_mode int.
+    """
+    modes = {int(spec.env_config.task_mode) for spec in specs}
+    tasks = {task_for_mode(mode) for mode in modes}
+    if None in tasks:
+        raise ValueError(
+            "evaluation plays only 'tdm' and 'ctf' configs, "
+            f"not task_mode {min(m for m in modes if task_for_mode(m) is None)}"
+        )
+    if len(tasks) > 1:
+        raise ValueError(
+            "every episode config must play one mode; this schedule mixes "
+            f"task_mode {sorted(modes)[0]} and {sorted(modes)[1]}"
+        )
+    return cast(TaskName, tasks.pop())
+
+
 def _run_evaluation(
     team_a: System | Policy | str,
     team_b: System | Policy | str,
@@ -1073,6 +1116,8 @@ def _run_evaluation(
         optional seed ID and an optional authored start. Banks are not
         exchanged. Configs must pass Core's host validator: rule scalars
         are Python int/float values, while array fields are JAX arrays.
+        Every config plays one mode, Team Deathmatch or Capture the Flag
+        (_played_task); the game handle plays that mode.
     seed : int
         Root uint32 integer, default 0. Episode seed IDs and local step
         counts determine streams independently of scheduling order.
@@ -1169,6 +1214,9 @@ def _run_evaluation(
     ValueError
         A setting, schedule, config, selection or output combination
         is invalid, or saved run details do not match the resumed pass.
+        This includes configs of no task's mode or of two modes, and replay
+        selections in a Capture the Flag pass, whose replays arrive with the
+        record update. These are refused before any game or file change.
     RuntimeError
         The writer is closed/failed, or execution violates an
         internal completion or requested-metric contract.
@@ -1225,9 +1273,10 @@ def _run_evaluation(
                 validated_starts.add(start_identity)
         if id(spec.env_config) not in validated:
             run_config_check(validate_env_config, spec.env_config)
-            if int(spec.env_config.task_mode) != 1:
-                raise ValueError("evaluate currently supports TDM configurations")
             validated.add(id(spec.env_config))
+    task = _played_task(specs)
+    if task == "ctf" and tuple(replay_episodes):
+        raise ValueError("Capture the Flag replays arrive with the record update")
     if writer is not None and (output_dir is not None or resume_from is not None):
         raise ValueError("writer cannot be combined with output_dir or resume_from")
     if output_dir is not None and run_id is not None:
@@ -1238,7 +1287,7 @@ def _run_evaluation(
     if not phase or not pass_id:
         raise ValueError("phase and pass_id must be nonempty")
     env = make(
-        "tdm",
+        task,
         num_envs=batch_size,
         metrics=metrics,
         full_metrics_episodes=full_metrics_episodes,
@@ -1623,7 +1672,7 @@ def _run_evaluation(
                 team_a, team_b
             )
         env = make(
-            "tdm",
+            task,
             num_envs=batch_size,
             metrics=metrics,
             full_metrics_episodes=full_selection,
@@ -2159,6 +2208,9 @@ def evaluate_episodes(
         Nonempty exact scalar configurations and unique positive int32 IDs.
         No automatic bank exchange, extra game or counterpart is added. A single
         authored episode is valid. Declared comparisons need two exact conditions.
+        Every config plays one mode, Team Deathmatch or Capture the Flag; the
+        configs say which, so there is no task argument. A Capture the Flag
+        pass records options["task"] = "ctf" and cannot capture replays yet.
     seed : int, default=0
         uint32 root for scheduled episode/decision keys. Omission on resume uses
         the saved value; explicitly passing zero checks that value instead.
@@ -2277,7 +2329,9 @@ def _evaluate_tournament_episodes(
     identities; None uses current catalog metadata. Supplied identities undergo
     approved-history and source-geometry checks before writer mutation. No public
     setting or alternate executor is introduced. Results are returned after
-    ordinary recording and pass completion through the shared RunWriter.
+    ordinary recording and pass completion through the shared RunWriter. A
+    schedule whose configs play Capture the Flag records options["task"] =
+    "ctf"; a Team Deathmatch schedule records no task key.
     """
     saved = read_saved_pass(resume_from, writer, phase, pass_id)
     details = None if saved is None else saved[1]["details"]
@@ -2309,6 +2363,10 @@ def _evaluate_tournament_episodes(
         "save_replays": option(save_replays, saved_options, "save_replays", 0),
     }
     specs = tuple(episodes)
+    # The configs say the mode. Only a non-TDM pass records it, so every
+    # explicit pass saved before this key still matches.
+    if specs and (task := _played_task(specs)) != "tdm":
+        options["task"] = task
     selected = capture_ids(
         [s.episode_id for s in specs],
         options["replay_episodes"],
@@ -2371,6 +2429,7 @@ def evaluate(
     score_threshold: int | Omitted = OMITTED,
     max_steps: int | Omitted = OMITTED,
     red_zone_depth: float | Omitted = OMITTED,
+    task: TaskName | Omitted = OMITTED,
     phase: str = "evaluation",
     pass_id: str = "1",
     chunk_size: int = 16,
@@ -2435,10 +2494,11 @@ def evaluate(
     writer : RunWriter | None, default=None
         Caller-owned writer, mutually exclusive with both path options. Conditions
         are checked before pass changes. The writer is flushed but left open.
-    score_threshold, max_steps : int, default=20 / 300
-        Rules for map-built configurations. Explicit custom configurations retain
-        exact values; conflicting nondefault overrides are errors.
-    red_zone_depth : float, default=5.0 (DEFAULT_TDM_RED_ZONE_DEPTH)
+    score_threshold, max_steps : int, default=the task's winning score / 300
+        Rules for map-built configurations. The winning score counts TDM points
+        (default 20) or CTF captures (default 3). Explicit custom configurations
+        retain exact values; conflicting nondefault overrides are errors.
+    red_zone_depth : float, default=5.0 in "tdm", 0.0 in "ctf"
         Red Zone depth in map units for map-built configurations. When an
         agent dies inside its own team's Red Zone (the strip this deep at its
         own spawn edge), the enemy team gets 2 points instead of 1; it is
@@ -2456,6 +2516,15 @@ def evaluate(
         omitted: 0.0 differs from the saved pass and 5.0 conflicts with the
         source. A pass saved before the Red Zone rule cannot be resumed at
         all, whatever maps and red_zone_depth are; its results stay readable.
+        Capture the Flag has no Red Zone: under ``"ctf"`` the depth must be
+        omitted or exactly 0.0, and the pass records 0.0.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode every game plays, the same names make takes: map IDs are
+        built in this mode and from its own map listing, and exact EnvConfig
+        entries must be in it. On resume an omitted task inherits the saved
+        pass, and a different task raises. A "ctf" pass records
+        options["task"]; a "tdm" pass records no task key, exactly as passes
+        saved before this setting, so they still resume unchanged.
     phase, pass_id : str, default='evaluation' / '1'
         Nonempty saved pass identity. Exact phase names govern new automatic map
         selection. Use distinct pass IDs for repeated validation checkpoints.
@@ -2477,8 +2546,11 @@ def evaluate(
         red_zone_depth that is not a Python float (TypeError) or that differs
         from an exact source or the saved pass (ValueError), and a resume of
         a pass saved before the Red Zone rule (ValueError "This pass was saved
-        before the Red Zone rule. ..."). Scientific validation occurs before
-        new files, writer recovery or pass changes.
+        before the Red Zone rule. ..."). Also ValueError for an unknown task,
+        an exact config in another mode ("... which task 'tdm' does not play;
+        pass task='ctf'"), a CTF depth other than 0.0, and replays in a CTF
+        pass, which arrive with the record update. Scientific validation
+        occurs before new files, writer recovery or pass changes.
     RuntimeError, OSError
         Execution, provider or recording fails. Earlier durable chunks remain
         valid; no fake actions, retry or provider rollback is performed.
@@ -2528,6 +2600,7 @@ def evaluate(
         score_threshold=score_threshold,
         max_steps=max_steps,
         red_zone_depth=red_zone_depth,
+        task=task,
         phase=phase,
         pass_id=pass_id,
         chunk_size=chunk_size,
@@ -2562,6 +2635,7 @@ def _generated_evaluation_request(
     score_threshold: int | Omitted = OMITTED,
     max_steps: int | Omitted = OMITTED,
     red_zone_depth: float | Omitted = OMITTED,
+    task: TaskName | Omitted = OMITTED,
     phase: str = "evaluation",
     pass_id: str = "1",
     chunk_size: int = 16,
@@ -2575,7 +2649,13 @@ def _generated_evaluation_request(
     contract. A supplied red_zone_depth (not OMITTED) is also checked against
     every exact source config: new ones from maps and, on resume, saved ones.
     A saved pass from before the Red Zone rule is refused first, before any
-    option, map or source is resolved.
+    option, map or source is resolved. The task is resolved before the other
+    options, because the winning score's and the depth's defaults are the
+    task's (DEFAULT_SCORE_THRESHOLDS, DEFAULT_RED_ZONE_DEPTHS). A missing
+    saved task reads as "tdm", and options["task"] is written only for other
+    tasks: the writer compares a resumed pass's saved details whole and the
+    training verifiers compare saved options with !=, so a key added to TDM
+    passes would refuse every pass saved before it.
     """
     count = positive_int(num_episodes, "num_episodes")
     if count > np.iinfo(np.int32).max:
@@ -2590,6 +2670,11 @@ def _generated_evaluation_request(
         if details is None
         else (old_contract["options"] if old_contract else details)
     )
+    task = cast(TaskName, option(task, old, "task", "tdm", missing="tdm"))
+    if task not in TASK_NAMES:
+        raise ValueError(
+            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+        )
     supplied = {
         "spawn_mode": spawn_mode,
         "system_roster": system_roster,
@@ -2615,7 +2700,7 @@ def _generated_evaluation_request(
         full_metrics_episodes=(),
         replay_episodes=(),
         save_replays=0,
-        score_threshold=20,
+        score_threshold=DEFAULT_SCORE_THRESHOLDS[task],
         max_steps=300,
     )
     options = {
@@ -2625,7 +2710,9 @@ def _generated_evaluation_request(
     # The depth has its own resolver: a pass saved before the Red Zone rule
     # reads as 0.0, and below a supplied value (even the default 5.0) is also
     # checked against every exact source config.
-    options["red_zone_depth"] = red_zone_depth_option(red_zone_depth, old)
+    options["red_zone_depth"] = red_zone_depth_option(red_zone_depth, old, task=task)
+    if task != "tdm":
+        options["task"] = task
     legacy = saved is not None and old_contract is None
     mode = (
         "default"
@@ -2645,7 +2732,7 @@ def _generated_evaluation_request(
             if spec.map_id is None:
                 _check_source_red_zone_depth(spec.env_config, red_zone_depth)
     else:
-        choices = tuple(default_maps(phase) if maps is None else maps)
+        choices = tuple(default_maps(phase, task) if maps is None else maps)
         if not choices:
             raise ValueError("maps must contain at least one map or configuration")
         sources = normalize_episode_specs(
@@ -2656,9 +2743,11 @@ def _generated_evaluation_request(
             options["score_threshold"],
             options["max_steps"],
             red_zone_depth=options["red_zone_depth"],
+            task=task,
         )
         for source in sources:
             if source.map_id is None:
+                check_config_task(task, int(source.env_config.task_mode))
                 _check_source_overrides(
                     source.env_config, options, red_zone_depth=red_zone_depth
                 )
@@ -2773,7 +2862,9 @@ def _check_source_overrides(
     options : Mapping[str, object]
         Resolved evaluate options. A non-None roster must equal the config's
         class order; a score_threshold or max_steps other than its default
-        (20 or 300) must equal the config's value.
+        (the config's task's winning score, 20 or 3, and 300) must equal the
+        config's value. The winning score is read from the config's own mode
+        (score_threshold_for_mode), for example capture_the_flag_score_threshold.
     red_zone_depth : float or Omitted
         The caller's own red_zone_depth, before saved or default values are
         applied. Unlike the rules above, a supplied value is checked even
@@ -2802,12 +2893,18 @@ def _check_source_overrides(
                 raise ValueError(
                     f"{name} conflicts with the exact source configuration"
                 )
-    for option_name, field, default in (
-        ("score_threshold", "team_deathmatch_score_threshold", 20),
-        ("max_steps", "max_steps", 300),
+    mode = int(config.task_mode)
+    task = cast(TaskName, task_for_mode(mode))
+    for option_name, actual, default in (
+        (
+            "score_threshold",
+            int(score_threshold_for_mode(config, mode)),
+            DEFAULT_SCORE_THRESHOLDS[task],
+        ),
+        ("max_steps", config.max_steps, 300),
     ):
         value = options[option_name]
-        if value != default and value != getattr(config, field):
+        if value != default and value != actual:
             raise ValueError(
                 f"{option_name} conflicts with the exact source configuration"
             )

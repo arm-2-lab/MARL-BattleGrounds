@@ -18,7 +18,11 @@ builds the same config as converting the Team Deathmatch one, with its settings
 passed through; list_ctf_maps and maps_for_task give each mode's 52 maps.
 make("ctf") plays Capture the Flag on a listed map with the mode's default
 threshold, refuses a Red Zone depth, and a task name and its exact config must
-share a mode.
+share a mode; the error names the task to pass. One dispatcher,
+make_standard_config, builds each task's standard config with the task's
+defaults (DEFAULT_SCORE_THRESHOLDS and DEFAULT_RED_ZONE_DEPTHS), takes only
+exactly 0.0 as a Capture the Flag depth, and is what normalize_episode_specs
+builds from map IDs; task_for_mode names the task each Core mode plays.
 """
 
 import math
@@ -30,7 +34,11 @@ import pytest
 from tests.helpers.capture_the_flag_fixtures import capture_the_flag_config
 
 from marl_battlegrounds import environment, make
-from marl_battlegrounds._task_settings import DEFAULT_CTF_FLAG_HOME_POSITIONS
+from marl_battlegrounds._task_settings import (
+    DEFAULT_CTF_FLAG_HOME_POSITIONS,
+    DEFAULT_RED_ZONE_DEPTHS,
+    DEFAULT_SCORE_THRESHOLDS,
+)
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import TASK_MODE_CTF, TASK_MODE_KOTH, TASK_MODE_TDM
 from marl_battlegrounds.environment import (
@@ -38,6 +46,7 @@ from marl_battlegrounds.environment import (
     score_threshold_for_mode,
     team_scores_for_mode,
 )
+from marl_battlegrounds.evaluation.evaluate import normalize_episode_specs
 from marl_battlegrounds.modes.team_deathmatch._assets import map_geometry
 from marl_battlegrounds.policies.route_field import (
     FINE_CELL_SIZE,
@@ -51,9 +60,11 @@ from marl_battlegrounds.tasks import (
     list_ctf_maps,
     list_tdm_maps,
     make_standard_capture_the_flag_config,
+    make_standard_config,
     make_standard_team_deathmatch_config,
     maps_for_task,
     spawn_locations_for_source,
+    task_for_mode,
 )
 
 _HOMES = np.asarray(DEFAULT_CTF_FLAG_HOME_POSITIONS, dtype=np.float32)
@@ -243,9 +254,77 @@ def test_a_task_and_its_exact_config_share_one_mode() -> None:
     tdm_config = make_standard_team_deathmatch_config(
         map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
     )
-    with pytest.raises(ValueError, match=r"which task 'ctf' does not play"):
+    with pytest.raises(
+        ValueError, match=r"which task 'ctf' does not play; pass task='tdm'$"
+    ):
         make("ctf", env_config=tdm_config)
-    with pytest.raises(ValueError, match=r"which task 'tdm' does not play"):
+    with pytest.raises(
+        ValueError, match=r"which task 'tdm' does not play; pass task='ctf'$"
+    ):
         make("tdm", env_config=_CONFIG)
     with pytest.raises(ValueError, match=r"this environment plays task_mode 3$"):
         make("ctf").reset(jax.random.key(0), tdm_config)
+
+
+def _same(left: object, right: object) -> bool:
+    return all(jax.tree.leaves(jax.tree.map(np.array_equal, left, right)))
+
+
+def test_one_dispatcher_builds_each_tasks_standard_config() -> None:
+    assert DEFAULT_SCORE_THRESHOLDS == {"tdm": 20, "ctf": 3}
+    assert DEFAULT_RED_ZONE_DEPTHS == {"tdm": 5.0, "ctf": 0.0}
+    assert [task_for_mode(mode) for mode in range(5)] == [
+        None,
+        "tdm",
+        None,
+        "ctf",
+        None,
+    ]
+    assert _same(
+        make_standard_config(
+            "ctf", map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+        ),
+        _CONFIG,
+    )
+    assert _same(
+        make_standard_config(
+            "ctf",
+            map_id=29,
+            red_zone_depth=0.0,
+            team_a_roster=_TEAM_A,
+            team_b_roster=_TEAM_B,
+        ),
+        _CONFIG,
+    )
+    assert _same(
+        make_standard_config(
+            "tdm", map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+        ),
+        make_standard_team_deathmatch_config(
+            map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+        ),
+    )
+    for depth in (5.0, -0.0):
+        with pytest.raises(ValueError, match=r"ctf takes only 0.0$"):
+            make_standard_config(
+                "ctf",
+                map_id=29,
+                red_zone_depth=depth,
+                team_a_roster=_TEAM_A,
+                team_b_roster=_TEAM_B,
+            )
+    with pytest.raises(ValueError, match=r"^task must be one of 'tdm', 'ctf'"):
+        make_standard_config(
+            "koth",  # pyright: ignore[reportArgumentType]
+            map_id=29,
+            team_a_roster=_TEAM_A,
+            team_b_roster=_TEAM_B,
+        )
+    (spec,) = normalize_episode_specs(
+        [29], 1, _TEAM_A, _TEAM_B, 3, 300, red_zone_depth=0.0, task="ctf"
+    )
+    assert _same(spec.env_config, _CONFIG)
+    defaults = normalize_episode_specs(
+        None, 5, _TEAM_A, _TEAM_B, 3, 300, red_zone_depth=0.0, task="ctf"
+    )
+    assert [spec.map_id for spec in defaults] == [47, 48, 49, 50, 51]
