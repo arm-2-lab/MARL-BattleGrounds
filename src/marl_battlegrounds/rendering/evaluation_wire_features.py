@@ -7,7 +7,10 @@ the 20-column context of frame V3. decode_agent_feature_row_v1 reads historical
 physical-team identity; decode_agent_feature_row also handles V2 relation flags
 with separately authorized display ownership. Version 3 (frame V3, which only
 adds a context column) reads agent rows exactly as V2 does. A new wire meaning
-needs an explicit version change.
+needs an explicit version change. A Capture the Flag source (frame V4, context
+V5) gives meaning to objective rows 0-3, the two flag homes and the two flags;
+decode_capture_the_flag_objective_rows_v1 reads them as the C1.C contract and
+decision 139 define them.
 
 Decoders preserve the fields needed for authorized presentation and check exact
 Python wire values. They do not infer visibility, hidden state, status sources
@@ -147,6 +150,25 @@ OBSTACLE_FEATURE_WIDTH_V1: Final = 4
 OBSTACLE_FEATURE_HEIGHT_V1: Final = 5
 OBSTACLE_FEATURE_THETA_V1: Final = 6
 OBSTACLE_FEATURE_ACTIVE_V1: Final = 7
+# Capture the Flag objective rows (frame V4, context V5), in the actor's frame:
+# its own flag's home and the enemy's, then its own flag and the enemy's.
+OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1: Final = 0
+OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1: Final = 1
+OBJECTIVE_SLOT_ALLY_FLAG_V1: Final = 2
+OBJECTIVE_SLOT_ENEMY_FLAG_V1: Final = 3
+OBJECTIVE_FEATURE_ACTIVE_V1: Final = 0
+OBJECTIVE_FEATURE_X_V1: Final = 1
+OBJECTIVE_FEATURE_Y_V1: Final = 2
+# A home row's reach is the capture distance; a flag row's is the pickup and
+# return distance. Both are in map units.
+OBJECTIVE_FEATURE_INTERACTION_DISTANCE_V1: Final = 3
+OBJECTIVE_FEATURE_CONTROLLED_BY_ALLY_TEAM_V1: Final = 4
+OBJECTIVE_FEATURE_CONTROLLED_BY_ENEMY_TEAM_V1: Final = 5
+OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_RETURNS_V1: Final = 6
+# Columns 7-11: one-hot over the carrier team's five observation rows, set only
+# when the actor sees the carrier or is it (decision 155).
+OBJECTIVE_FEATURE_CARRIER_ROW_START_V1: Final = 7
+OBJECTIVE_FEATURE_CARRIER_ROW_STOP_V1: Final = 12
 
 
 def _wire_bool(value: float, *, name: str) -> bool:
@@ -564,6 +586,198 @@ def _decode_agent_feature_row(
             name="out-of-combat regeneration capability",
             minimum=0.0,
         ),
+    )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CaptureTheFlagFlagRowV1:
+    """Hold one flag as an actor's objective row records it.
+
+    This is a frozen, slotted, keyword-only host record. Construction performs
+    no validation; decode_capture_the_flag_objective_rows_v1 builds it.
+
+    Attributes
+    ----------
+    position : tuple[float, float]
+        World (x, y) of the flag now, in map units.
+    carried : bool
+        Whether an agent carries the flag (decision 139's carried bit).
+    countdown_steps : int
+        Ticks before a dropped flag goes home by itself; 0 unless dropped.
+    carrier_row : int | None
+        The carrier's row 0-4 among its team's observation rows (the actor's
+        ally rows for the enemy flag, its enemy rows for its own flag), or None
+        when the row names no carrier: not carried, or carried by an agent the
+        actor does not see.
+    """
+
+    position: tuple[float, float]
+    """World (x, y) of the flag now, in map units."""
+    carried: bool
+    """Whether an agent carries the flag (decision 139's carried bit)."""
+    countdown_steps: int
+    """Ticks before a dropped flag goes home by itself; 0 unless dropped."""
+    carrier_row: int | None
+    """The carrier's row 0-4 among its team's observation rows, or None."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CaptureTheFlagObjectiveRowsV1:
+    """Hold an actor's four Capture the Flag objective rows, decoded.
+
+    This is a frozen, slotted, keyword-only host record. Construction performs
+    no validation; decode_capture_the_flag_objective_rows_v1 builds it.
+
+    Attributes
+    ----------
+    ally_home : tuple[float, float]
+        World (x, y) of the actor's own flag's home, in map units.
+    enemy_home : tuple[float, float]
+        World (x, y) of the enemy flag's home, in map units.
+    capture_distance : float
+        Positive reach of a home for a capture, in map units.
+    interaction_distance : float
+        Positive reach for a pickup or a return, in map units.
+    ally_flag : CaptureTheFlagFlagRowV1
+        The actor's own flag.
+    enemy_flag : CaptureTheFlagFlagRowV1
+        The enemy team's flag.
+    """
+
+    ally_home: tuple[float, float]
+    """World (x, y) of the actor's own flag's home, in map units."""
+    enemy_home: tuple[float, float]
+    """World (x, y) of the enemy flag's home, in map units."""
+    capture_distance: float
+    """Positive reach of a home for a capture, in map units."""
+    interaction_distance: float
+    """Positive reach for a pickup or a return, in map units."""
+    ally_flag: CaptureTheFlagFlagRowV1
+    """The actor's own flag."""
+    enemy_flag: CaptureTheFlagFlagRowV1
+    """The enemy team's flag."""
+
+
+def decode_capture_the_flag_objective_rows_v1(
+    objective_features: tuple[tuple[float, ...], ...],
+) -> CaptureTheFlagObjectiveRowsV1:
+    """Decode an actor's flag homes and flags from its objective rows.
+
+    Parameters
+    ----------
+    objective_features : tuple[tuple[float, ...], ...]
+        The actor's recorded objective rows, shape (8, 12), as exact Python
+        wire floats. Rows 0-3 are read; the hill rows are not.
+
+    Returns
+    -------
+    CaptureTheFlagObjectiveRowsV1
+        Both homes, the two reaches and both flags.
+
+    Raises
+    ------
+    ValueError
+        A flag row is inactive (Core fills these rows from his C1.4 on, so an
+        earlier Capture the Flag recording has none); a value is not an exact
+        wire float; the two homes or the two flags disagree about their reach,
+        or a reach is not positive; a home row claims an owner; or a flag's
+        bits break decision 139: its own flag is home (1, 0), carried by an
+        enemy (0, 1) or dropped (0, 0), and the enemy flag home (0, 1), carried
+        by a teammate (1, 0) or dropped (0, 0). A dropped flag counts down from
+        at least 1, a home or carried flag does not count, a home flag sits at
+        its home, and only a carried flag names one carrier row.
+
+    Notes
+    -----
+    Every value is copied as recorded; nothing is recomputed from the rules.
+    """
+    rows = objective_features
+    for slot in range(OBJECTIVE_SLOT_ENEMY_FLAG_V1 + 1):
+        if not _wire_bool(rows[slot][OBJECTIVE_FEATURE_ACTIVE_V1], name="active"):
+            raise ValueError(
+                "this Capture the Flag recording has no flag rows; Core fills "
+                "them from C1.4 on."
+            )
+
+    def point(slot: int) -> tuple[float, float]:
+        """Return the finite world (x, y) of objective row slot."""
+        return (
+            _finite(rows[slot][OBJECTIVE_FEATURE_X_V1], name="objective x"),
+            _finite(rows[slot][OBJECTIVE_FEATURE_Y_V1], name="objective y"),
+        )
+
+    def reach(slot: int) -> float:
+        """Return objective row slot's positive reach, in map units."""
+        value = _finite(
+            rows[slot][OBJECTIVE_FEATURE_INTERACTION_DISTANCE_V1], name="reach"
+        )
+        if value <= 0.0:
+            raise ValueError("a flag or home reach must be positive.")
+        return value
+
+    def bits(slot: int) -> tuple[bool, bool]:
+        """Return objective row slot's controlled-by-ally and -enemy bits."""
+        return (
+            _wire_bool(
+                rows[slot][OBJECTIVE_FEATURE_CONTROLLED_BY_ALLY_TEAM_V1],
+                name="controlled by ally team",
+            ),
+            _wire_bool(
+                rows[slot][OBJECTIVE_FEATURE_CONTROLLED_BY_ENEMY_TEAM_V1],
+                name="controlled by enemy team",
+            ),
+        )
+
+    def flag(slot: int, home: tuple[float, float]) -> CaptureTheFlagFlagRowV1:
+        """Decode flag row slot against its home and decision 139's bits."""
+        ally_bit, enemy_bit = bits(slot)
+        own_flag = slot == OBJECTIVE_SLOT_ALLY_FLAG_V1
+        carried, at_home = (enemy_bit, ally_bit) if own_flag else (ally_bit, enemy_bit)
+        countdown = _wire_int(
+            rows[slot][OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_RETURNS_V1],
+            name="flag countdown",
+        )
+        carrier_bits = tuple(
+            _wire_bool(value, name="carrier row")
+            for value in rows[slot][
+                OBJECTIVE_FEATURE_CARRIER_ROW_START_V1:OBJECTIVE_FEATURE_CARRIER_ROW_STOP_V1
+            ]
+        )
+        position = point(slot)
+        if (
+            (carried and at_home)
+            or (countdown > 0) != (not carried and not at_home)
+            or (at_home and position != home)
+            or sum(carrier_bits) > 1
+            or (any(carrier_bits) and not carried)
+        ):
+            raise ValueError("a flag row breaks decision 139's flag states.")
+        return CaptureTheFlagFlagRowV1(
+            position=position,
+            carried=carried,
+            countdown_steps=countdown,
+            carrier_row=carrier_bits.index(True) if any(carrier_bits) else None,
+        )
+
+    for slot in (OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1, OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1):
+        if any(bits(slot)):
+            raise ValueError("a flag home row cannot have an owner.")
+    capture_distance = reach(OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1)
+    interaction_distance = reach(OBJECTIVE_SLOT_ALLY_FLAG_V1)
+    if (
+        reach(OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1) != capture_distance
+        or reach(OBJECTIVE_SLOT_ENEMY_FLAG_V1) != interaction_distance
+    ):
+        raise ValueError("both homes and both flags must share their reaches.")
+    ally_home = point(OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1)
+    enemy_home = point(OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1)
+    return CaptureTheFlagObjectiveRowsV1(
+        ally_home=ally_home,
+        enemy_home=enemy_home,
+        capture_distance=capture_distance,
+        interaction_distance=interaction_distance,
+        ally_flag=flag(OBJECTIVE_SLOT_ALLY_FLAG_V1, ally_home),
+        enemy_flag=flag(OBJECTIVE_SLOT_ENEMY_FLAG_V1, enemy_home),
     )
 
 

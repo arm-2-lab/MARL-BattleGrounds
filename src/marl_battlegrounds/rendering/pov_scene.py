@@ -24,10 +24,12 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAxisMappingV1,
     ActorPovAxisMappingV2,
     ActorPovAxisMappingV3,
+    ActorPovAxisMappingV4,
     ActorPovCurrentSlice,
     ActorPovCurrentSliceV1,
     ActorPovCurrentSliceV2,
     ActorPovCurrentSliceV3,
+    ActorPovCurrentSliceV4,
     ActorPovFrame,
     ActorPovFrameV1,
     ActorPovFrameV2,
@@ -37,6 +39,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovReplayContentV1,
     ActorPovReplayContentV2,
     ActorPovReplayContentV3,
+    ActorPovReplayContentV4,
     ActorPovTransitionV1,
     validate_actor_pov_replay_content,
 )
@@ -930,7 +933,7 @@ class ActorPovProjectionIndexV1:
     Attributes
     ----------
     content : ActorPovReplayContent
-        Exact ActorPovReplayContentV1, V2 or V3 containing a coherent recorded
+        Exact ActorPovReplayContentV1 to V4 containing a coherent recorded
         prefix.
 
     Raises
@@ -948,7 +951,7 @@ class ActorPovProjectionIndexV1:
     """
 
     content: ActorPovReplayContent
-    """Exact ActorPovReplayContentV1, V2 or V3 containing a coherent recorded
+    """Exact ActorPovReplayContentV1 to V4 containing a coherent recorded
     prefix.
     """
 
@@ -963,6 +966,7 @@ class ActorPovProjectionIndexV1:
             ActorPovReplayContentV1,
             ActorPovReplayContentV2,
             ActorPovReplayContentV3,
+            ActorPovReplayContentV4,
         ):
             raise TypeError("content must be the exact ActorPovReplayContentV1 root.")
         validate_actor_pov_replay_content(self.content)
@@ -976,7 +980,7 @@ def build_actor_pov_projection_index_v1(
     Parameters
     ----------
     content : ActorPovReplayContent
-        Exact ActorPovReplayContentV1, V2 or V3 recipient-sliced replay content to
+        Exact ActorPovReplayContentV1 to V4 recipient-sliced replay content to
         validate and retain.
 
     Returns
@@ -1028,6 +1032,7 @@ def _build_actor_pov_battlefield_scene_v1(
         ActorPovAxisMappingV1,
         ActorPovAxisMappingV2,
         ActorPovAxisMappingV3,
+        ActorPovAxisMappingV4,
     ):
         raise TypeError("POV axis mapping must be the exact V1 root.")
     self_row = frame.self_features
@@ -1209,6 +1214,7 @@ def build_actor_pov_analyzer_projection_v1(
         type(source) is ActorPovReplayContentV1
         or type(source) is ActorPovReplayContentV2
         or type(source) is ActorPovReplayContentV3
+        or type(source) is ActorPovReplayContentV4
     ):
         return build_actor_pov_analyzer_projection_v1(
             build_actor_pov_projection_index_v1(source),
@@ -1218,6 +1224,7 @@ def build_actor_pov_analyzer_projection_v1(
         type(source) is ActorPovCurrentSliceV1
         or type(source) is ActorPovCurrentSliceV2
         or type(source) is ActorPovCurrentSliceV3
+        or type(source) is ActorPovCurrentSliceV4
     ):
         if frame_index is not None and frame_index != source.frame.frame_index:
             raise ValueError(

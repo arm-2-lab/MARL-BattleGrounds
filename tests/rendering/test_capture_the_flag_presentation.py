@@ -8,18 +8,27 @@ visual records, in recorded order, with each flag's start and successor
 records; Oracle View keys every flag event agent and carrier. No flag event
 reaches an Agent POV, even when every agent is seen. The records refuse a
 carrier on the flag's own team, a home flag away from its home and flag events
-without flag trajectories. Real games come once Core scores Capture the Flag
-(his C1.3 and C1.4); these frames are hand-set, and the scene test uses frame 1
-because today's Core leaves frame 0's Capture the Flag context rows at zero.
-Host only, on CPU.
+without flag trajectories. The rendering layer's flag-row columns equal Core's.
+A NoSharedObs Agent POV scene reads both flags from the recipient's own
+objective rows only (decision 139's state bits): it names a carrier it sees by
+POV key, leaves an unseen carrier unnamed, has no return ticks (None), and
+refuses rows Core has not filled yet, a named carrier the view does not hold
+and bits that break decision 139. Real games come once Core scores Capture the
+Flag (his C1.3 and C1.4); these frames and rows are hand-set, and the scene
+test uses frame 1 because today's Core leaves frame 0's Capture the Flag
+context rows at zero. Host only, on CPU.
 """
 
 import dataclasses
 
 import jax
 import pytest
-from tests.helpers.evaluation_fixtures import neutral_action
+from tests.helpers.evaluation_fixtures import (
+    current_captured_evaluation_trajectory,
+    neutral_action,
+)
 
+from marl_battlegrounds.core import types as core_types
 from marl_battlegrounds.core.env import reset, step
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.capture import (
@@ -32,6 +41,8 @@ from marl_battlegrounds.evaluation._recording.events import (
 from marl_battlegrounds.evaluation._recording.recording_context import (
     build_recording_context,
 )
+from marl_battlegrounds.evaluation._replays.pov import export_actor_pov_replay_v4
+from marl_battlegrounds.evaluation._replays.replay_v5 import build_replay_v5
 from marl_battlegrounds.evaluation.models import (
     CaptureTheFlagTransitionFactsV1,
     CodeRevisionV2,
@@ -40,7 +51,12 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationTransitionV2,
 )
 from marl_battlegrounds.evaluation.runtime_provenance import capture_runtime_provenance
+from marl_battlegrounds.rendering import evaluation_wire_features as wire
+from marl_battlegrounds.rendering.authorized_pov_scene import (
+    build_no_shared_obs_authorized_scene_v1,
+)
 from marl_battlegrounds.rendering.authorized_presentation import (
+    AuthorizedBattlefieldSceneV1,
     _agent_pov_visual_event_is_authorized,  # pyright: ignore[reportPrivateUsage]
     _project_replay_incoming_summary_v1,  # pyright: ignore[reportPrivateUsage]
     build_oracle_authorized_scene_v1,
@@ -59,6 +75,7 @@ _CONFIG = make_standard_capture_the_flag_config(
     map_id=42, team_a_roster=("mage", "warrior"), team_b_roster=("rogue",), max_steps=50
 )
 _KEYS = {0: "key-a0", 1: "key-a1", 5: "key-b0"}
+_RUNTIME = capture_runtime_provenance("0.0.0")
 
 
 def _context() -> EvaluationEpisodeContextV5:
@@ -73,9 +90,7 @@ def _context() -> EvaluationEpisodeContextV5:
             "code_revision": CodeRevisionV2(package_version="0.0.0").model_dump(
                 mode="json"
             ),
-            "runtime_provenance": capture_runtime_provenance("0.0.0").model_dump(
-                mode="json"
-            ),
+            "runtime_provenance": _RUNTIME.model_dump(mode="json"),
             "execution_information_mode": "no_shared_obs",
         },
     )
@@ -165,6 +180,9 @@ def test_scenes_carry_both_flags_and_name_carriers_by_key(
         flag_positions=(homes[0], carrier_position),
     )
     pickup = _view(start, transition, carried, flag_was_picked_up_by_agent={0})
+    tdm = current_captured_evaluation_trajectory()
+    tdm_scene = build_evaluation_battlefield_scene_v2(tdm.context, tdm.frames[0])
+    assert tdm_scene.capture_the_flag is None
     scene = build_evaluation_battlefield_scene_v2(
         _CONTEXT, carried, transition_view=pickup
     )
@@ -323,3 +341,140 @@ def test_flag_records_refuse_impossible_states(
     )
     with pytest.raises(ValueError, match="need the batch's flag trajectories"):
         dataclasses.replace(batch, flag_trajectories=None)
+
+
+def test_flag_row_columns_match_core() -> None:
+    assert (
+        wire.OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1,
+        wire.OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1,
+        wire.OBJECTIVE_SLOT_ALLY_FLAG_V1,
+        wire.OBJECTIVE_SLOT_ENEMY_FLAG_V1,
+        wire.OBJECTIVE_FEATURE_ACTIVE_V1,
+        wire.OBJECTIVE_FEATURE_X_V1,
+        wire.OBJECTIVE_FEATURE_Y_V1,
+        wire.OBJECTIVE_FEATURE_INTERACTION_DISTANCE_V1,
+        wire.OBJECTIVE_FEATURE_CONTROLLED_BY_ALLY_TEAM_V1,
+        wire.OBJECTIVE_FEATURE_CONTROLLED_BY_ENEMY_TEAM_V1,
+        wire.OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_RETURNS_V1,
+        wire.OBJECTIVE_FEATURE_CARRIER_ROW_START_V1,
+        wire.OBJECTIVE_FEATURE_CARRIER_ROW_STOP_V1,
+    ) == (
+        core_types.OBJECTIVE_SLOT_ALLY_FLAG_HOME,
+        core_types.OBJECTIVE_SLOT_ENEMY_FLAG_HOME,
+        core_types.OBJECTIVE_SLOT_ALLY_FLAG,
+        core_types.OBJECTIVE_SLOT_ENEMY_FLAG,
+        core_types.OBJECTIVE_FEATURE_IS_ACTIVE,
+        core_types.OBJECTIVE_FEATURE_X,
+        core_types.OBJECTIVE_FEATURE_Y,
+        core_types.OBJECTIVE_FEATURE_INTERACTION_DISTANCE,
+        core_types.OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM,
+        core_types.OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM,
+        core_types.OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_AUTO_RETURNS,
+        core_types.OBJECTIVE_FEATURE_UNIT_ROW_0_IS_FLAG_CARRIER,
+        core_types.OBJECTIVE_FEATURE_UNIT_ROW_4_IS_FLAG_CARRIER + 1,
+    )
+
+
+def _row(
+    point: tuple[float, ...],
+    reach: float,
+    *,
+    ally: float = 0.0,
+    enemy: float = 0.0,
+    carrier: int | None = None,
+) -> tuple[float, ...]:
+    one_hot = tuple(1.0 if row == carrier else 0.0 for row in range(5))
+    return (1.0, point[0], point[1], reach, ally, enemy, 0.0, *one_hot)
+
+
+def _pov_scene(
+    game: tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4],
+    rows: list[tuple[float, ...]],
+) -> AuthorizedBattlefieldSceneV1:
+    # Only slot 0's own rows change; the snapshot keeps both flags home, so the
+    # scene can only have read the flags from the actor's rows.
+    start, transition, successor = game
+    data = successor.model_dump()
+    observation = data["base_observation"]
+    objective = [list(agent) for agent in observation["objective_features"]]
+    objective[0][: len(rows)] = rows
+    observation["objective_features"] = tuple(
+        tuple(tuple(row) for row in agent) for agent in objective
+    )
+    replay = build_replay_v5(
+        _CONTEXT,
+        [start, EvaluationFrameV4.model_validate(data)],
+        [transition],
+        runtime_provenance=_RUNTIME,
+    )
+    return build_no_shared_obs_authorized_scene_v1(
+        export_actor_pov_replay_v4(replay, global_slot=0).content,
+        public_catalog=_CONTEXT.static_mechanics_catalog,
+        authority_session_id="session-1",
+        frame_index=1,
+    ).scene
+
+
+def test_agent_pov_reads_both_flags_from_its_own_rows(
+    game: tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4],
+) -> None:
+    config = _CONTEXT.resolved_env_config
+    homes = config.capture_the_flag_flag_home_positions
+    capture = config.capture_the_flag_flag_capture_distance
+    touch = config.capture_the_flag_flag_interaction_distance
+    with pytest.raises(ValueError, match="no flag rows"):
+        _pov_scene(game, [])
+    positions = game[2].snapshot.agent_positions
+    home_rows = [_row(homes[0], capture), _row(homes[1], capture)]
+    # Its own flag is home; its teammate in ally row 1 carries the enemy flag.
+    seen = _pov_scene(
+        game,
+        [
+            *home_rows,
+            _row(homes[0], touch, ally=1.0),
+            _row(positions[1], touch, ally=1.0, carrier=1),
+        ],
+    )
+    teammate = next(
+        agent
+        for agent in seen.agents
+        if agent.public_agent_id == _CONTEXT.roster[1].public_agent_id
+    )
+    assert seen.capture_the_flag is not None
+    assert seen.capture_the_flag.return_steps is None
+    assert [
+        (flag.team_id, flag.state, flag.carrier_presentation_key)
+        for flag in seen.capture_the_flag.flags
+    ] == [(1, "home", None), (2, "carried", teammate.presentation_key)]
+    # The far enemy carries its own flag away: carried, but unnamed.
+    unseen = _pov_scene(
+        game,
+        [
+            *home_rows,
+            _row(positions[5], touch, enemy=1.0),
+            _row(homes[1], touch, enemy=1.0),
+        ],
+    )
+    assert unseen.capture_the_flag is not None
+    assert [
+        (flag.state, flag.carrier_presentation_key)
+        for flag in unseen.capture_the_flag.flags
+    ] == [("carried", None), ("home", None)]
+    with pytest.raises(ValueError, match="does not hold"):
+        _pov_scene(
+            game,
+            [
+                *home_rows,
+                _row(positions[5], touch, enemy=1.0, carrier=0),
+                _row(homes[1], touch, enemy=1.0),
+            ],
+        )
+    with pytest.raises(ValueError, match="decision 139"):
+        _pov_scene(
+            game,
+            [
+                *home_rows,
+                _row(homes[0], touch, ally=1.0, enemy=1.0),
+                _row(homes[1], touch, enemy=1.0),
+            ],
+        )

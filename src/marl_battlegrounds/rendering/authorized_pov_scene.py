@@ -33,19 +33,23 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAdjacentTransitionSliceV1,
     ActorPovAdjacentTransitionSliceV2,
     ActorPovAdjacentTransitionSliceV3,
+    ActorPovAdjacentTransitionSliceV4,
     ActorPovAxisMapping,
     ActorPovAxisMappingV1,
     ActorPovAxisMappingV2,
     ActorPovAxisMappingV3,
+    ActorPovAxisMappingV4,
     ActorPovCurrentSlice,
     ActorPovCurrentSliceV1,
     ActorPovCurrentSliceV2,
     ActorPovCurrentSliceV3,
+    ActorPovCurrentSliceV4,
     ActorPovFrame,
     ActorPovReplayContent,
     ActorPovReplayContentV1,
     ActorPovReplayContentV2,
     ActorPovReplayContentV3,
+    ActorPovReplayContentV4,
     ActorPovSpawnLifecycleV1,
 )
 from marl_battlegrounds.evaluation._replays.wire_shapes import (
@@ -64,6 +68,8 @@ from marl_battlegrounds.rendering.authorized_presentation import (
     AuthorizedAuraFieldV1,
     AuthorizedAuraModifierV1,
     AuthorizedBattlefieldSceneV1,
+    AuthorizedCaptureTheFlagFlagV1,
+    AuthorizedCaptureTheFlagV1,
     AuthorizedClassAuraMechanicV1,
     AuthorizedClassDocumentationProfileV1,
     AuthorizedClassMechanicsV2,
@@ -93,8 +99,10 @@ from marl_battlegrounds.rendering.evaluation_adapter import (
 )
 from marl_battlegrounds.rendering.evaluation_wire_features import (
     CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH_V2,
+    CaptureTheFlagFlagRowV1,
     DecodedAgentFeatureRowV1,
     decode_agent_feature_row,
+    decode_capture_the_flag_objective_rows_v1,
 )
 from marl_battlegrounds.rendering.pov_scene import (
     ActorPovProjectionIndexV1,
@@ -103,7 +111,11 @@ from marl_battlegrounds.rendering.pov_scene import (
     build_actor_pov_analyzer_projection_v1,
     build_actor_pov_projection_index_v1,
 )
-from marl_battlegrounds.rendering.scene import MapSceneV1, ObstacleSceneV1
+from marl_battlegrounds.rendering.scene import (
+    MapSceneV1,
+    ObstacleSceneV1,
+    capture_the_flag_flag_state,
+)
 from marl_battlegrounds.rendering.vocabulary import (
     status_sort_key,
     status_token_id_from_catalog_status_id,
@@ -1279,18 +1291,21 @@ def _validated_source(source: NoSharedObsPovSourceV1) -> NoSharedObsPovSourceV1:
         type(source) is ActorPovAdjacentTransitionSliceV1
         or type(source) is ActorPovAdjacentTransitionSliceV2
         or type(source) is ActorPovAdjacentTransitionSliceV3
+        or type(source) is ActorPovAdjacentTransitionSliceV4
     ):
         return type(source).model_validate(source.model_dump(mode="python"))
     if (
         type(source) is ActorPovCurrentSliceV1
         or type(source) is ActorPovCurrentSliceV2
         or type(source) is ActorPovCurrentSliceV3
+        or type(source) is ActorPovCurrentSliceV4
     ):
         return type(source).model_validate(source.model_dump(mode="python"))
     if (
         type(source) is ActorPovReplayContentV1
         or type(source) is ActorPovReplayContentV2
         or type(source) is ActorPovReplayContentV3
+        or type(source) is ActorPovReplayContentV4
     ):
         validated = type(source).model_validate(source.model_dump(mode="python"))
         # The index constructor additionally checks the declared model tree and
@@ -1338,6 +1353,7 @@ def _select_source(
         type(source) is ActorPovReplayContentV1
         or type(source) is ActorPovReplayContentV2
         or type(source) is ActorPovReplayContentV3
+        or type(source) is ActorPovReplayContentV4
     ):
         if type(frame_index) is not int or not 0 <= frame_index < len(source.frames):
             raise IndexError("frame_index is outside the captured POV prefix.")
@@ -1353,6 +1369,7 @@ def _select_source(
         type(source) is ActorPovCurrentSliceV1
         or type(source) is ActorPovCurrentSliceV2
         or type(source) is ActorPovCurrentSliceV3
+        or type(source) is ActorPovCurrentSliceV4
     ):
         if frame_index is not None and frame_index != source.frame.frame_index:
             raise ValueError(
@@ -1370,6 +1387,7 @@ def _select_source(
         type(source) is ActorPovAdjacentTransitionSliceV1
         or type(source) is ActorPovAdjacentTransitionSliceV2
         or type(source) is ActorPovAdjacentTransitionSliceV3
+        or type(source) is ActorPovAdjacentTransitionSliceV4
     ):
         if type(frame_index) is not int or frame_index not in (
             source.start_frame.frame_index,
@@ -2057,6 +2075,80 @@ def _merge_shared_contributions(
     return rows, provenance
 
 
+def _pov_capture_the_flag(
+    frame: ActorPovFrame,
+    *,
+    selection: _SourceSelectionV1,
+    agent_by_public_id: dict[str, AuthorizedAgentV1],
+) -> AuthorizedCaptureTheFlagV1 | None:
+    """Build both flags as the recipient's own objective rows show them.
+
+    Return None unless the source is a Capture the Flag one (axis mapping V4).
+    Positions, states and countdowns are public to every actor (C1.C); a
+    carrier is named only when the rows name one, which they do only for a
+    body the actor sees or is (decision 155), and then by its POV key. The
+    return ticks have no actor source, so return_steps is None. Raise
+    ValueError when the rows are missing or break decision 139
+    (decode_capture_the_flag_objective_rows_v1), or name a carrier row whose
+    body this view does not hold. Nothing is read from Oracle data.
+    """
+    if type(selection.axis_mapping) is not ActorPovAxisMappingV4:
+        return None
+    rows = decode_capture_the_flag_objective_rows_v1(frame.objective_features)
+    mapping = selection.axis_mapping
+
+    def authorized(
+        row: CaptureTheFlagFlagRowV1,
+        *,
+        team_id: int,
+        home: tuple[float, float],
+        carrier_public_ids: tuple[str, ...],
+    ) -> AuthorizedCaptureTheFlagFlagV1:
+        """Key one decoded flag row's carrier through the carrier team's rows."""
+        carrier = (
+            None
+            if row.carrier_row is None
+            else agent_by_public_id.get(carrier_public_ids[row.carrier_row])
+        )
+        if row.carrier_row is not None and carrier is None:
+            raise ValueError("a flag row names a carrier this view does not hold.")
+        return AuthorizedCaptureTheFlagFlagV1(
+            team_id=team_id,
+            state=capture_the_flag_flag_state(
+                carried=row.carried, countdown_steps=row.countdown_steps
+            ),
+            position=row.position,
+            home_position=home,
+            carrier_presentation_key=None
+            if carrier is None
+            else carrier.presentation_key,
+            carrier_public_agent_id=None
+            if carrier is None
+            else carrier.public_agent_id,
+            countdown_steps=row.countdown_steps,
+        )
+
+    own = authorized(
+        rows.ally_flag,
+        team_id=selection.configured_team_id,
+        home=rows.ally_home,
+        carrier_public_ids=mapping.enemy_observation_row_public_agent_id_by_id,
+    )
+    enemy = authorized(
+        rows.enemy_flag,
+        team_id=3 - selection.configured_team_id,
+        home=rows.enemy_home,
+        carrier_public_ids=mapping.ally_observation_row_public_agent_id_by_id,
+    )
+    team_a, team_b = (own, enemy) if selection.configured_team_id == 1 else (enemy, own)
+    return AuthorizedCaptureTheFlagV1(
+        flags=(team_a, team_b),
+        capture_distance=rows.capture_distance,
+        interaction_distance=rows.interaction_distance,
+        return_steps=None,
+    )
+
+
 def build_no_shared_obs_authorized_scene_v1(
     source: NoSharedObsPovSourceV1,
     *,
@@ -2084,6 +2176,8 @@ def build_no_shared_obs_authorized_scene_v1(
     NoSharedObsAuthorizedScenePartsV1
         New neutral scene, recipient/frame identity and the recipient's exact
         next-decision mask. Bodies contain self plus visible living relation rows.
+        A Capture the Flag source (POV V4) adds both flags from the recipient's
+        own objective rows, a carrier only when those rows name a held body.
 
     Raises
     ------
@@ -2093,7 +2187,8 @@ def build_no_shared_obs_authorized_scene_v1(
         A replay/index frame index is missing, invalid or outside its prefix.
     ValueError
         Session text, live index, source/catalog validation, identity, lifecycle
-        or fixed class-capability joins fail.
+        or fixed class-capability joins fail, or a Capture the Flag frame's flag
+        rows are missing (before his C1.4) or break decision 139.
 
     Notes
     -----
@@ -2113,6 +2208,7 @@ def build_no_shared_obs_authorized_scene_v1(
         type(validated_source) is ActorPovAdjacentTransitionSliceV1
         or type(validated_source) is ActorPovAdjacentTransitionSliceV2
         or type(validated_source) is ActorPovAdjacentTransitionSliceV3
+        or type(validated_source) is ActorPovAdjacentTransitionSliceV4
     ):
         # A nonzero start endpoint intentionally has no prior incoming
         # transition.  Decode only its battlefield facts; do not fabricate a
@@ -2350,6 +2446,9 @@ def build_no_shared_obs_authorized_scene_v1(
         ),
         spawn_pads=tuple(spawn_pads),
         respawn_waves=respawn_waves,
+        capture_the_flag=_pov_capture_the_flag(
+            frame, selection=selection, agent_by_public_id=agent_by_public_id
+        ),
     )
     recipient_key = pov_presentation_key_v1(
         authority_session_id=authority_session_id,
