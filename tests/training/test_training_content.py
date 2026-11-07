@@ -18,6 +18,11 @@ eight scenarios familiar, without an error; this holds against today's real
 republished binding as well as a binding whose protected roots alone differ.
 The simulator-rules identity ignores every bare string (module, class,
 function and field docstrings), comments and formatting, and changes with code.
+It covers every Python file under core/, subfolders included, so a new or
+moved Core file changes it, and its
+value for the committed Core is pinned: a Core commit that changes executable
+code fails the pin until its fingerprint is updated (and, when old games still
+play the same, the previous one is listed as equivalent).
 No learner or training run is created.
 """
 
@@ -25,6 +30,7 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
 import json
+import shutil
 from collections.abc import Callable
 from hashlib import sha256
 from operator import itemgetter
@@ -66,6 +72,9 @@ from marl_battlegrounds.training import (
     checkpoints,
     prepare_training_content,
 )
+
+# The simulator-rules fingerprint of the committed Core (every core/*.py).
+_SIMULATOR_RULES = "6081c1fc85c3f1f231faddb04ac53e52f347b8998cd91bc40434d2ba1c5f2d74"
 
 _V1_FIXTURE = (
     Path(__file__).parents[1] / "fixtures" / "training_content_binding_v1.json"
@@ -173,6 +182,46 @@ def step(x: int) -> int:
     assert _content._executable_tree(plain) != _content._executable_tree(
         plain.replace("x + 1", "x + 2")
     )
+
+
+def _rules_digest() -> str:
+    return next(
+        row.canonical_digest
+        for row in _content._shared_definitions()
+        if row.identifier == "simulator-rules"
+    )
+
+
+def test_simulator_rules_fingerprint_is_pinned() -> None:
+    assert _rules_digest() == _SIMULATOR_RULES, (
+        "Core's executable code changed, so runs saved under the old code stop "
+        "continuing. If old games still play the same (that mode's goldens or "
+        "the resimulation check pass), add the old fingerprint "
+        f"{_SIMULATOR_RULES} to that mode's equivalent set in "
+        f"training/_content.py. Then set this pin to {_rules_digest()}."
+    )
+
+
+def test_simulator_rules_cover_every_core_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = Path(_content.__file__).parents[1]
+    copy = tmp_path / "marl_battlegrounds"
+    shutil.copytree(package / "core", copy / "core")
+
+    def installed(_package: str) -> Path:
+        return copy
+
+    monkeypatch.setattr(_content, "files", installed)
+    assert _rules_digest() == _SIMULATOR_RULES
+    (copy / "core" / "rules.py").write_text("LIMIT = 3\n")
+    added = _rules_digest()
+    assert added != _SIMULATOR_RULES
+    (copy / "core" / "rules.py").write_text('"""Rules."""\n\nLIMIT = 3  # Wins.\n')
+    assert _rules_digest() == added
+    (copy / "core" / "flags").mkdir()
+    (copy / "core" / "rules.py").rename(copy / "core" / "flags" / "rules.py")
+    assert _rules_digest() not in (_SIMULATOR_RULES, added)
 
 
 def test_layout_identity_uses_float32_values_and_order_not_wrappers() -> None:

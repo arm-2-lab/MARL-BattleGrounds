@@ -503,7 +503,9 @@ def _executable_tree(source: str) -> str:
 def _shared_definitions() -> tuple[ContentAddressedIdentityV1, ...]:
     """Identify common rules without treating shared use as protected leakage.
 
-    Read six installed Core Python sources and hash their syntax trees without
+    Read every installed Core Python source (each .py file under core/, in
+    subfolders too, keyed and sorted by its path inside core/, so a new or
+    moved Core file is always covered) and hash their syntax trees without
     bare strings (_executable_tree). Formatting, comments and docstrings, field
     docstrings included, do not change this executable identity. The mechanics
     catalog and schema versions retain their existing owners. The
@@ -512,12 +514,16 @@ def _shared_definitions() -> tuple[ContentAddressedIdentityV1, ...]:
     REQUIRED_SCHEMA_BINDINGS_V3 and keep those saved bytes, which are never
     rebuilt. This finite read belongs only at setup.
     """
-    bodies = {
-        name: _executable_tree(
-            files("marl_battlegrounds").joinpath("core", f"{name}.py").read_text()
-        )
-        for name in ("types", "axis_mappings", "combat", "config", "geometry", "env")
-    }
+    sources: dict[str, str] = {}
+    folders = [("", files("marl_battlegrounds").joinpath("core"))]
+    while folders:
+        prefix, folder = folders.pop()
+        for item in folder.iterdir():
+            if item.is_dir():
+                folders.append((f"{prefix}{item.name}/", item))
+            elif item.name.endswith(".py"):
+                sources[f"{prefix}{item.name}"] = item.read_text()
+    bodies = {path: _executable_tree(sources[path]) for path in sorted(sources)}
     return (
         _identity("static-mechanics", {"catalog": build_static_mechanics_catalog_v1()}),
         _identity("evaluation-schemas", {"bindings": REQUIRED_SCHEMA_BINDINGS_V4}),
@@ -552,7 +558,7 @@ def read_saved_binding(
 
     Notes
     -----
-    Host-only. Reads the six Core sources once (``_shared_definitions``) only
+    Host-only. Reads the Core sources once (``_shared_definitions``) only
     when a listed identity is found. Writes no files.
     """
     binding = TrainingContentBinding.model_validate_json(canonical_json_bytes(saved))
