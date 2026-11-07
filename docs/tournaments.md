@@ -161,43 +161,184 @@ million game steps and 8 hours on one RTX 5090 (see the [Tournament Rules](tourn
 So the leaderboard rewards methods that are efficient in both samples and compute.
 
 ```bash
-python -m marl_battlegrounds entry new my-entry
-cd my-entry
+python -m marl_battlegrounds entry new my-method
+cd my-method
+# put your method into the starter (entry.yaml and my_entry/)
 git add . && git commit -m "First entry"
-python -m marl_battlegrounds entry check
+uv run python -m marl_battlegrounds entry check
 git remote add origin <your GitHub repository URL>
 git push -u origin HEAD
-python -m marl_battlegrounds entry submit
+uv run python -m marl_battlegrounds entry submit
 ```
+
+Inside the entry folder, `uv run` uses the entry's own locked environment, the
+one our run uses.
 
 | Command | What It Does |
 | --- | --- |
-| `entry new FOLDER` | Writes a starter entry that trains the built-in MAPPO against itself, its past saves and the three scripted bots: `pyproject.toml`, `entry.yaml`, a `load()` function, a README and, when uv is installed, `uv.lock`. Makes the folder a Git repository. `--name` sets the issue title. |
-| `entry check` | Checks your current commit the way we will: a fresh clone, install from `uv.lock` (which must install a released marl-battlegrounds from PyPI, any version), your starting models and their hashes, a 15-minute training test, loading, export to a portable model file and the play limits (Rule 4). Saves the result in `.git/marl-bgs-entry-check/COMMIT.json`. |
-| `entry submit` | Opens the GitHub issue form with your answers filled in and prints the same link (`--no-browser` only prints). It refuses uncommitted changes, a commit on no remote branch and a commit without a passing check. |
+| `entry new NAME` | Writes a starter entry in the folder `NAME`: `pyproject.toml`, `entry.yaml`, a `load()` function, a README and, when uv is installed, `uv.lock`, and makes the folder a Git repository. The starter trains Season 0's Recurrent MAPPO recipe against itself, its past saves and the three scripted bots. The folder's name is your method's name unless `--name` gives another; it becomes the entry's name on the leaderboard and its Hugging Face repo, which the command prints. |
+| `entry check` | Checks your current commit the way we will: a fresh clone, the install from `uv.lock` (which must install a released marl-battlegrounds from PyPI, any version), the models `entry.yaml` lists, a 15-minute training test, loading, export to a portable model file and the speed test. Saves the result in `.git/marl-bgs-entry-check/COMMIT.json`. |
+| `entry submit` | Opens the GitHub issue form with the method name, repository and commit filled in, and prints the same link (`--no-browser` only prints). Tick the license box, and the private box if your repository is private, then submit. It refuses uncommitted changes, a commit on no remote branch, a commit without a passing check and the unchanged starter. |
 
-The check has two groups. A failed must-pass step blocks `entry submit`.
-Loading and export (steps 6 and 7) wait until the run has saved a choice: on
-a machine too slow to reach its first check in 15 minutes they are skipped,
-not passed, and the check says so. Measured-here steps (a choice saved within the
-15 minutes, and the play limits) show this machine's GPU and never block: we
-decide them on our RTX 5090. Your load function must load what your run last
-saved as its choice; for the built-in trainer,
+Put your own method into the starter before you submit, because an unchanged
+starter is a duplicate of Season 0's Recurrent MAPPO. You do not need to train
+at home; `entry check` trains for 15 minutes, and our run does the real
+training.
+
+Loading, export and the speed test wait until the run has saved something to
+enter (for the built-in trainer, its first choice). Loading and export must each
+finish within 10 minutes. If the 15 minutes end first, the check skips
+them instead of failing them, and says so, because our run trains for up to 8
+hours. A run that
+ends by itself without saving anything fails. The speed test is decided on our
+RTX 5090; on other machines it says "not measured". Your load function must load
+what your run last saved as its choice; for the built-in trainer,
 [`training.current_choice`](training.md#validation-and-the-best-checkpoint)
 names it.
 
-**Watch Out:** the check installs your entry from scratch and trains it for 15
-minutes, so run it on a machine with a GPU; without one the play limits say
-"Not measured". The issue's number and time are your arrival receipt (Rule
-7.3). If your repository is private, tick the box on the form (Rule 6.4).
-An entry that uses an outside pretrained model (Rule 3.2) cannot pass step 4
-yet, because the check cannot fetch it: fill in the form by hand instead.
+**Models Your Run Uses:** commit small outside weights to your repository
+(ordinary Git files of up to 100 MB each; our machine does not fetch Git LFS).
+List everything else in `entry.yaml`: every released model your run starts from,
+trains with or plays against, for example `MARL-BattleGrounds/tdm-season-0-recurrent-ippo@final`,
+and any public Hugging Face model by its address and commit,
+`hf://<owner>/<repo>@<40-character commit>/<path>`, where the path is a file, a
+folder or `*` for the whole repository. Our run is offline, so we download them
+all before the clock, without a token.
 
-Tested: the starter, from `entry new` to a passing `entry check`, on Linux with
-an RTX 5090. Other systems: not tested yet; they should work.
+**Watch Out:** an NVIDIA GPU is recommended. Without a GPU, the check takes
+about 17 minutes on our 16-core CPU, plus the first download of your packages,
+and cannot measure the speed test. Passing the check does not test the full 8
+hours, RAM or disk. A method name is taken once an entry under it has run this
+season or waits in the queue; you may reuse your own only to resend a run that
+saved nothing. So a new version needs a new name, for example `hydra-mappo-2`.
+
+### How We Run and Score
+
+**The Season.** We publish a new leaderboard at 00:00 UK time (Europe/London) on
+January 1, April 1, July 1 and October 1. Entries close 72 elapsed hours before
+each. Season 1's entries close at 00:00 UK time on December 29, 2026, and its
+table is published on January 1, 2027. Its games are played on the last 1.1.0
+pre-release, due in late December. Season 2's entries close at 00:00 UK time on
+March 29, 2027, and its table is published on April 1, 2027. Each table goes on
+the website's [leaderboard](https://marl-battlegrounds.com/#leaderboard), and
+its games and every entrant go on Hugging Face. Season 0 is our six baselines
+and three scripted bots, rated on the test maps. The bots are reference
+opponents built as part of the benchmark, so the training rules do not apply to
+them.
+
+**Our Machine.** One RTX 5090 (32 GB), an AMD Ryzen 9 9950X3D (16 cores, 32
+threads), 48 GB of RAM and 50 GB of disk for what your run writes (temporary
+files count; your installed environment and downloaded models do not). Each run
+is sealed: it can write only to its own folder, and once the clock starts it has
+no network. Before the clock starts, we clone your commit, install from
+`uv.lock` and download every model `entry.yaml` lists, without the GPU, in at
+most 1 hour. Nothing else is downloaded.
+
+**Our Run.**
+
+- We first run `entry check` on your commit for 15 minutes. If it fails, you may
+  fix your entry once without losing your place in the queue.
+- We read your code before our run; that is where we judge duplicates and what
+  your run brings in.
+- Settings you choose by hand, even ones tuned at home, are fine: they are not
+  trained or recorded.
+- Our run is the same check on our RTX 5090, training for up to 8 hours. Nothing
+  else runs on the card. At 8 hours we send SIGINT, wait 60 seconds, then kill
+  it. Its speed test is the one that counts, and we check its play speed again in
+  the official games.
+- Our games play the portable model file that `marl_bgs.export_model` writes
+  from your entry: a JAX `Policy` that acts per agent, or a built-in actor
+  trained with `parameter_sharing="all"`. A system that runs on the host, such
+  as a language-model team, cannot export.
+- A game step is one tick of one game, and every game the run plays counts:
+  training, validation, self-play and games against opponents. 512 games side by
+  side make 512 game steps per tick. A custom training loop must log its total
+  game steps, validation included.
+- JAX takes 75% of the card unless your train command sets
+  `XLA_PYTHON_CLIENT_MEM_FRACTION`. Weights & Biases logs in offline mode.
+- On a GPU, our run does not repeat your home run exactly. Setting
+  `XLA_FLAGS=--xla_gpu_deterministic_ops=true` in your train command makes it
+  repeat on an RTX 5090, but it trains 3.6 times slower in the same 8 hours.
+- If your run crashes, we enter its last choice, or else its last save. You may
+  then send a version with the bug fixed; one that changes only its settings is
+  a duplicate. A different algorithm or model design is a different method. If
+  our side fails, we rerun it at no cost to you.
+- If your repository is private, tick the box on the form: we reply with a
+  read-only key for that one entry, which you add as a deploy key with write
+  access off. If you add it within 7 days of our reply, your arrival time is the
+  issue's time; otherwise your entry arrives when you add the key.
+
+**Arrival Order.** We test complete entries one at a time, in the order their
+issues arrive, against the leaderboard as it stands after the previous entry.
+The public table stays the same until the next quarter's table. Unfinished work
+rolls forward to the next season and keeps its place in the queue.
+
+**The Games.**
+
+- Your entry plays as Team A, and the spawn ends swap between paired games: 200
+  games against each of the nine systems, 40 on each test map 47 to 51.
+- Both teams use the same five-class roster in the same order (Mage, Warrior,
+  Hunter, Rogue and Priest). First to 20 points wins, and a game still running
+  at tick 300 is a draw. The Red Zone depth is 5.0, and 128 games run at once.
+- The games run in XLA's deterministic mode. We draw the seed at random after
+  your training run and publish it with your results. We repeated these games
+  exactly on our own card; a second RTX 5090 is not tested yet.
+- Each agent sees what lies in its own sight plus what its living teammates see,
+  and no system ever reads hidden game data. Memory starts fresh every game, and
+  weights never change during the games.
+- Full metrics are recorded from the first tick, and a resource or write failure
+  never becomes a made-up win, draw or loss. Scenario results never feed Elo.
+
+**The Ratings.**
+
+- We fit one joint Elo for the nine systems plus your entry, as in [Read the
+  Ratings](#read-the-ratings), and refit it before each entry. Elo is shown and
+  compared as whole numbers.
+- Your entry joins if its Elo is higher than the lowest system's; equal is not
+  enough. The lowest system leaves. If several tie for last, the one with the
+  lower expected score against the others leaves; if that ties too, the one that
+  joined earliest leaves (among Season 0 systems, the later one in Season 0's
+  order).
+- Rank follows the whole-number Elo. [Tiers](#tiers) are labels beside it. Elo
+  from different seasons cannot be compared, because each season has its own
+  nine systems.
+- Rank 1 of each season joins the Hall of Champions. A system that stays Rank 1
+  gets one banner showing its reign.
+- Each table shows every entry's type (Learned, Scripted, Hybrid or Language
+  Model) and five costs from our run: Steps to Entry (the game steps of training
+  behind the entered save), Run Steps (every game step the run played), Training
+  Time, Play Speed and Play Memory. They never change rank, rating or admission.
+- If a rule break is found later, the system the entry pushed out returns.
+
+**What We Publish.** For every entry, whether it joins the leaderboard or not,
+we publish its code, results, one saved model per 5 million training steps and
+the entered save under Apache-2.0, with the season's table; we do not release
+training state. Every entrant goes into one general pool you can download, and
+each season's nine systems also get their own folder. A system that leaves the
+leaderboard stays in the pool and in past tables.
+
+**Why These Numbers.**
+
+- **255 million game steps and 8 hours** sit just above our own slowest
+  baseline. Our six baselines took about 3.6 to 7.0 hours to reach 250 million
+  game steps on one RTX 5090, counting each first run and its continuation (see the
+  [hyperparameter search record](../scripts/paper_experiments/hyperparameter_search.md)), so
+  every Season 0 learned entrant meets the limits an entry faces.
+- **One budget for everyone** means an entry wins by learning more from each
+  game step and doing more with each hour on the card.
+- **The play limits** exist because every entrant becomes a downloadable
+  training opponent, so a slow or memory-hungry entrant would slow down
+  everyone who trains against it. Every Season 0 entrant plays well above the
+  speed floor and well under the memory limit.
+- **One official run by us, on one fixed and published machine,** follows the
+  MineRL 2020 and Procgen 2020 competitions, which also retrained every
+  submission themselves under fixed limits on experience, time and hardware.
+- **Teammate messages arrive one tick late,** as in classic learned
+  communication research such as DIAL, where each agent acts on the messages
+  sent on the previous step.
 
 ## Next
 
-- [Tournament Rules](tournament_rules.md): who may enter the official ladder.
+- [Tournament Rules](tournament_rules.md): the ten rules of the Official Leaderboard.
 - [Metrics](metrics.md): compare every entrant's play, each from its own side.
 - [`canonical_tournament.py`](../examples/tournaments/canonical_tournament.py): a runnable tour of released fields.
