@@ -23,6 +23,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContext,
     EvaluationEpisodeContextV3,
     EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
@@ -371,12 +372,13 @@ __all__ = (
 def _require_current_projection(context: EvaluationEpisodeContext) -> None:
     """Require an exact relative-input context and its matching projection.
 
-    Context V3 must record SharedObs V2 or NoSharedObs V3; context V4 must record
-    SharedObs V3 or NoSharedObs V4, matching its information mode. Raise
-    TypeError for any other context type (V1, V2 or a subclass) and ValueError
-    when the recorded projection does not match.
+    Context V3 must record SharedObs V2 or NoSharedObs V3; contexts V4 and V5
+    (Capture the Flag, the same input layout) must record SharedObs V3 or
+    NoSharedObs V4, matching the information mode. Raise TypeError for any other
+    context type (V1, V2 or a subclass) and ValueError when the recorded
+    projection does not match.
     """
-    if type(context) is EvaluationEpisodeContextV4:
+    if type(context) in (EvaluationEpisodeContextV4, EvaluationEpisodeContextV5):
         expected = (
             SHARED_OBS_ACTOR_PROJECTION_V3
             if context.execution_information_mode == "shared_obs"
@@ -389,7 +391,7 @@ def _require_current_projection(context: EvaluationEpisodeContext) -> None:
             else NO_SHARED_OBS_ACTOR_PROJECTION_V3
         )
     else:
-        raise TypeError("current actor reconstruction requires context V3 or V4")
+        raise TypeError("current actor reconstruction requires context V3, V4 or V5")
     if context.actor_projection != expected:
         raise ValueError("current actor projection does not match its information mode")
 
@@ -397,13 +399,13 @@ def _require_current_projection(context: EvaluationEpisodeContext) -> None:
 def reconstruct_class_ids_by_agent_by_team_v3(
     context: EvaluationEpisodeContext,
 ) -> ClassIdsByAgentByTeamV2:
-    """Rebuild the relative public class map from exact context V3 or V4.
+    """Rebuild the relative public class map from exact context V3, V4 or V5.
 
     Parameters
     ----------
     context : EvaluationEpisodeContext
         EvaluationEpisodeContextV3 with SharedObs V2 or NoSharedObs V3, or
-        EvaluationEpisodeContextV4 with SharedObs V3 or NoSharedObs V4,
+        EvaluationEpisodeContextV4 or V5 with SharedObs V3 or NoSharedObs V4,
         matching its information mode.
 
     Returns
@@ -431,12 +433,12 @@ def reconstruct_class_ids_by_agent_by_team_v3(
 def reconstruct_actor_class_ids_by_team_v3(
     context: EvaluationEpisodeContext, global_slot: int
 ) -> ActorClassIdsByTeamV2:
-    """Rebuild one actor's relative public class rows from exact context V3 or V4.
+    """Rebuild one actor's relative public class rows from exact context V3, V4 or V5.
 
     Parameters
     ----------
     context : EvaluationEpisodeContext
-        EvaluationEpisodeContextV3 or EvaluationEpisodeContextV4 with its
+        EvaluationEpisodeContextV3, V4 or V5 with its
         matching projection (see reconstruct_class_ids_by_agent_by_team_v3).
     global_slot : int
         Exact Python int in 0..9 selecting the observer internally.

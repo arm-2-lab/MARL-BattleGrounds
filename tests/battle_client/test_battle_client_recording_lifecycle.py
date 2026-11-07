@@ -218,6 +218,7 @@ def test_two_saved_mixed_episodes_keep_exact_trace_owners(
                 _finish(service, worker)
                 transition = service.session.incoming_evaluation_view
                 assert transition is not None
+                assert type(transition.transition) is EvaluationTransitionV1
                 accepted_transitions.append(transition.transition)
             accepted = service.session
             start = perf_counter()

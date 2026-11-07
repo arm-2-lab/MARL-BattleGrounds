@@ -38,6 +38,7 @@ from marl_battlegrounds.evaluation._replays.replay_v2 import (
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV4,
     EvaluationFrameV3,
+    EvaluationTransition,
     EvaluationTransitionV1,
     canonical_digest_sha256,
     canonical_json_bytes,
@@ -126,7 +127,7 @@ class ReplayArtifactReferenceV4(ReplayArtifactReferenceV2):
 def build_replay_v4(
     context: EvaluationEpisodeContextV4,
     frames: Sequence[EvaluationFrameV3],
-    transitions: Sequence[EvaluationTransitionV1],
+    transitions: Sequence[EvaluationTransition],
     *,
     runtime_provenance: RuntimeProvenanceV1,
     wrapper_stack: tuple[ReplayWrapperMetadataV1, ...] = (),
@@ -142,8 +143,9 @@ def build_replay_v4(
         Exact EvaluationEpisodeContextV4 for this captured episode.
     frames : Sequence[EvaluationFrameV3]
         Nonempty sequence of exact EvaluationFrameV3, contiguous from zero.
-    transitions : Sequence[EvaluationTransitionV1]
-        EvaluationTransitionV1 sequence with one fewer row than frames.
+    transitions : Sequence[EvaluationTransition]
+        Exact EvaluationTransitionV1 sequence with one fewer row than frames;
+        a transition V2 (Capture the Flag) is refused.
     runtime_provenance : RuntimeProvenanceV1
         Actual runtime matching the context's package version.
     wrapper_stack : tuple[ReplayWrapperMetadataV1, ...]
@@ -166,7 +168,8 @@ def build_replay_v4(
     Raises
     ------
     TypeError
-        Context is not exact V4 or a frame is not exact V3.
+        Context is not exact V4, a frame is not exact V3 or a transition is
+        not exact V1.
     ValueError
         Capture counts, identities, information regime, completion
         or recorded metadata are inconsistent.
@@ -181,6 +184,8 @@ def build_replay_v4(
         raise TypeError("current replay capture requires exact context V4")
     if any(type(frame) is not EvaluationFrameV3 for frame in frames):
         raise TypeError("current replay capture requires exact frame V3")
+    if any(type(row) is not EvaluationTransitionV1 for row in transitions):
+        raise TypeError("current replay capture requires exact transition V1")
     content = _build_replay_content(
         context,
         tuple(frames),

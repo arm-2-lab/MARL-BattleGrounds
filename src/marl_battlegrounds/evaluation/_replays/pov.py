@@ -8,9 +8,12 @@ simulator event feed. These host-side Pydantic records are not JAX rollout state
 POV V1 reads historical replay V1. POV V2 reads replay V3 and preserves
 actor-relative relation flags and public roster classes. POV V3 is current: it
 reads replay V4 (context V4, frame V3) and keeps the same rows plus context
-column 19, the Team Deathmatch Red Zone depth. Each POV version pairs with exactly
-one context, frame and projection version; the records are separate classes, so
-one version never passes where another is expected. Export requires NoSharedObs
+column 19, the Team Deathmatch Red Zone depth. POV V4 reads a Capture the Flag
+replay V5 (context V5, frame V4, transition V2); its frames and transitions keep
+POV V3's shape, and only its axis mapping, slices, content and artifact carry
+version 4. Each POV version pairs with exactly one context, frame and projection
+version; the records are separate roots, so one version never passes where
+another is expected. Export requires NoSharedObs
 and a configured-active actor; dead actors remain selectable. No files are
 written here. replay_io owns storage.
 
@@ -46,6 +49,11 @@ from marl_battlegrounds.evaluation._replays.replay_v4 import (
     ReplayArtifactV4,
     replay_reference_v4,
 )
+from marl_battlegrounds.evaluation._replays.replay_v5 import (
+    ReplayArtifactReferenceV5,
+    ReplayArtifactV5,
+    replay_reference_v5,
+)
 from marl_battlegrounds.evaluation._replays.wire_shapes import CONTEXT_FEATURES_V2
 from marl_battlegrounds.evaluation.models import (
     CONTEXT_FEATURES,
@@ -70,8 +78,9 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
+    EvaluationFrameV4,
     EvaluationModel,
-    EvaluationTransitionV1,
+    EvaluationTransition,
     RosterSlotV1,
     canonical_digest_sha256,
     canonical_json_bytes,
@@ -81,6 +90,7 @@ from marl_battlegrounds.evaluation.models import (
 ACTOR_POV_SCHEMA_VERSION: Literal[1] = 1
 ACTOR_POV_SCHEMA_VERSION_V2: Literal[2] = 2
 ACTOR_POV_SCHEMA_VERSION_V3: Literal[3] = 3
+ACTOR_POV_SCHEMA_VERSION_V4: Literal[4] = 4
 ACTOR_POV_COMPLETION_SCHEMA_ID = "marl_battlegrounds.evaluation.actor_pov_completion"
 ACTOR_POV_PREVIOUS_ACTIONS_SCHEMA_ID = (
     "marl_battlegrounds.evaluation.actor_pov_previous_actions"
@@ -135,6 +145,18 @@ def _require_schema_version_three(value: object) -> object:
 
 
 _SchemaVersionV3 = Annotated[Literal[3], BeforeValidator(_require_schema_version_three)]
+
+
+def _require_schema_version_four(value: object) -> object:
+    """Return value only when it is the exact Python integer 4; otherwise raise
+    ValueError.
+    """
+    if type(value) is not int or value != 4:
+        raise ValueError("schema_version must be the exact integer 4")
+    return value
+
+
+_SchemaVersionV4 = Annotated[Literal[4], BeforeValidator(_require_schema_version_four)]
 
 
 def _require_schema_version_two(value: object) -> object:
@@ -2719,38 +2741,166 @@ class ActorPovReplayArtifactV3(EvaluationModel):
         return _validate_replayartifact(self)
 
 
+class ActorPovAxisMappingV4(ActorPovAxisMappingV3):
+    """Name the public categories for POV version 4, a Capture the Flag game's.
+
+    Reads context V5, frame V4 and transition V2; every other field, and every
+    check, is POV V3's. The actor's observation shapes are unchanged, so POV
+    V4 holds ActorPovFrameV3 frames and ActorPovTransitionV1 transitions.
+
+    Attributes
+    ----------
+    schema_version : _SchemaVersionV4
+        Exact integer 4, the default.
+    source_context_schema_version : Literal[5]
+        Exact integer 5, the default.
+    source_frame_schema_version : _SchemaVersionV4
+        Exact integer 4, the default.
+    source_transition_schema_version : _SchemaVersionV2
+        Exact integer 2, the default.
+    """
+
+    # These exact wire roots share V3's fields and checks, not its versions.
+    schema_version: _SchemaVersionV4 = ACTOR_POV_SCHEMA_VERSION_V4  # pyright: ignore[reportIncompatibleVariableOverride]
+    source_context_schema_version: Literal[5] = 5  # pyright: ignore[reportIncompatibleVariableOverride]
+    source_frame_schema_version: _SchemaVersionV4 = 4  # pyright: ignore[reportIncompatibleVariableOverride]
+    source_transition_schema_version: _SchemaVersionV2 = 2  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class ActorPovCurrentSliceV4(ActorPovCurrentSliceV3):
+    """Carry one Capture the Flag actor's current POV frame and incoming transition.
+
+    Attributes
+    ----------
+    schema_version : _SchemaVersionV4
+        Exact integer 4, the default.
+    axis_mapping : ActorPovAxisMappingV4
+        Exact POV V4 axis mapping (context V5, frame V4, transition V2).
+
+    Notes
+    -----
+    Every other field and check is ActorPovCurrentSliceV3's; the frame stays
+    ActorPovFrameV3. An in-memory live carrier, not a saved artifact.
+    """
+
+    schema_version: _SchemaVersionV4 = ACTOR_POV_SCHEMA_VERSION_V4  # pyright: ignore[reportIncompatibleVariableOverride]
+    axis_mapping: ActorPovAxisMappingV4  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class ActorPovAdjacentTransitionSliceV4(ActorPovAdjacentTransitionSliceV3):
+    """Carry one Capture the Flag actor's two POV frames and the transition between.
+
+    Attributes
+    ----------
+    schema_version : _SchemaVersionV4
+        Exact integer 4, the default.
+    axis_mapping : ActorPovAxisMappingV4
+        Exact POV V4 axis mapping.
+
+    Notes
+    -----
+    Every other field and check is ActorPovAdjacentTransitionSliceV3's.
+    """
+
+    schema_version: _SchemaVersionV4 = ACTOR_POV_SCHEMA_VERSION_V4  # pyright: ignore[reportIncompatibleVariableOverride]
+    axis_mapping: ActorPovAxisMappingV4  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class ActorPovReplayContentV4(ActorPovReplayContentV3):
+    """Hold one Capture the Flag actor's whole POV trajectory.
+
+    Attributes
+    ----------
+    schema_version : _SchemaVersionV4
+        Exact integer 4, the default.
+    axis_mapping : ActorPovAxisMappingV4
+        Exact POV V4 axis mapping.
+
+    Notes
+    -----
+    Every other field, the content digest and every check are
+    ActorPovReplayContentV3's; frames stay ActorPovFrameV3.
+    """
+
+    schema_version: _SchemaVersionV4 = ACTOR_POV_SCHEMA_VERSION_V4  # pyright: ignore[reportIncompatibleVariableOverride]
+    axis_mapping: ActorPovAxisMappingV4  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class ActorPovReplayArtifactV4(ActorPovReplayArtifactV3):
+    """Wrap POV V4 content with its source Capture the Flag replay reference.
+
+    Attributes
+    ----------
+    schema_version : _SchemaVersionV4
+        Exact integer 4, the default.
+    source_replay : ReplayArtifactReferenceV5
+        Reference to replay V5, including its identities, digests and length.
+    content : ActorPovReplayContentV4
+        Exact POV V4 actor content.
+
+    Notes
+    -----
+    Artifact ID, envelope digest and checks are ActorPovReplayArtifactV3's.
+    """
+
+    schema_version: _SchemaVersionV4 = ACTOR_POV_SCHEMA_VERSION_V4  # pyright: ignore[reportIncompatibleVariableOverride]
+    source_replay: ReplayArtifactReferenceV5  # pyright: ignore[reportIncompatibleVariableOverride]
+    content: ActorPovReplayContentV4  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+# Replays a POV export reads: V1, V3, V4 and V5 (replay V2 has no POV export).
+type _PovSourceReplay = (
+    ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4 | ReplayArtifactV5
+)
+
+
 type ActorPovAxisMapping = (
-    ActorPovAxisMappingV1 | ActorPovAxisMappingV2 | ActorPovAxisMappingV3
+    ActorPovAxisMappingV1
+    | ActorPovAxisMappingV2
+    | ActorPovAxisMappingV3
+    | ActorPovAxisMappingV4
 )
 
 type ActorPovFrame = ActorPovFrameV1 | ActorPovFrameV2 | ActorPovFrameV3
 
 type ActorPovCurrentSlice = (
-    ActorPovCurrentSliceV1 | ActorPovCurrentSliceV2 | ActorPovCurrentSliceV3
+    ActorPovCurrentSliceV1
+    | ActorPovCurrentSliceV2
+    | ActorPovCurrentSliceV3
+    | ActorPovCurrentSliceV4
 )
 
 type ActorPovAdjacentTransitionSlice = (
     ActorPovAdjacentTransitionSliceV1
     | ActorPovAdjacentTransitionSliceV2
     | ActorPovAdjacentTransitionSliceV3
+    | ActorPovAdjacentTransitionSliceV4
 )
 
 type ActorPovReplayContent = (
-    ActorPovReplayContentV1 | ActorPovReplayContentV2 | ActorPovReplayContentV3
+    ActorPovReplayContentV1
+    | ActorPovReplayContentV2
+    | ActorPovReplayContentV3
+    | ActorPovReplayContentV4
 )
 
 type ActorPovReplayArtifact = (
-    ActorPovReplayArtifactV1 | ActorPovReplayArtifactV2 | ActorPovReplayArtifactV3
+    ActorPovReplayArtifactV1
+    | ActorPovReplayArtifactV2
+    | ActorPovReplayArtifactV3
+    | ActorPovReplayArtifactV4
 )
 
 # The one owner of POV version pairing: evaluation frame V1 gives POV V1, frame
-# V2 (context V3) gives POV V2, and frame V3 (context V4) gives POV V3.
+# V2 (context V3) gives POV V2, frame V3 (context V4) gives POV V3, and frame V4
+# (context V5, Capture the Flag) gives POV V4, whose frames keep POV V3's shape.
 _POV_FRAME_TYPE_BY_SOURCE_FRAME_TYPE: dict[
     type[EvaluationFrame], type[ActorPovFrame]
 ] = {
     EvaluationFrameV1: ActorPovFrameV1,
     EvaluationFrameV2: ActorPovFrameV2,
     EvaluationFrameV3: ActorPovFrameV3,
+    EvaluationFrameV4: ActorPovFrameV3,
 }
 _CURRENT_SLICE_TYPE_BY_SOURCE_FRAME_TYPE: dict[
     type[EvaluationFrame], type[ActorPovCurrentSlice]
@@ -2758,6 +2908,7 @@ _CURRENT_SLICE_TYPE_BY_SOURCE_FRAME_TYPE: dict[
     EvaluationFrameV1: ActorPovCurrentSliceV1,
     EvaluationFrameV2: ActorPovCurrentSliceV2,
     EvaluationFrameV3: ActorPovCurrentSliceV3,
+    EvaluationFrameV4: ActorPovCurrentSliceV4,
 }
 _ADJACENT_SLICE_TYPE_BY_SOURCE_FRAME_TYPE: dict[
     type[EvaluationFrame], type[ActorPovAdjacentTransitionSlice]
@@ -2765,6 +2916,7 @@ _ADJACENT_SLICE_TYPE_BY_SOURCE_FRAME_TYPE: dict[
     EvaluationFrameV1: ActorPovAdjacentTransitionSliceV1,
     EvaluationFrameV2: ActorPovAdjacentTransitionSliceV2,
     EvaluationFrameV3: ActorPovAdjacentTransitionSliceV3,
+    EvaluationFrameV4: ActorPovAdjacentTransitionSliceV4,
 }
 
 
@@ -2783,11 +2935,11 @@ def _actor_class_ids(
     Returns
     -------
     tuple[tuple[int, ...], ...] | None
-        For context V3 or V4, immutable integer tuples of shape (2, 5), Own Team
+        For context V3, V4 or V5, immutable integer tuples of shape (2, 5), Own Team
         first; zero marks inactive slots. Otherwise None (POV V1 frames carry no
         class rows).
     """
-    if context.schema_version not in (3, 4):
+    if context.schema_version not in (3, 4, 5):
         return None
     from marl_battlegrounds.evaluation._replays.actor_projection import (
         reconstruct_actor_class_ids_by_team_v3,
@@ -2800,18 +2952,24 @@ def _actor_class_ids(
 
 
 def _build_replay_reference_from_validated(
-    replay: ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4,
-) -> ReplayArtifactReferenceV1 | ReplayArtifactReferenceV3 | ReplayArtifactReferenceV4:
+    replay: _PovSourceReplay,
+) -> (
+    ReplayArtifactReferenceV1
+    | ReplayArtifactReferenceV3
+    | ReplayArtifactReferenceV4
+    | ReplayArtifactReferenceV5
+):
     """Build a source reference without repeating full replay validation.
 
     Parameters
     ----------
-    replay : ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4
-        Already validated exact replay V1, V3 or V4.
+    replay : _PovSourceReplay
+        Already validated exact replay V1, V3, V4 or V5.
 
     Returns
     -------
-    ReplayArtifactReferenceV1 | ReplayArtifactReferenceV3 | ReplayArtifactReferenceV4
+    ReplayArtifactReferenceV1 | ReplayArtifactReferenceV3 |
+    ReplayArtifactReferenceV4 | ReplayArtifactReferenceV5
         Version-matched reference with source identities, digests, and canonical byte
         length.
 
@@ -2819,6 +2977,8 @@ def _build_replay_reference_from_validated(
     -----
     Serializes canonical bytes to measure their length; writes no file.
     """
+    if type(replay) is ReplayArtifactV5:
+        return replay_reference_v5(replay)
     if type(replay) is ReplayArtifactV4:
         return replay_reference_v4(replay)
     if type(replay) is ReplayArtifactV3:
@@ -2881,7 +3041,7 @@ def _slice_frame_from_source(
     if frame_type is None:
         raise TypeError("actor POV slicing requires an exact supported frame")
     current_fields: dict[str, object] = {}
-    if type(source) is EvaluationFrameV2 or type(source) is EvaluationFrameV3:
+    if isinstance(source, (EvaluationFrameV2, EvaluationFrameV3, EvaluationFrameV4)):
         current_fields = {
             "self_ally_index": source.base_observation.self_ally_index[global_slot],
             "class_ids_by_team": class_ids_by_team,
@@ -2973,7 +3133,7 @@ def _slice_frame_from_source(
 
 
 def _slice_frame(
-    replay: ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4,
+    replay: _PovSourceReplay,
     *,
     global_slot: int,
     public_agent_id: str,
@@ -2983,8 +3143,8 @@ def _slice_frame(
 
     Parameters
     ----------
-    replay : ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4
-        Valid replay V1, V3 or V4.
+    replay : _PovSourceReplay
+        Valid replay V1, V3, V4 or V5.
     global_slot : int
         Selected simulator slot from 0 through 9.
     public_agent_id : str
@@ -3254,7 +3414,7 @@ def _derive_cues(
 
 
 def _slice_transition_from_source(
-    source: EvaluationTransitionV1,
+    source: EvaluationTransition,
     *,
     global_slot: int,
     team_local_slot: int,
@@ -3343,7 +3503,7 @@ def _slice_transition_from_source(
 
 
 def _slice_transition(
-    replay: ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4,
+    replay: _PovSourceReplay,
     *,
     global_slot: int,
     team_local_slot: int,
@@ -3355,8 +3515,8 @@ def _slice_transition(
 
     Parameters
     ----------
-    replay : ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4
-        Valid replay V1, V3 or V4.
+    replay : _PovSourceReplay
+        Valid replay V1, V3, V4 or V5.
     global_slot : int
         Selected simulator slot from 0 through 9.
     team_local_slot : int
@@ -3406,7 +3566,8 @@ def _axis_mapping_from_context(
     -------
     ActorPovAxisMapping
         Version-matched immutable axis record (V1 for contexts V1 and V2, V2 for
-        context V3, V3 for context V4); target zero is None, followed by five
+        context V3, V3 for context V4, V4 for context V5); target zero is None,
+        followed by five
         allies and five enemies.
 
     Raises
@@ -3427,7 +3588,9 @@ def _axis_mapping_from_context(
         return context.roster[slot].public_agent_id
 
     axis_type = (
-        ActorPovAxisMappingV3
+        ActorPovAxisMappingV4
+        if context.schema_version == 5
+        else ActorPovAxisMappingV3
         if context.schema_version == 4
         else ActorPovAxisMappingV2
         if context.schema_version == 3
@@ -3460,7 +3623,7 @@ def _axis_mapping_from_context(
 
 
 def _axis_mapping_from_replay(
-    replay: ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4,
+    replay: _PovSourceReplay,
     *,
     global_slot: int,
 ) -> ActorPovAxisMapping:
@@ -3468,8 +3631,8 @@ def _axis_mapping_from_replay(
 
     Parameters
     ----------
-    replay : ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4
-        Replay V1, V3 or V4 with validated context and mechanics catalog.
+    replay : _PovSourceReplay
+        Replay V1, V3, V4 or V5 with validated context and mechanics catalog.
     global_slot : int
         Selected simulator slot from 0 through 9.
 
@@ -3487,7 +3650,7 @@ def _axis_mapping_from_replay(
 def _require_actor_projection_v1(context: EvaluationEpisodeContext) -> None:
     """Require the projection version supported by this context's POV path.
 
-    Context V4 requires actor projection version 4 (NoSharedObs V4), context V3
+    Contexts V4 and V5 require actor projection version 4 (NoSharedObs V4), context V3
     requires version 3 (NoSharedObs V3), and older contexts require version 1.
     A SharedObs context therefore fails here (its projection versions are 1, 2
     and 3). Return None when supported; otherwise raise ValueError with the
@@ -3496,7 +3659,7 @@ def _require_actor_projection_v1(context: EvaluationEpisodeContext) -> None:
     """
     expected_version = (
         4
-        if context.schema_version == 4
+        if context.schema_version in (4, 5)
         else 3
         if context.schema_version == 3
         else ACTOR_POV_SCHEMA_VERSION
@@ -4360,17 +4523,18 @@ def slice_actor_pov_current_transition_v1(
 
 # Replay V1 exports POV V1, replay V3 exports POV V2 and replay V4 exports POV V3.
 _POV_EXPORT_TYPES_BY_REPLAY_TYPE: dict[
-    type[ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4],
+    type[_PovSourceReplay],
     tuple[int, type[ActorPovReplayContent], type[ActorPovReplayArtifact]],
 ] = {
     ReplayArtifactV1: (1, ActorPovReplayContentV1, ActorPovReplayArtifactV1),
     ReplayArtifactV3: (2, ActorPovReplayContentV2, ActorPovReplayArtifactV2),
     ReplayArtifactV4: (3, ActorPovReplayContentV3, ActorPovReplayArtifactV3),
+    ReplayArtifactV5: (4, ActorPovReplayContentV4, ActorPovReplayArtifactV4),
 }
 
 
 def _export_from_validated_replay(
-    replay: ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4,
+    replay: _PovSourceReplay,
     *,
     global_slot: int,
 ) -> ActorPovReplayArtifact:
@@ -4378,15 +4542,16 @@ def _export_from_validated_replay(
 
     Parameters
     ----------
-    replay : ReplayArtifactV1 | ReplayArtifactV3 | ReplayArtifactV4
-        Already validated exact replay V1, V3 or V4.
+    replay : _PovSourceReplay
+        Already validated exact replay V1, V3, V4 or V5.
     global_slot : int
         Exact Python integer from 0 through 9 selecting a configured-active actor.
 
     Returns
     -------
     ActorPovReplayArtifact
-        POV V1 for replay V1, POV V2 for replay V3, or POV V3 for replay V4, with a
+        POV V1 for replay V1, POV V2 for replay V3, POV V3 for replay V4, or POV V4
+        for replay V5, with a
         complete stored prefix, copied completion metadata, separate
         content/envelope hashes, and source reference.
 
@@ -4748,8 +4913,7 @@ def validate_actor_pov_replay_content(content: ActorPovReplayContent) -> None:
     Parameters
     ----------
     content : ActorPovReplayContent
-        Exact ActorPovReplayContentV1, ActorPovReplayContentV2 or
-        ActorPovReplayContentV3.
+        Exact ActorPovReplayContentV1, V2, V3 or V4.
 
     Returns
     -------
@@ -4773,6 +4937,7 @@ def validate_actor_pov_replay_content(content: ActorPovReplayContent) -> None:
         ActorPovReplayContentV1,
         ActorPovReplayContentV2,
         ActorPovReplayContentV3,
+        ActorPovReplayContentV4,
     ):
         raise TypeError("actor POV content requires an exact supported root")
     validate_declared_model_tree(
@@ -5106,6 +5271,148 @@ def canonical_actor_pov_replay_json_bytes_v3(
     return canonical_json_bytes(artifact)
 
 
+def export_actor_pov_replay_v4(
+    replay: ReplayArtifactV5, *, global_slot: int
+) -> ActorPovReplayArtifactV4:
+    """Export a configured-active actor's exact NoSharedObs view of a CTF replay.
+
+    Parameters
+    ----------
+    replay : ReplayArtifactV5
+        Exact ReplayArtifactV5; the full source is validated before export.
+    global_slot : int
+        Exact Python integer from 0 through 9; booleans and inactive roster
+        slots are rejected. A dead configured-active actor is allowed.
+
+    Returns
+    -------
+    ActorPovReplayArtifactV4
+        New ActorPovReplayArtifactV4 with T+1 selected-actor frames (POV V3's
+        20-column shape, the flag rows among the objective rows), T own
+        transitions, public completion metadata, an actor-content digest and a
+        source provenance envelope and digest.
+
+    Raises
+    ------
+    TypeError
+        replay is not exact V5.
+    ValueError
+        The source, slot, projection, information mode or built record is
+        invalid.
+
+    Notes
+    -----
+    Host-only; no input is changed and no file is written. SharedObs exports
+    are unavailable, as for POV V3.
+    """
+    from marl_battlegrounds.evaluation._replays.replay_v5 import (
+        validate_replay_artifact_v5,
+    )
+
+    if type(replay) is not ReplayArtifactV5:
+        raise TypeError("actor POV V4 export requires ReplayArtifactV5")
+    validate_replay_artifact_v5(replay)
+    artifact = _export_from_validated_replay(replay, global_slot=global_slot)
+    if type(artifact) is not ActorPovReplayArtifactV4:
+        raise TypeError("replay V5 must produce actor POV V4")
+    validate_actor_pov_replay_artifact_v4(artifact)
+    return artifact
+
+
+def validate_actor_pov_replay_artifact_v4(artifact: ActorPovReplayArtifactV4) -> None:
+    """Validate a standalone POV V4 envelope and its local actor content.
+
+    Parameters
+    ----------
+    artifact : ActorPovReplayArtifactV4
+        Exact ActorPovReplayArtifactV4, including its declared nested model types.
+
+    Returns
+    -------
+    None
+        None when canonical structure, IDs, digests, completion and local cues
+        agree.
+
+    Raises
+    ------
+    ValueError
+        The root or a declared nested model is not the exact expected type, or
+        stored values, hashes, temporal joins or cues are inconsistent.
+
+    Notes
+    -----
+    Host-only; does not read the referenced replay or write files. Use
+    validate_actor_pov_replay_against_replay_v4 for source correspondence.
+    """
+    validate_declared_model_tree(
+        artifact, record_name="actor POV replay", expected_type=ActorPovReplayArtifactV4
+    )
+    validate_actor_pov_replay_content(artifact.content)
+
+
+def validate_actor_pov_replay_against_replay_v4(
+    artifact: ActorPovReplayArtifactV4, replay: ReplayArtifactV5
+) -> None:
+    """Prove that this POV V4 artifact equals the selected source-replay export.
+
+    Parameters
+    ----------
+    artifact : ActorPovReplayArtifactV4
+        ActorPovReplayArtifactV4 to compare, including its selected global slot.
+    replay : ReplayArtifactV5
+        Exact ReplayArtifactV5 declared as the source.
+
+    Returns
+    -------
+    None
+        None when the artifact equals the independently rebuilt export.
+
+    Raises
+    ------
+    TypeError
+        The artifact or the source replay has an unsupported exact type.
+    ValueError
+        Source validation, actor selection or the comparison fails.
+
+    Notes
+    -----
+    Host-only; recomputes the projection and hashes without writing files.
+    """
+    if type(artifact) is not ActorPovReplayArtifactV4:
+        raise TypeError("actor POV V4 source check requires ActorPovReplayArtifactV4")
+    if artifact != export_actor_pov_replay_v4(
+        replay, global_slot=artifact.content.selected_global_slot
+    ):
+        raise ValueError("actor POV does not match its source replay")
+
+
+def canonical_actor_pov_replay_json_bytes_v4(
+    artifact: ActorPovReplayArtifactV4,
+) -> bytes:
+    """Validate and serialize the full POV V4 provenance envelope.
+
+    Parameters
+    ----------
+    artifact : ActorPovReplayArtifactV4
+        Exact ActorPovReplayArtifactV4 with valid local content.
+
+    Returns
+    -------
+    bytes
+        Canonical compact, key-sorted UTF-8 JSON bytes, the content, its digest
+        and the full source replay reference included. No file is written.
+
+    Raises
+    ------
+    TypeError
+        A declared model type is unsupported.
+    ValueError
+        Artifact validation or canonical serialization fails.
+    """
+    validate_actor_pov_replay_artifact_v4(artifact)
+    return canonical_json_bytes(artifact)
+
+
 __all__ = [
     "ACTOR_POV_ADJACENT_TRANSITION_SLICE_SCHEMA_ID",
     "ACTOR_POV_ARTIFACT_SCHEMA_ID",
@@ -5115,20 +5422,24 @@ __all__ = [
     "ACTOR_POV_SCHEMA_VERSION",
     "ACTOR_POV_SCHEMA_VERSION_V2",
     "ACTOR_POV_SCHEMA_VERSION_V3",
+    "ACTOR_POV_SCHEMA_VERSION_V4",
     "ActorPovAcceptedActionV1",
     "ActorPovActionMaskV1",
     "ActorPovAdjacentTransitionSlice",
     "ActorPovAdjacentTransitionSliceV1",
     "ActorPovAdjacentTransitionSliceV2",
     "ActorPovAdjacentTransitionSliceV3",
+    "ActorPovAdjacentTransitionSliceV4",
     "ActorPovAxisMapping",
     "ActorPovAxisMappingV1",
     "ActorPovAxisMappingV2",
     "ActorPovAxisMappingV3",
+    "ActorPovAxisMappingV4",
     "ActorPovCurrentSlice",
     "ActorPovCurrentSliceV1",
     "ActorPovCurrentSliceV2",
     "ActorPovCurrentSliceV3",
+    "ActorPovCurrentSliceV4",
     "ActorPovEpisodeCompletionV1",
     "ActorPovEpisodeEndedCueV1",
     "ActorPovFrame",
@@ -5147,10 +5458,12 @@ __all__ = [
     "ActorPovReplayArtifactV1",
     "ActorPovReplayArtifactV2",
     "ActorPovReplayArtifactV3",
+    "ActorPovReplayArtifactV4",
     "ActorPovReplayContent",
     "ActorPovReplayContentV1",
     "ActorPovReplayContentV2",
     "ActorPovReplayContentV3",
+    "ActorPovReplayContentV4",
     "ActorPovSpawnLifecycleV1",
     "ActorPovSubmittedActionV1",
     "ActorPovTransitionV1",
@@ -5161,17 +5474,21 @@ __all__ = [
     "canonical_actor_pov_replay_json_bytes_v1",
     "canonical_actor_pov_replay_json_bytes_v2",
     "canonical_actor_pov_replay_json_bytes_v3",
+    "canonical_actor_pov_replay_json_bytes_v4",
     "export_actor_pov_replay_v1",
     "export_actor_pov_replay_v2",
     "export_actor_pov_replay_v3",
+    "export_actor_pov_replay_v4",
     "slice_actor_pov_current_frame_v1",
     "slice_actor_pov_current_transition_v1",
     "validate_actor_pov_replay_against_replay_v1",
     "validate_actor_pov_replay_against_replay_v2",
     "validate_actor_pov_replay_against_replay_v3",
+    "validate_actor_pov_replay_against_replay_v4",
     "validate_actor_pov_replay_artifact_v1",
     "validate_actor_pov_replay_artifact_v2",
     "validate_actor_pov_replay_artifact_v3",
+    "validate_actor_pov_replay_artifact_v4",
     "validate_actor_pov_replay_content",
     "validate_actor_pov_replay_content_v1",
 ]

@@ -68,6 +68,7 @@ from marl_battlegrounds.evaluation._replays.pov import (
 from marl_battlegrounds.evaluation.models import (
     ActionAcceptanceFactsV1,
     EvaluationEpisodeContext,
+    EvaluationTransition,
     EvaluationTransitionV1,
     JointActionV1,
     TransitionFactsV1,
@@ -2438,7 +2439,7 @@ class SharedObsLatestTransitionV1(_LatestTransitionBaseV1):
 
 
 def build_shared_obs_latest_transition_v1(
-    incoming_transition: EvaluationTransitionV1 | None,
+    incoming_transition: EvaluationTransition | None,
     *,
     successor: SharedObsAuthorizedScenePartsV1,
     action_axis: AgentPovActionAxisV1,
@@ -2448,7 +2449,7 @@ def build_shared_obs_latest_transition_v1(
 
     Parameters
     ----------
-    incoming_transition : EvaluationTransitionV1 or None
+    incoming_transition : EvaluationTransition or None
         Exact transition reaching successor, or None at frame zero.
     successor : SharedObsAuthorizedScenePartsV1
         Already accepted scene material for the current recipient and frame.

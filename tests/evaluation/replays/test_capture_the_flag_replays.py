@@ -1,14 +1,17 @@
 """Check Capture the Flag recording contexts and replay V5.
 
-Contracts: build_recording_context records a Capture the Flag config as context
-V5, with the task named "ctf" with its capture threshold and the reward contract
-"core-ctf"; a registered CTF map keeps its map identity, and a custom one gets a
-replay file name starting "ctf_custom_map_". A captured Capture the Flag game
-seals into replay V5 (frame V4, transition V2), saves as its exact canonical
-bytes and loads back equal, with reference version 5; PreparedReplay accepts it.
-build_replay_v5 refuses a Team Deathmatch context, and scalar replay analysis
-refuses replay V5. Real full games are checked once Core scores Capture the Flag
-(his C1.3 and C1.4); these games stop before the horizon. Host only, on CPU.
+Contracts: build_recording_context records a Capture the Flag config as context V5, with
+the task named "ctf" with its capture threshold and the reward contract "core-ctf"; a
+registered CTF map keeps its map identity, and a custom one gets a replay file name
+starting "ctf_custom_map_". A captured Capture the Flag game seals into replay V5 (frame
+V4, transition V2), saves as its exact canonical bytes and loads back equal, with
+reference version 5; PreparedReplay accepts it. build_replay_v5 refuses a Team
+Deathmatch context, build_replay_v4 refuses a Capture the Flag transition, and scalar
+replay analysis refuses replay V5. The shared transition view joins a Capture the Flag
+transition, and an actor's POV V4 export (POV V3 frames, an axis mapping naming context
+5, frame 4 and transition 2) validates against its source replay and has canonical
+bytes. Real full games are checked once Core scores Capture the Flag (his C1.3 and
+C1.4); these games stop before the horizon. Host only, on CPU.
 """
 
 from pathlib import Path
@@ -21,6 +24,7 @@ from tests.helpers.evaluation_fixtures import (
 )
 
 from marl_battlegrounds.core.env import reset, step
+from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.capture import (
     _capture_evaluation_transition_unit,  # pyright: ignore[reportPrivateUsage]
     _capture_initial_evaluation_frame,  # pyright: ignore[reportPrivateUsage]
@@ -29,6 +33,14 @@ from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
 from marl_battlegrounds.evaluation._recording.recording_context import (
     build_recording_context,
 )
+from marl_battlegrounds.evaluation._replays.pov import (
+    ActorPovFrameV3,
+    ActorPovReplayArtifactV4,
+    canonical_actor_pov_replay_json_bytes_v4,
+    export_actor_pov_replay_v4,
+    validate_actor_pov_replay_against_replay_v4,
+)
+from marl_battlegrounds.evaluation._replays.replay_v4 import build_replay_v4
 from marl_battlegrounds.evaluation._replays.replay_v5 import (
     ReplayArtifactV5,
     build_replay_v5,
@@ -156,3 +168,33 @@ def test_replay_v5_refuses_other_contexts_and_tdm_analysis(
         )
     with pytest.raises(ValueError, match="supports TDM only"):
         analyze_replay(LoadedReplay(replay))
+
+
+def test_a_player_view_exports_from_replay_v5(replay: ReplayArtifactV5) -> None:
+    view = EvaluationTransitionViewV1(
+        context=replay.header.context,
+        start_frame=replay.frames[0],
+        transition=replay.transitions[0],
+        successor_frame=replay.frames[1],
+    )
+    assert type(view.transition) is EvaluationTransitionV2
+    artifact = export_actor_pov_replay_v4(replay, global_slot=0)
+    assert type(artifact) is ActorPovReplayArtifactV4
+    mapping = artifact.content.axis_mapping
+    assert (
+        mapping.source_context_schema_version,
+        mapping.source_frame_schema_version,
+        mapping.source_transition_schema_version,
+    ) == (5, 4, 2)
+    assert {type(frame) for frame in artifact.content.frames} == {ActorPovFrameV3}
+    validate_actor_pov_replay_against_replay_v4(artifact, replay)
+    assert canonical_actor_pov_replay_json_bytes_v4(artifact) == canonical_json_bytes(
+        artifact
+    )
+    with pytest.raises(TypeError, match="exact transition V1"):
+        build_replay_v4(
+            current_captured_evaluation_trajectory().context,
+            [],
+            list(replay.transitions),
+            runtime_provenance=_RUNTIME,
+        )

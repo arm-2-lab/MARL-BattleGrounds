@@ -27,7 +27,9 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
+    EvaluationTransition,
     EvaluationTransitionV1,
+    EvaluationTransitionV2,
     StaticMechanicsCatalogV1,
     canonical_digest_sha256,
     evaluation_context_type,
@@ -115,7 +117,7 @@ from marl_battlegrounds.viewer.replay_protocol import (
 
 def _oracle_transition_action_rows_v1(
     context: EvaluationEpisodeContext,
-    transition: EvaluationTransitionV1,
+    transition: EvaluationTransition,
     *,
     authority_session_id: str,
 ) -> tuple[LatestTransitionActionRowV1, ...]:
@@ -163,16 +165,19 @@ def _oracle_transition_action_rows_v1(
 
 def _oracle_latest_transition_v1(
     context: EvaluationEpisodeContext,
-    incoming_transition: EvaluationTransitionV1 | None,
+    incoming_transition: EvaluationTransition | None,
     *,
     authority_session_id: str,
 ) -> OracleLatestTransitionV1 | None:
     """Package the recorded incoming Oracle transition, or None at the reset frame."""
     if incoming_transition is None:
         return None
-    if type(incoming_transition) is not EvaluationTransitionV1:
+    if type(incoming_transition) not in (
+        EvaluationTransitionV1,
+        EvaluationTransitionV2,
+    ):
         raise TypeError("incoming_transition must use its exact evaluation root.")
-    transition = EvaluationTransitionV1.model_validate(
+    transition = type(incoming_transition).model_validate(
         incoming_transition.model_dump(mode="python")
     )
     start_tick = transition.facts.transition_start_step_count
@@ -195,7 +200,7 @@ def _oracle_latest_transition_v1(
 
 def _oracle_upcoming_transition_v1(
     context: EvaluationEpisodeContext,
-    outgoing_transition: EvaluationTransitionV1 | None,
+    outgoing_transition: EvaluationTransition | None,
     *,
     authority_session_id: str,
 ) -> OracleUpcomingTransitionV1 | None:
@@ -204,9 +209,12 @@ def _oracle_upcoming_transition_v1(
     """
     if outgoing_transition is None:
         return None
-    if type(outgoing_transition) is not EvaluationTransitionV1:
+    if type(outgoing_transition) not in (
+        EvaluationTransitionV1,
+        EvaluationTransitionV2,
+    ):
         raise TypeError("outgoing_transition must use its exact evaluation root.")
-    transition = EvaluationTransitionV1.model_validate(
+    transition = type(outgoing_transition).model_validate(
         outgoing_transition.model_dump(mode="python")
     )
     start_tick = transition.facts.transition_start_step_count
@@ -321,8 +329,8 @@ def build_replay_researcher_space_v1(
     authority_session_id: str,
     final_frame_index: int,
     selected_global_slot: int,
-    incoming_transition: EvaluationTransitionV1 | None,
-    outgoing_transition: EvaluationTransitionV1 | None,
+    incoming_transition: EvaluationTransition | None,
+    outgoing_transition: EvaluationTransition | None,
 ) -> ReplayResearcherSpaceV1:
     """Build global replay panels without copying battlefield geometry.
 
@@ -338,9 +346,10 @@ def build_replay_researcher_space_v1(
         Last captured frame index, equal to the number of recorded transitions.
     selected_global_slot : int
         Configured-active simulator slot selected for researcher inspection.
-    incoming_transition : EvaluationTransitionV1 | None
-        Recorded transition entering this frame, or None at frame zero.
-    outgoing_transition : EvaluationTransitionV1 | None
+    incoming_transition : EvaluationTransition | None
+        Recorded transition entering this frame (V1, or V2 in a Capture the
+        Flag replay), or None at frame zero.
+    outgoing_transition : EvaluationTransition | None
         Recorded transition leaving this frame, or None at the final captured frame.
 
     Returns

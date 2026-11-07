@@ -519,6 +519,7 @@ def test_saved_mixed_replay_keeps_manual_identity_and_actual_action_rows(
         session = control.submit_interactive(_draft(session, 0, move))
         assert session.incoming_evaluation_view is not None
         transition = session.incoming_evaluation_view.transition
+        assert type(transition) is EvaluationTransitionV1
         assert (
             transition.facts.action_acceptance_facts.submitted_joint_action.move[0]
             == move

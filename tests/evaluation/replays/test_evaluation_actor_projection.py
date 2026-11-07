@@ -214,5 +214,5 @@ def test_relative_projection_version_follows_the_context_version() -> None:
     )
     with pytest.raises(ValueError, match="does not match its information mode"):
         reconstruct_class_ids_by_agent_by_team_v3(wrong_projection)
-    with pytest.raises(TypeError, match="requires context V3 or V4"):
+    with pytest.raises(TypeError, match="requires context V3, V4 or V5"):
         reconstruct_class_ids_by_agent_by_team_v3(_projection_context())

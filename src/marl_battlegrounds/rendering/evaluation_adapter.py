@@ -76,6 +76,7 @@ from marl_battlegrounds.evaluation.models import (
 )
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContext,
+    EvaluationEventCaptureTheFlagV1,
     EvaluationEventV1,
     EvaluationFrame,
     EvaluationFrameV1,
@@ -3478,7 +3479,7 @@ class _VisualEventIdentityV2(TypedDict):
 
 
 def _project_visual_event_v2(
-    event: EvaluationEventV1,
+    event: EvaluationEventV1 | EvaluationEventCaptureTheFlagV1,
     *,
     trajectory_by_slot: dict[int, VisualAgentPhaseTrajectoryV2],
     public_agent_id_by_global_slot: tuple[str, ...],

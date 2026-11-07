@@ -41,15 +41,14 @@ from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
     EvaluationEpisodeContext,
     EvaluationEpisodeContextV1,
-    EvaluationEpisodeContextV2,
-    EvaluationEpisodeContextV3,
-    EvaluationEpisodeContextV4,
     EvaluationFrame,
     EvaluationFrameV1,
     EvaluationModel,
+    EvaluationTransition,
     EvaluationTransitionV1,
     SchemaVersionEntryV1,
     evaluation_frame_type_for_context,
+    evaluation_transition_type_for_context,
 )
 
 EPISODE_COMPLETION_SCHEMA_ID = "marl_battlegrounds.evaluation.episode_completion"
@@ -1616,23 +1615,25 @@ class EvaluationTransitionViewV1:
         Supported episode context.
     start_frame : EvaluationFrame
         Decision frame before the transition.
-    transition : EvaluationTransitionV1
-        V1 transition linking the two frames.
+    transition : EvaluationTransition
+        The transition linking the two frames: V2 for a Capture the Flag
+        context V5, V1 for every other context.
     successor_frame : EvaluationFrame
         Matching-version frame one simulator tick after start_frame.
 
     Notes
     -----
     Context V1 construction performs full semantic validation and stores detached
-    canonical copies. Context V2-V4 construction checks version/episode/frame
-    links and adjacent simulator ticks only, retaining supplied records; their
-    replay admission path owns full integrity checks. The class name alone
+    canonical copies. Every later context (V2-V5) checks frame and transition
+    versions, episode and frame links and adjacent simulator ticks only,
+    retaining supplied records; their replay admission path owns full
+    integrity checks. The class name alone
     does not promise equally deep validation for every context version.
     """
 
     context: EvaluationEpisodeContext
     start_frame: EvaluationFrame
-    transition: EvaluationTransitionV1
+    transition: EvaluationTransition
     successor_frame: EvaluationFrame
 
     def __post_init__(self) -> None:
@@ -1641,17 +1642,15 @@ class EvaluationTransitionViewV1:
         Newer contexts use the narrow captured-record join; V1 uses full semantic
         validation and detached copies. Raise ValueError on an invalid join.
         """
-        if type(self.context) in (
-            EvaluationEpisodeContextV2,
-            EvaluationEpisodeContextV3,
-            EvaluationEpisodeContextV4,
-        ):
-            # V2 carries captured facts; this view joins records without replaying
-            # the legacy simulator/metric semantic-validation pipeline.
+        if type(self.context) is not EvaluationEpisodeContextV1:
+            # V2 onward carry captured facts; this view joins records without
+            # replaying the legacy simulator/metric semantic-validation pipeline.
             expected_frame = evaluation_frame_type_for_context(self.context)
             if (
                 type(self.start_frame) is not expected_frame
                 or type(self.successor_frame) is not expected_frame
+                or type(self.transition)
+                is not evaluation_transition_type_for_context(self.context)
             ):
                 raise ValueError(
                     "transition view frame versions must match their context"
@@ -2417,11 +2416,12 @@ class EvaluationEpisodeObserverV1:
         # independently from reducer progress.
         # This observer accepts only V1 contexts and validated V1 frames.
         successor = cast(EvaluationFrameV1, view.successor_frame)
+        transition = cast(EvaluationTransitionV1, view.transition)
         self._current_frame = successor
-        self._last_transition = view.transition
+        self._last_transition = transition
         self._validated_transition_count += 1
         if self._retained_transitions is not None:
-            self._retained_transitions.append(view.transition)
+            self._retained_transitions.append(transition)
         if self._retained_frames is not None:
             self._retained_frames.append(successor)
 

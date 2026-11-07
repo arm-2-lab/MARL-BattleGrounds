@@ -1211,7 +1211,7 @@ def test_real_death_and_respawn_keep_recipient_self_authorized_in_live_and_repla
     for _ in range(3):
         session = submit_next_script_frame(session)
         view = session.incoming_evaluation_view
-        assert view is not None
+        assert view is not None and type(view.transition) is EvaluationTransitionV1
         frames.append(session.current_evaluation_frame)
         transitions.append(view.transition)
         carriers.append(

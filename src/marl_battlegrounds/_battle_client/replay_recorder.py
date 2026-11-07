@@ -9,6 +9,7 @@ serialize calls; this class does not own a lock or advance the simulator.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from marl_battlegrounds._battle_client.protocol import (
     RecordingLifecycleV1,
@@ -35,6 +36,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV4,
     EvaluationFrame,
     EvaluationFrameV3,
+    EvaluationTransition,
     EvaluationTransitionV1,
     canonical_digest_sha256,
 )
@@ -253,14 +255,16 @@ class DebuggerReplayRecorder:
         )
 
     def preview_status_after_append_v1(
-        self, transition: EvaluationTransitionV1
+        self, transition: EvaluationTransition
     ) -> RecordingStatusV1:
         """Check the next transition and predict whether capture will close.
 
         Parameters
         ----------
-        transition : EvaluationTransitionV1
-            Exact transition model for this episode and the next contiguous index.
+        transition : EvaluationTransition
+            Exact transition model for this episode and the next contiguous
+            index. The BattleClient records Team Deathmatch only, so only an
+            EvaluationTransitionV1 is accepted.
 
         Returns
         -------
@@ -309,14 +313,15 @@ class DebuggerReplayRecorder:
         )
 
     def append(
-        self, transition: EvaluationTransitionV1, successor_frame: EvaluationFrameV3
+        self, transition: EvaluationTransition, successor_frame: EvaluationFrameV3
     ) -> None:
         """Retain one transition and its adjacent successor frame.
 
         Parameters
         ----------
-        transition : EvaluationTransitionV1
-            Exact next transition for this episode.
+        transition : EvaluationTransition
+            Exact next transition for this episode; only an EvaluationTransitionV1
+            is accepted (Team Deathmatch).
         successor_frame : EvaluationFrameV3
             Exact next frame. Its IDs and simulator step must follow the current frame.
 
@@ -352,7 +357,8 @@ class DebuggerReplayRecorder:
         except (TypeError, ValueError):
             self._failed_append = True
             raise
-        self._transitions.append(transition)
+        # The preview above refused anything but an exact V1 transition.
+        self._transitions.append(cast(EvaluationTransitionV1, transition))
         self._frames.append(successor_frame)
         self.lifecycle = status.lifecycle
         if self.lifecycle == "sealed":
