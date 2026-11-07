@@ -14,12 +14,13 @@ entry.yaml's name is the method name, and its repo part is the name in
 lowercase with every other run of characters made one hyphen ("My_MAPPO" gives
 "my-mappo"); an empty or over-64-character part is refused. starting_models
 lists downloads as strings, released names or hf:// addresses with a full
-commit; 1.0.3's {model, sha256} and {model, commit} items are read by model
+commit; mapping items such as 1.0.3's {model, sha256} are read by model
 alone, paths inside the repository are left out (a released name is kept even
 when a folder of that name exists), and 1.0.3's training_maps and config keys
 are accepted. Anything else in the list, a bad step suffix, an address without
 a full commit, an unknown key, a load that is not module:function and a file
-that is not valid YAML are refused with ValueError.
+that is not valid YAML are refused with ValueError; a short released name gets
+the full name suggested.
 
 Step 4 accepts a uv.lock only when every marl-battlegrounds in it is a release
 from PyPI's index, with each file that version's own file on PyPI's file
@@ -33,8 +34,9 @@ removed, then once more offline behind sandbox(clone, False). An outside
 hf:// address downloads in a child of the check's own isolated Python, behind
 no sandbox, and that child's code fails a path with no files. A failed
 download fails step 4, and so does running past step 4's hour. Children in
-steps 5 to 9 run behind sandbox(clone, False) with exactly
-entry_environment(clone, offline=True), HF_HOME and HF_HUB_OFFLINE included,
+steps 5 to 7 run behind sandbox(clone, False) with exactly
+entry_environment(clone, offline=True), HF_HOME, HF_HUB_OFFLINE and
+WANDB_MODE=offline included (online children drop the last two),
 and step 7's sealed export writes inside the clone before the check copies it
 to the work folder's model.zip; a link there is refused, so the check never
 copies a file the link points to. A built-in run's choice is read by a sealed
@@ -46,11 +48,14 @@ After step 5 the waiting rule holds: a run stopped at its time limit with
 nothing saved to enter (an empty own-loop output folder, or a built-in run
 without a choice) makes steps 6, 7 and 9 wait and step 8 "not measured"; a run
 that ended by itself with nothing saved fails step 6; a saved run makes step 8
-pass even when loading fails; an error in step 9 fails step 9 instead of
-crashing the check. Step 9 plays the check's copy of the export in a child of
-the check's own isolated Python with deterministic XLA, and passes or fails
-only a reading on an RTX 5090 that reports its memory; a reading on another
-GPU, one without memory, and a CPU are "not measured".
+pass even when loading fails, with the steps still recorded in order; an
+error in step 9 fails step 9 instead of crashing the check. Step 9 plays the
+check's copy of the export in a child of the check's own isolated Python with
+deterministic XLA, and passes or fails
+only a reading on the desktop RTX 5090 (OFFICIAL_GPU) that reports its memory;
+a reading on another GPU (a laptop RTX 5090 included), one without memory, and
+a CPU are "not measured". A crash or a timeout fails step 9 only when the
+machine is that card, and is "not measured" elsewhere.
 
 check_entry sorts steps 1-7 as must pass and 8-9 as measured here: a failed
 measured step never fails the check, a failed must-pass step does. A dirty
@@ -89,7 +94,7 @@ import time
 import tomllib
 import urllib.parse
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -127,8 +132,14 @@ def _write_entry(folder: Path, **change: object) -> None:
     path.write_text(yaml.safe_dump({**yaml.safe_load(path.read_text()), **change}))
 
 
-def _checker(folder: Path, sandbox: entry.Sandbox | None = None) -> entry._Checker:
-    checker = entry._Checker(str(folder), None, folder.parent, 0.05, None, sandbox)
+def _checker(
+    folder: Path,
+    sandbox: Callable[[Path, bool], Sequence[str]] | None = None,
+    machine: str = "Test GPU",
+) -> entry._Checker:
+    checker = entry._Checker(
+        str(folder), None, folder.parent, 0.05, None, sandbox, machine
+    )
     checker.clone, checker.entry = folder, entry._read_entry(folder)
     checker.hf_home = folder / ".entry-check-hf"
     return checker
@@ -248,6 +259,7 @@ def test_entry_yaml_reads_downloads_and_accepts_1_0_3_files(starter: Path) -> No
         ({"starting_models": [{"sha256": "a" * 64}]}, "a released name or"),
         ({"starting_models": ["hf://someone/model@main/w.bin"]}, "40-character"),
         ({"starting_models": ["MARL-BattleGrounds/tdm-season-0-qmix@main"]}, "@ must"),
+        ({"starting_models": ["qmix@final"]}, "Did you mean"),
     ],
 )
 def test_entry_yaml_refuses_bad_settings(
@@ -356,6 +368,7 @@ def test_downloads_and_children_run_behind_the_sandbox(
         return ["sealed", "online" if online else "offline"]
 
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("WANDB_MODE", "online")
 
     def found(name: str) -> str:
         return f"/usr/bin/{name}"
@@ -375,6 +388,7 @@ def test_downloads_and_children_run_behind_the_sandbox(
         assert command[:2] == ["sealed", sealed] and command[-2:] == ["download", QMIX]
         assert cwd == starter and env["HF_HOME"] == str(checker.hf_home)
         assert ("HF_HUB_OFFLINE" in env) == (sealed == "offline")
+        assert env.get("WANDB_MODE") == ("offline" if sealed == "offline" else None)
         assert 0 < timeout <= 3600
     command, cwd, env, _ = outside
     assert command == [sys.executable, "-I", "-c", entry._FETCH_CODE, OUTSIDE]
@@ -477,6 +491,7 @@ def test_a_saved_run_passes_step_8_and_a_step_9_error_fails_step_9(
     monkeypatch.setattr(entry._Checker, "find_choice", _own_loop)
     checker = _checker(starter)
     checker.after_training()
+    assert [number for number in checker.steps if number >= 6] == [6, 7, 8, 9]
     assert checker.steps[6].detail == "Loading took more than 10 minutes."
     assert checker.steps[8].status == "passed"
     assert "runs/entry holds the run's saves" in checker.steps[8].detail
@@ -501,6 +516,7 @@ def test_a_saved_run_passes_step_8_and_a_step_9_error_fails_step_9(
     [
         ("cpu", None, "not measured"),
         ("NVIDIA GeForce RTX 4090", 10**9, "not measured"),
+        ("NVIDIA GeForce RTX 5090 Laptop GPU", 10**9, "not measured"),
         ("NVIDIA GeForce RTX 5090", None, "not measured"),
         ("NVIDIA GeForce RTX 5090", 10**9, "passed"),
         ("NVIDIA GeForce RTX 5090", 11 * 10**9, "failed"),
@@ -534,6 +550,29 @@ def test_step_9_decides_only_on_an_rtx_5090(
 
     monkeypatch.setattr(entry, "_run", played)
     assert _checker(starter).step_9()[0] == status
+
+
+@pytest.mark.parametrize(
+    ("machine", "code", "status"),
+    [
+        ("Test GPU", 1, "not measured"),
+        ("Test GPU", None, "not measured"),
+        (entry.OFFICIAL_GPU, 1, "failed"),
+        (entry.OFFICIAL_GPU, None, "failed"),
+    ],
+)
+def test_a_step_9_crash_fails_only_on_our_card(
+    starter: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    machine: str,
+    code: int | None,
+    status: str,
+) -> None:
+    def crashed(*args: object, **kwargs: object) -> tuple[int | None, str, str]:
+        return code, "", "out of memory"
+
+    monkeypatch.setattr(entry, "_run", crashed)
+    assert _checker(starter, machine=machine).step_9()[0] == status
 
 
 def test_steps_sort_into_must_pass_and_measured_here() -> None:
