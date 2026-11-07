@@ -522,9 +522,14 @@ def _executable_tree(source: str) -> str:
     function docstrings, and later ones such as a NamedTuple field's docstring.
     Such a statement does nothing when the code runs, so documentation,
     comments and formatting never change the result, and any other edit does.
-    Host-only; source must parse (SyntaxError otherwise).
+    A source that does not parse, such as a Core file still being written,
+    gives its exact text instead, so preparation still works and any edit to
+    it still changes the result. Host-only.
     """
-    tree = ast.parse(source)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source
     for node in ast.walk(tree):
         for field in ("body", "orelse", "finalbody"):
             statements = getattr(node, field, None)

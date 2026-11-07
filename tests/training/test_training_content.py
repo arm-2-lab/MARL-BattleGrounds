@@ -19,7 +19,8 @@ republished binding as well as a binding whose protected roots alone differ.
 The simulator-rules identity ignores every bare string (module, class,
 function and field docstrings), comments and formatting, and changes with code.
 It covers every Python file under core/, subfolders included, so a new or
-moved Core file changes it, and its
+moved Core file changes it (a file that does not parse yet, as while it is being
+written, still counts, by its exact text), and its
 value for the committed Core is pinned: a Core commit that changes executable
 code fails the pin until its fingerprint is updated (and, when old games still
 play the same, the previous one is listed as equivalent).
@@ -250,7 +251,10 @@ def test_simulator_rules_cover_every_core_file(
     assert _rules_digest() == added
     (copy / "core" / "flags").mkdir()
     (copy / "core" / "rules.py").rename(copy / "core" / "flags" / "rules.py")
-    assert _rules_digest() not in (_SIMULATOR_RULES, added)
+    moved = _rules_digest()
+    assert moved not in (_SIMULATOR_RULES, added)
+    (copy / "core" / "draft.py").write_text("def unfinished(\n")
+    assert _rules_digest() not in (_SIMULATOR_RULES, added, moved)
 
 
 def test_capture_the_flag_content_is_version_4_on_its_own_maps(
