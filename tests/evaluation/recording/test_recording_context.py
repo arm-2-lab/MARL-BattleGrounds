@@ -452,7 +452,7 @@ def test_readable_map_name_changes_only_the_label() -> None:
         assert shown.technical_name == name
         assert shown.display_name == "Whispers of N'Zoth"
     labels = {
-        info.map_id: map_identity._registered_map(info.map_id).display_name  # pyright: ignore[reportPrivateUsage]
+        info.map_id: map_identity._registered_map(info.map_id, "tdm").display_name  # pyright: ignore[reportPrivateUsage]
         for info in list_tdm_maps()
     }
     assert labels[12] == "Foxhole" and labels[47] == "Teutoburg Forest"

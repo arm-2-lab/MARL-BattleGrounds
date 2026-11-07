@@ -35,6 +35,31 @@ DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 1.25
 DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS = 30
 DEFAULT_CTF_FLAG_HOME_POSITIONS = ((0.5, 5.0), (19.5, 5.0))
 
+# The Core mode each task name plays (EnvConfig.task_mode): Team Deathmatch is
+# 1 and Capture the Flag 3, the values of core.types.TASK_MODE_TDM and
+# TASK_MODE_CTF, written here as plain integers because Core loads JAX and this
+# module must not (map identity reads them). A test pins them to Core's. King of
+# the Hills joins with its task name.
+TASK_MODES: Mapping[TaskName, int] = {"tdm": 1, "ctf": 3}
+
+
+def task_for_mode(task_mode: int) -> TaskName | None:
+    """Return the task name that plays one Core mode, or None if none does.
+
+    Parameters
+    ----------
+    task_mode : int
+        An EnvConfig.task_mode value, for example 3.
+
+    Returns
+    -------
+    TaskName | None
+        ``"tdm"`` for 1 and ``"ctf"`` for 3. None for the neutral mode 0, King
+        of the Hills (2) and any other value. Host-only; imports no JAX.
+    """
+    return next((name for name, mode in TASK_MODES.items() if mode == task_mode), None)
+
+
 # Each task's defaults, read by every caller that serves more than one mode:
 # the score a team needs to win (TDM points, CTF captures), and the Red Zone
 # depth in map units (CTF has no Red Zone, so 0.0). King of the Hills joins

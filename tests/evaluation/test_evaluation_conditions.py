@@ -29,10 +29,12 @@ each sign alone is enough, and a pass with no contract is covered too.
 
 Map evidence and each task's maps: default_maps reads each task's own listing
 (validation 42-46 and test 47-51 in both modes today). Map evidence reads each
-config's own geometry (map_layout): a TDM config gets the same keys its V2
-record gives, an exchanged game passes with its source's pads and fails with
-its own, a Capture the Flag config on map 47 gets map 47's keys, and a moved
-obstacle fails.
+config's own mode's registry and geometry (map_layout): a TDM config gets the
+same keys its V2 record gives, an exchanged game passes with its source's pads
+and fails with its own, a Capture the Flag config on map 47 gets Capture the
+Flag's own map name, its display name drops the "ctf_" prefix, a Team
+Deathmatch-only path (the snapshot route) and a neutral layout refuse it, and a
+moved obstacle fails.
 """
 
 # Host setup tests intentionally inspect the private resolver boundary.
@@ -52,6 +54,8 @@ import pytest
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.evaluation import evaluation_conditions
 from marl_battlegrounds.evaluation._recording.map_identity import (
+    _registered_map,
+    _snapshot_map_metadata,
     registered_map_metadata,
 )
 from marl_battlegrounds.evaluation.catalog import (
@@ -175,7 +179,19 @@ def test_map_evidence_reads_each_configs_own_geometry() -> None:
         map_id=47, team_a_roster=_MAGE, team_b_roster=_ROGUE
     )
     ctf_pads = ctf.team_spawn_pad_positions
-    assert registered_map_metadata(47, map_layout(ctf, ctf_pads))[0].value == "47"
+    ctf_keys = registered_map_metadata(47, map_layout(ctf, ctf_pads))
+    assert [key.value for key in ctf_keys[:2]] == [
+        "47",
+        "ctf_map_id_47_teutoburg_forest_test",
+    ]
+    assert _registered_map(42, "ctf").display_name == "Cheshire Cat"
+    with pytest.raises(ValueError, match="snapshot map identity does not match"):
+        _snapshot_map_metadata(
+            47, map_layout(ctf, ctf_pads), list_tdm_maps()[47].model_dump(mode="json")
+        )
+    neutral = map_layout(ctf, ctf_pads)._replace(task_mode=0)
+    with pytest.raises(ValueError, match="does not match the episode geometry"):
+        registered_map_metadata(47, neutral)
     obstacles = np.asarray(ctf.obstacles).copy()
     obstacles[0, 1] += 0.5
     moved = ctf._replace(obstacles=jnp.asarray(obstacles))

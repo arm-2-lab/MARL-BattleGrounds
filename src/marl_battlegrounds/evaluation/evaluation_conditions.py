@@ -525,12 +525,13 @@ def roster_default(
 
 
 def map_layout(config: EnvConfig, pads: object) -> MapLayout:
-    """Read a config's map geometry for map evidence, in any mode.
+    """Read a config's mode and map geometry for map evidence.
 
     Parameters
     ----------
     config : EnvConfig
-        One scalar config; its map_width, map_height and obstacles are read.
+        One scalar config; its task_mode, map_width, map_height and obstacles
+        are read.
     pads : array-like
         The (2, N, 2) spawn banks to record, Team A first, in world units:
         the config's own, or for an exchanged game its source's.
@@ -538,17 +539,19 @@ def map_layout(config: EnvConfig, pads: object) -> MapLayout:
     Returns
     -------
     MapLayout
-        The geometry as Python floats of their float32 values, which is how
-        recorded geometry is compared (map_identity.registered_map_metadata).
+        The mode as an int and the geometry as Python floats of their float32
+        values, which is how recorded geometry is compared
+        (map_identity.registered_map_metadata). The mode picks the map registry:
+        a Capture the Flag config gets Capture the Flag's map names.
 
     Notes
     -----
-    Host-only; reads device values once. No mode or rule is read, so a
-    Capture the Flag config gets its map's identity like a TDM config.
+    Host-only; reads device values once. No rule is read.
     """
     from marl_battlegrounds.evaluation._recording.map_identity import MapLayout
 
     return MapLayout(
+        int(config.task_mode),
         float(config.map_width),
         float(config.map_height),
         tuple(
@@ -623,9 +626,10 @@ def prepare_schedule(
     A comparison needs two exact games and explicit equal seeds. Only
     unambiguous source-bank pairs without authored starts earn verified credit
     ("verified_spawn_pair"); other comparisons are "custom". Map evidence
-    compares map geometry only (map_layout), so every mode, rule and Red Zone
-    depth passes that check. Host-only: each distinct live config is hashed
-    once, and source checks read device values to the host.
+    checks the config's own mode's registry and map geometry (map_layout), so
+    every rule and Red Zone depth passes that check. Host-only: each distinct
+    live config is hashed once, and source checks read device values to the
+    host.
     """
     records: dict[str, dict[str, object]] = {}
     cached: dict[int, str] = {}
@@ -821,8 +825,8 @@ def prepare_source_choices(
     Notes
     -----
     This host setup helper changes only the caller's temporary dictionaries
-    and opens no files. Map evidence compares map geometry only (map_layout),
-    so a config of any mode or Red Zone depth passes that check.
+    and opens no files. Map evidence checks the config's own mode's registry
+    and map geometry (map_layout), so any Red Zone depth passes that check.
     """
     from marl_battlegrounds.evaluation._recording.map_identity import (
         registered_map_metadata,

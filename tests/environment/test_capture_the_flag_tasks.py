@@ -1,28 +1,33 @@
 """Check the Capture the Flag flag homes and the spawn exchange.
 
-Contracts: on all 52 maps the default flag homes are the two spawn centers,
-every spawn pad of both teams can walk to both homes on the fine route field,
-and each team's walk from its spawn center to the enemy home matches the other
-team's within half a fine cell. A spawn exchange swaps the two flag homes with
-the pads: balanced_spawn_configs keeps them in the first half of the batch and
-swaps them in the second, and spawn_locations_for_source names an exchanged
-Capture the Flag config choice 1 but refuses one whose pads were exchanged
-without its homes. team_scores_for_mode, outcome_for_mode and
+Contracts: on all 52 Capture the Flag maps the default flag homes are the two
+spawn centers, every spawn pad of both teams can walk to both homes on the fine
+route field, and each team's walk from its spawn center to the enemy home
+matches the other team's within half a fine cell. A spawn exchange swaps the
+two flag homes with the pads: balanced_spawn_configs keeps them in the first
+half of the batch and swaps them in the second, and spawn_locations_for_source
+names an exchanged Capture the Flag config choice 1 but refuses one whose pads
+were exchanged without its homes. team_scores_for_mode, outcome_for_mode and
 score_threshold_for_mode read each mode's own scores, result and winning score,
 so a handle reports its own mode's (captures and the Capture the Flag result on
 a Capture the Flag handle, points and the Team Deathmatch result otherwise),
 and its training facts keep only its own mode's objective record: Core's
 Capture the Flag record on a Capture the Flag handle, nothing on a Team
-Deathmatch handle. make_standard_capture_the_flag_config
-builds the same config as converting the Team Deathmatch one, with its settings
-passed through; list_ctf_maps and maps_for_task give each mode's 52 maps.
-make("ctf") plays Capture the Flag on a listed map with the mode's default
-threshold, refuses a Red Zone depth, and a task name and its exact config must
-share a mode; the error names the task to pass. One dispatcher,
-make_standard_config, builds each task's standard config with the task's
-defaults (DEFAULT_SCORE_THRESHOLDS and DEFAULT_RED_ZONE_DEPTHS), takes only
-exactly 0.0 as a Capture the Flag depth, and is what normalize_episode_specs
-builds from map IDs; task_for_mode names the task each Core mode plays.
+Deathmatch handle. make_standard_capture_the_flag_config builds the same config
+as converting the Team Deathmatch one on Capture the Flag's own map geometry,
+with its settings passed through; list_ctf_maps and maps_for_task give each
+mode's 52 maps. Capture the Flag has its own 52 maps: ordered IDs,
+"ctf_map_id_<id>_" names ending in their split, Team Deathmatch's splits and
+curriculum flags, and its own entries; the factory reads its own map files and
+never Team Deathmatch's, listed_map_id accepts only the task's own entries, and
+TASK_MODES equals Core's mode constants. make("ctf") plays Capture the Flag on
+a listed map with the mode's default threshold, refuses a Red Zone depth, and a
+task name and its exact config must share a mode; the error names the task to
+pass. One dispatcher, make_standard_config, builds each task's standard config
+with the task's defaults (DEFAULT_SCORE_THRESHOLDS and
+DEFAULT_RED_ZONE_DEPTHS), takes only exactly 0.0 as a Capture the Flag depth,
+and is what normalize_episode_specs builds from map IDs; task_for_mode names
+the task each Core mode plays.
 """
 
 import math
@@ -47,7 +52,8 @@ from marl_battlegrounds.environment import (
     team_scores_for_mode,
 )
 from marl_battlegrounds.evaluation.evaluate import normalize_episode_specs
-from marl_battlegrounds.modes.team_deathmatch._assets import map_geometry
+from marl_battlegrounds.modes.capture_the_flag import _assets as ctf_assets
+from marl_battlegrounds.modes.team_deathmatch import _assets as tdm_assets
 from marl_battlegrounds.policies.route_field import (
     FINE_CELL_SIZE,
     blocked_cells,
@@ -55,10 +61,12 @@ from marl_battlegrounds.policies.route_field import (
     route_distances,
 )
 from marl_battlegrounds.tasks import (
+    TASK_MODES,
     AgentClassName,
     balanced_spawn_configs,
     list_ctf_maps,
     list_tdm_maps,
+    listed_map_id,
     make_standard_capture_the_flag_config,
     make_standard_config,
     make_standard_team_deathmatch_config,
@@ -81,8 +89,8 @@ def _walk(field: jax.Array, start: np.ndarray) -> float:
 
 
 def test_flag_homes_are_the_spawn_centers_and_reachable_on_every_map() -> None:
-    for info in list_tdm_maps():
-        geometry = map_geometry(info)
+    for info in list_ctf_maps():
+        geometry = ctf_assets.map_geometry(info)
         pads = np.asarray(geometry.team_spawn_pad_positions, dtype=np.float32)
         centers = pads.mean(axis=1)
         np.testing.assert_array_equal(centers, _HOMES)
@@ -189,10 +197,18 @@ def test_only_a_capture_the_flag_handle_returns_capture_the_flag_training_facts(
 
 
 def test_the_factory_matches_the_converted_team_deathmatch_config() -> None:
+    geometry = ctf_assets.map_geometry(list_ctf_maps()[29])
     converted = capture_the_flag_config(
         make_standard_team_deathmatch_config(
             map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
         )
+    )._replace(
+        map_width=geometry.map_width,
+        map_height=geometry.map_height,
+        obstacles=jnp.asarray(geometry.obstacles, jnp.float32),
+        team_spawn_pad_positions=jnp.asarray(
+            geometry.team_spawn_pad_positions, jnp.float32
+        ),
     )
     leaves = jax.tree.leaves(jax.tree.map(np.array_equal, _CONFIG, converted))
     assert all(leaves)
@@ -216,7 +232,14 @@ def test_the_factory_matches_the_converted_team_deathmatch_config() -> None:
 
 
 def test_each_mode_lists_its_maps_through_one_dispatcher() -> None:
-    assert list_ctf_maps() == list_tdm_maps()
+    ctf, tdm = list_ctf_maps(), list_tdm_maps()
+    assert [info.map_id for info in ctf] == list(range(52))
+    assert all(info.name.startswith(f"ctf_map_id_{info.map_id}_") for info in ctf)
+    assert all(info.name.endswith(f"_{info.split}") for info in ctf)
+    assert [(c.split, c.curriculum) for c in ctf] == [
+        (t.split, t.curriculum) for t in tdm
+    ]
+    assert ctf != tdm
     assert maps_for_task("ctf") == list_ctf_maps()
     assert maps_for_task("tdm") == list_tdm_maps()
     with pytest.raises(ValueError, match=r"^task must be one of 'tdm', 'ctf'"):
@@ -328,3 +351,32 @@ def test_one_dispatcher_builds_each_tasks_standard_config() -> None:
         None, 5, _TEAM_A, _TEAM_B, 3, 300, red_zone_depth=0.0, task="ctf"
     )
     assert [spec.map_id for spec in defaults] == [47, 48, 49, 50, 51]
+
+
+def test_the_capture_the_flag_factory_reads_its_own_maps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reads: list[str] = []
+    own = ctf_assets._resource_bytes  # pyright: ignore[reportPrivateUsage]
+
+    def recorded(relative_path: str) -> bytes:
+        reads.append(relative_path)
+        return own(relative_path)
+
+    def refused(relative_path: str) -> bytes:
+        raise AssertionError(f"read Team Deathmatch's {relative_path}")
+
+    monkeypatch.setattr(ctf_assets, "_resource_bytes", recorded)
+    monkeypatch.setattr(tdm_assets, "_resource_bytes", refused)
+    make_standard_capture_the_flag_config(
+        map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+    )
+    assert "maps/29.json" in reads
+
+
+def test_listed_entries_belong_to_one_task_and_modes_match_core() -> None:
+    assert TASK_MODES == {"tdm": TASK_MODE_TDM, "ctf": TASK_MODE_CTF}
+    assert listed_map_id(list_ctf_maps()[42], "ctf") == 42
+    assert listed_map_id(list_tdm_maps()[42], "tdm") == 42
+    with pytest.raises(ValueError, match=r"with list_ctf_maps\(\) from"):
+        listed_map_id(list_tdm_maps()[42], "ctf")

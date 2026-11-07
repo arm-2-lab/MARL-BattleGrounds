@@ -48,6 +48,9 @@ from marl_battlegrounds._task_settings import (
     SPAWN_EXCHANGE_FIELDS as SPAWN_EXCHANGE_FIELDS,
 )
 from marl_battlegrounds._task_settings import (
+    TASK_MODES as TASK_MODES,
+)
+from marl_battlegrounds._task_settings import (
     AgentClassName as AgentClassName,
 )
 from marl_battlegrounds._task_settings import (
@@ -55,6 +58,9 @@ from marl_battlegrounds._task_settings import (
 )
 from marl_battlegrounds._task_settings import (
     canonical_tournament_rosters as canonical_tournament_rosters,
+)
+from marl_battlegrounds._task_settings import (
+    task_for_mode as task_for_mode,
 )
 from marl_battlegrounds.core.config import (
     CANONICAL_PRODUCT_MOVEMENT_SCALE,
@@ -87,6 +93,7 @@ from marl_battlegrounds.core.types import (
 )
 from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v2
 from marl_battlegrounds.evaluation.models import canonical_digest_sha256
+from marl_battlegrounds.modes.capture_the_flag import _assets as ctf_assets
 from marl_battlegrounds.modes.team_deathmatch._assets import (
     MapGeometry,
     ScenarioContent,
@@ -94,6 +101,7 @@ from marl_battlegrounds.modes.team_deathmatch._assets import (
     TDMMapInfo,
     TDMScenarioInfo,
     asset_manifest,
+    current_map_id,
     map_geometry,
     scenario_content,
 )
@@ -179,18 +187,18 @@ def list_ctf_maps() -> tuple[TDMMapInfo, ...]:
     Returns
     -------
     tuple[TDMMapInfo, ...]
-        The 52 entries, split as in Team Deathmatch: curriculum and other
-        training maps, then validation and test maps. Until Capture the Flag
-        has its own map folder, these are Team Deathmatch's entries: the same
-        geometry under the same IDs.
+        The 52 entries of Capture the Flag's own catalog, named
+        "ctf_map_id_<id>_<words>_<split>" and split as in Team Deathmatch:
+        curriculum and other training maps, then validation 42-46 and test
+        47-51. Their maps were copied from Team Deathmatch's on 7 November
+        2026, and Capture the Flag owns them from then on.
 
     Notes
     -----
-    The one owner of Capture the Flag's map list, so callers keep working when
-    the mode's own maps arrive. Reads the same cached, validated package
-    manifest as list_tdm_maps; package errors propagate.
+    Reads Capture the Flag's own cached, validated package manifest; package
+    errors propagate.
     """
-    return asset_manifest().maps
+    return ctf_assets.asset_manifest().maps
 
 
 def maps_for_task(task: TaskName) -> tuple[TDMMapInfo, ...]:
@@ -223,28 +231,6 @@ def maps_for_task(task: TaskName) -> tuple[TDMMapInfo, ...]:
     raise ValueError(
         f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
     )
-
-
-# The Core mode each task name plays (EnvConfig.task_mode). King of the Hills
-# joins with its task name.
-TASK_MODES: dict[TaskName, int] = {"tdm": TASK_MODE_TDM, "ctf": TASK_MODE_CTF}
-
-
-def task_for_mode(task_mode: int) -> TaskName | None:
-    """Return the task name that plays one Core mode, or None if none does.
-
-    Parameters
-    ----------
-    task_mode : int
-        An EnvConfig.task_mode value, for example 3.
-
-    Returns
-    -------
-    TaskName | None
-        ``"tdm"`` for 1 and ``"ctf"`` for 3. None for the neutral mode 0, King
-        of the Hills (2) and any other value. Host-only.
-    """
-    return next((name for name, mode in TASK_MODES.items() if mode == task_mode), None)
 
 
 def check_config_task(
@@ -763,15 +749,42 @@ def _source_config_with_class_ids(  # pyright: ignore[reportUnusedFunction]
     return source._replace(agent_profile=profile), valid
 
 
-def _map_info(map_id: int) -> TDMMapInfo:
-    """Return the current catalog entry for a plain Python map ID.
+def _map_info(map_id: int, task: TaskName) -> TDMMapInfo:
+    """Return one task's current catalog entry for a plain Python map ID.
 
     map_id must be an int from 0 through 51; booleans and non-integers are rejected
-    with ValueError. The catalog owns names and source identities.
+    with ValueError. task picks the catalog (maps_for_task), which owns names and
+    source identities.
     """
-    if type(map_id) is not int or not 0 <= map_id < len(list_tdm_maps()):
+    entries = maps_for_task(task)
+    if type(map_id) is not int or not 0 <= map_id < len(entries):
         raise ValueError("map_id must be an approved integer from 0 through 51")
-    return list_tdm_maps()[map_id]
+    return entries[map_id]
+
+
+def listed_map_id(info: TDMMapInfo, task: TaskName) -> int:
+    """Return the ID of an entry taken from one task's map listing.
+
+    Parameters
+    ----------
+    info : TDMMapInfo
+        An entry from maps_for_task(task), list_tdm_maps or list_ctf_maps.
+    task : TaskName
+        ``"tdm"`` or ``"ctf"``; the entry must be that listing's current one.
+
+    Returns
+    -------
+    int
+        The entry's public ID.
+
+    Raises
+    ------
+    ValueError
+        Any field differs from the task's current entry; the message names the
+        listing to choose again from. A Team Deathmatch entry is not a Capture
+        the Flag entry, because their names differ.
+    """
+    return (current_map_id if task == "tdm" else ctf_assets.current_map_id)(info)
 
 
 def _roster_ids(roster: Sequence[AgentClassName], *, name: str) -> tuple[int, ...]:
@@ -964,7 +977,7 @@ def make_standard_team_deathmatch_config(
         team_b_roster, name="team_b_roster"
     )
     return _make_config(
-        map_geometry(_map_info(map_id)),
+        map_geometry(_map_info(map_id, "tdm")),
         ids,
         (len(team_a_roster), len(team_b_roster)),
         rules=_team_deathmatch_rules(score_threshold, red_zone_depth),
@@ -1035,7 +1048,7 @@ def make_standard_capture_the_flag_config(
         team_b_roster, name="team_b_roster"
     )
     return _make_config(
-        map_geometry(_map_info(map_id)),
+        ctf_assets.map_geometry(_map_info(map_id, "ctf")),
         ids,
         (len(team_a_roster), len(team_b_roster)),
         rules=_capture_the_flag_rules(
@@ -1165,7 +1178,7 @@ def make_canonical_team_deathmatch_evaluation_config(
     canonical_tournament_rosters owns the shared roster definition. This factory
     does not create a paired schedule, exchange banks or qualify an official run.
     """
-    _map_info(map_id)
+    _map_info(map_id, "tdm")
     if map_id not in CANONICAL_TDM_EVALUATION_MAP_IDS:
         raise ValueError(
             "canonical evaluation map_id must be one of "

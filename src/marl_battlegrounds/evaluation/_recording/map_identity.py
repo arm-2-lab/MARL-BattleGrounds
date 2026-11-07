@@ -3,7 +3,10 @@
 Host-only helpers match explicit asset identity or registered metadata against
 the current catalog, retained map history and approved aliases. They also own
 each map's readable name, which the clients show; the technical name stays the
-stored identity. Geometry alone
+stored identity. New map evidence (registered_map_metadata) reads the record's
+own mode's catalog: Team Deathmatch's, or Capture the Flag's own maps. The
+readers of saved records still read Team Deathmatch's only, until Capture the
+Flag records exist. Geometry alone
 never grants an old recording a map ID or split. Custom layouts remain unnamed
 unless the record provides truthful descriptive text. No JAX runtime is imported here.
 """
@@ -18,7 +21,12 @@ from typing import Annotated, Any, Literal, NamedTuple
 
 from pydantic import Field
 
-from marl_battlegrounds._task_settings import SPAWN_EXCHANGE_FIELDS
+from marl_battlegrounds._task_settings import (
+    SPAWN_EXCHANGE_FIELDS,
+    TASK_MODES,
+    TaskName,
+    task_for_mode,
+)
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
     EvaluationEpisodeContext,
@@ -26,6 +34,7 @@ from marl_battlegrounds.evaluation.models import (
     ResolvedEnvConfigV1,
     ResolvedEnvConfigV2,
 )
+from marl_battlegrounds.modes.capture_the_flag import _assets as ctf_assets
 from marl_battlegrounds.modes.team_deathmatch._assets import (
     MapGeometry,
     TDMMapInfo,
@@ -123,12 +132,13 @@ def _map_identity(
 ) -> RecordedMap:
     """Build a readable label from a verified ID, technical name and split.
 
-    The label is the technical name without its "tdm-map-id-N-" prefix and
-    split suffix, in title case ("Teutoburg Forest"), unless _DISPLAY_NAMES
+    The label is the technical name without its "tdm-map-id-N-" or
+    "ctf_map_id_N_" prefix and split suffix, in title case ("Teutoburg
+    Forest"), unless _DISPLAY_NAMES
     gives that map another name ("Jamyla's Grove"). The technical name is
     returned unchanged.
     """
-    prefix = r"^tdm[-_]map[-_]id[-_]\d+[-_]"
+    prefix = r"^(?:tdm|ctf)[-_]map[-_]id[-_]\d+[-_]"
     name = re.sub(prefix, "", technical_name)
     name = re.sub(rf"[-_]{split}$", "", name)
     words = re.sub(r"[-_]+", "-", name)
@@ -141,12 +151,19 @@ def _map_identity(
     )
 
 
-@lru_cache(maxsize=52)
-def _registered_map(map_id: int) -> RecordedMap:
-    """Look up a current map ID and reject IDs outside the approved catalog."""
-    entries = asset_manifest().maps
+@lru_cache(maxsize=104)
+def _registered_map(map_id: int, task: TaskName) -> RecordedMap:
+    """Look up a current map ID in one task's catalog; reject IDs outside it.
+
+    task "tdm" reads Team Deathmatch's manifest and "ctf" Capture the Flag's
+    own. An invalid ID raises ValueError ("recorded map_id must identify an
+    approved TDM map", or "... CTF map").
+    """
+    entries = (asset_manifest() if task == "tdm" else ctf_assets.asset_manifest()).maps
     if type(map_id) is not int or not 0 <= map_id < len(entries):
-        raise ValueError("recorded map_id must identify an approved TDM map")
+        raise ValueError(
+            f"recorded map_id must identify an approved {task.upper()} map"
+        )
     info = entries[map_id]
     return _map_identity(map_id, info.name, info.split)
 
@@ -160,7 +177,7 @@ def _registered_map_by_name(name: str) -> tuple[RecordedMap, int]:
     """
     for info in asset_manifest().maps:
         if info.name == name:
-            return _registered_map(info.map_id), info.map_id
+            return _registered_map(info.map_id, "tdm"), info.map_id
     for row in map_history():
         if row.info.name == name:
             info = row.info
@@ -184,7 +201,9 @@ def _authored_map(
     """
     map_id = approved_map_id(asset_id, digest)
     if map_id is not None and revision == asset_manifest().maps[map_id].source.revision:
-        return _registered_map(map_id), map_geometry(asset_manifest().maps[map_id])
+        return _registered_map(map_id, "tdm"), map_geometry(
+            asset_manifest().maps[map_id]
+        )
     for row in map_history():
         source = row.info.source
         if (
@@ -209,10 +228,13 @@ def _authored_map(
 
 
 class MapLayout(NamedTuple):
-    """A map's geometry alone, for checking a config that has no resolved record.
+    """A map's mode and geometry, for checking a config that has no resolved record.
 
     Attributes
     ----------
+    task_mode : int
+        The config's EnvConfig.task_mode, which picks the map registry (Team
+        Deathmatch's or Capture the Flag's), as a resolved record's does.
     map_width, map_height : float
         World-space map dimensions.
     obstacles : tuple[tuple[float, ...], ...]
@@ -223,12 +245,14 @@ class MapLayout(NamedTuple):
 
     Notes
     -----
-    It holds no mode and no rules, because map identity is geometry only: a
-    Capture the Flag config on a map has that map's layout. Flag homes are
-    not map geometry. evaluation_conditions builds it from an EnvConfig.
-    Immutable and hashable, so registered_map_metadata can cache it.
+    It holds no rules: a map's identity is its mode's registry entry and its
+    geometry. Flag homes are not map geometry. evaluation_conditions builds it
+    from an EnvConfig. Immutable and hashable, so registered_map_metadata can
+    cache it; two modes' layouts of one map differ in task_mode, so they never
+    share a cached answer.
     """
 
+    task_mode: int
     map_width: float
     map_height: float
     obstacles: tuple[tuple[float, ...], ...]
@@ -238,19 +262,23 @@ class MapLayout(NamedTuple):
 def _geometry_matches(
     config: ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout,
     geometry: MapGeometry,
+    *,
+    mode: int,
 ) -> bool:
-    """Compare a recorded config or a layout with one exact packaged geometry.
+    """Compare a recorded config or a layout with one registry's packaged geometry.
 
-    Check dimensions, every ordered float32 obstacle row and both ordered
-    spawn banks. A resolved record must also be in TDM mode; a MapLayout has
-    no mode, so its caller has already checked it. Roster and other rules do
-    not change map identity. Neither immutable input is changed; this does
-    not simulate or read files.
+    mode is the registry's Core mode (TASK_MODES: 1 for Team Deathmatch, 3 for
+    Capture the Flag). The record's or layout's task_mode must equal it, so a
+    Team Deathmatch-only path refuses a Capture the Flag layout. Then check
+    dimensions, every ordered float32 obstacle row and both ordered spawn banks.
+    Roster and other rules do not change map identity. Neither immutable input
+    is changed; this does not simulate or read files.
     """
+    if config.task_mode != mode:
+        return False
     if not isinstance(config, MapLayout):
-        if config.task_mode != 1:
-            return False
         config = MapLayout(
+            config.task_mode,
             config.map_width,
             config.map_height,
             tuple(
@@ -269,6 +297,7 @@ def _geometry_matches(
             config.team_spawn_pad_positions,
         )
     return config == MapLayout(
+        mode,
         geometry.map_width,
         geometry.map_height,
         tuple(_float32(row) for row in geometry.obstacles),
@@ -288,7 +317,8 @@ def registered_map_metadata(
     Parameters
     ----------
     map_id : int
-        Current approved integer map ID.
+        Current approved integer map ID in the record's own mode's catalog
+        (Team Deathmatch's or Capture the Flag's).
     config : ResolvedEnvConfigV1 | ResolvedEnvConfigV2 | MapLayout
         Frozen resolved config for the actual episode (V2 records the Red Zone
         depth, which does not affect map geometry), or the episode's MapLayout,
@@ -303,9 +333,9 @@ def registered_map_metadata(
     Raises
     ------
     ValueError
-        The map ID is invalid, a resolved record's task is not TDM, or
-        dimensions, ordered obstacle slots or ordered spawn banks differ from
-        the asset.
+        The map ID is invalid, the record's mode has no map registry (only Team
+        Deathmatch and Capture the Flag have one), or dimensions, ordered
+        obstacle slots or ordered spawn banks differ from the mode's asset.
 
     Notes
     -----
@@ -313,9 +343,16 @@ def registered_map_metadata(
         order; it does not accept an exchanged bank by guessing a source relation.
         Roster and other non-geometry rules do not establish or change map identity.
     """
-    identity = _registered_map(map_id)
-    geometry = map_geometry(asset_manifest().maps[map_id])
-    if not _geometry_matches(config, geometry):
+    # The record's own mode picks the registry. A mode with none (neutral, King
+    # of the Hills) is checked against Team Deathmatch's, whose mode it fails.
+    task = task_for_mode(config.task_mode) or "tdm"
+    identity = _registered_map(map_id, task)
+    geometry = (
+        map_geometry(asset_manifest().maps[map_id])
+        if task == "tdm"
+        else ctf_assets.map_geometry(ctf_assets.asset_manifest().maps[map_id])
+    )
+    if not _geometry_matches(config, geometry, mode=TASK_MODES[task]):
         raise ValueError("recorded map_id does not match the episode geometry")
     return (
         AggregationKeyV1(name="map_id", value=str(map_id)),
@@ -349,7 +386,7 @@ def _snapshot_map_metadata(  # pyright: ignore[reportUnusedFunction]
         or approved[0].map_id != map_id
         or approved[0].technical_name != info.name
         or approved[0].split != info.split
-        or not _geometry_matches(config, approved[1])
+        or not _geometry_matches(config, approved[1], mode=TASK_MODES["tdm"])
     ):
         raise ValueError("snapshot map identity does not match its approved geometry")
     return (
@@ -489,7 +526,7 @@ def recorded_map(context: EvaluationEpisodeContext) -> RecordedMap:
         )
         if authored is not None:
             result, geometry = authored
-            if not _geometry_matches(source_geometry, geometry):
+            if not _geometry_matches(source_geometry, geometry, mode=TASK_MODES["tdm"]):
                 raise ValueError("recorded source does not match the episode geometry")
         return result
     if result.map_id is None:
@@ -502,16 +539,16 @@ def recorded_map(context: EvaluationEpisodeContext) -> RecordedMap:
         )
         if authored is None or authored[0] != result:
             raise ValueError("recorded source identity conflicts with its map metadata")
-        if not _geometry_matches(source_geometry, authored[1]):
+        if not _geometry_matches(source_geometry, authored[1], mode=TASK_MODES["tdm"]):
             raise ValueError("recorded source does not match the episode geometry")
         return result
     _, map_id = _registered_map_by_name(result.technical_name)
     current = asset_manifest().maps[map_id]
     if result.technical_name == current.name and _geometry_matches(
-        source_geometry, map_geometry(current)
+        source_geometry, map_geometry(current), mode=TASK_MODES["tdm"]
     ):
         return result
     historical = map_history()[map_id]
-    if _geometry_matches(source_geometry, historical.geometry):
+    if _geometry_matches(source_geometry, historical.geometry, mode=TASK_MODES["tdm"]):
         return result
     raise ValueError("recorded map_id does not match the episode geometry")

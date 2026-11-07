@@ -2,15 +2,16 @@
 
 Contracts: evaluate(task="ctf") builds every map-ID game in Capture the Flag
 and records options["task"] "ctf", the mode's winning score 3, Red Zone depth
-0.0 and map evidence by map ID; evaluate_episodes plays the mode its exact
-configs hold and records it the same way. A Team Deathmatch pass records no
-task key, so an explicit task="tdm" gives the same options as an omitted one.
-Before any game or file: a schedule mixing modes, a neutral or King of the
-Hills config, an exact config of another mode (the error names the task to
-pass), an unknown task, a Capture the Flag depth other than exactly 0.0, an
-exact source whose winning score conflicts with score_threshold, and replays
-in a Capture the Flag pass are refused. These run in memory on CPU; saved
-Capture the Flag passes need captures and outcomes in Core first.
+0.0 and map evidence that names Capture the Flag's own maps; evaluate_episodes
+plays the mode its exact configs hold and records it the same way. A Team
+Deathmatch pass records no task key, so an explicit task="tdm" gives the same
+options as an omitted one. Before any game or file: a schedule mixing modes, a
+neutral or King of the Hills config, an exact config of another mode (the error
+names the task to pass), an unknown task, a Capture the Flag depth other than
+exactly 0.0, an exact source whose winning score conflicts with
+score_threshold, and replays in a Capture the Flag pass are refused. These run
+in memory on CPU; saved Capture the Flag passes need captures and outcomes in
+Core first.
 """
 
 from pathlib import Path
@@ -57,6 +58,7 @@ def test_evaluate_plays_and_records_capture_the_flag() -> None:
         ("43", "registered"),
         ("43", "registered"),
     ]
+    assert evidence[0][1]["value"] == "ctf_map_id_42_cheshire_cat_validation"
     assert len(result.episodes) == 4
 
 

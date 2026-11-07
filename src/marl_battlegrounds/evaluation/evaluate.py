@@ -130,7 +130,6 @@ from marl_battlegrounds.evaluation.system_evaluation import (
     replace_initialization_roots,
     validate_evaluation_rosters,
 )
-from marl_battlegrounds.modes.team_deathmatch._assets import current_map_id
 from marl_battlegrounds.policies.input import Observations
 from marl_battlegrounds.tasks import (
     AgentClassName,
@@ -139,6 +138,7 @@ from marl_battlegrounds.tasks import (
     _swap_spawn_banks,
     canonical_tournament_rosters,
     check_config_task,
+    listed_map_id,
     make_standard_config,
     task_for_mode,
 )
@@ -890,9 +890,10 @@ def normalize_episode_specs(
     Parameters
     ----------
     maps : Iterable[MapInput] | None
-        Integer IDs, TDMMapInfo or scalar EnvConfig entries. None uses the
-        task's test maps (47-51 in both modes today); an explicit sequence
-        must not be empty.
+        Integer IDs, TDMMapInfo or scalar EnvConfig entries. A TDMMapInfo
+        must be the task's current entry (list_tdm_maps or list_ctf_maps). None
+        uses the task's test maps (47-51 in both modes today); an explicit
+        sequence must not be empty.
     num_episodes : int
         Positive total count, already validated by the caller.
     team_a_roster : Sequence[AgentClassName]
@@ -949,7 +950,7 @@ def normalize_episode_specs(
         if isinstance(item, EnvConfig):
             resolved.append((None, item))
             continue
-        map_id = current_map_id(item) if isinstance(item, TDMMapInfo) else item
+        map_id = listed_map_id(item, task) if isinstance(item, TDMMapInfo) else item
         if isinstance(map_id, bool) or not isinstance(map_id, Integral):
             raise TypeError(
                 "maps must contain integer map IDs, TDMMapInfo or EnvConfig"

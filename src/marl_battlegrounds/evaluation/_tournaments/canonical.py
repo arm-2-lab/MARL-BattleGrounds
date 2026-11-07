@@ -193,6 +193,7 @@ def _source_configs(
             raise ValueError("Source roster differs from tournament conditions")
         registered = declaration["registered_map"]
         if registered is not None:
+            from marl_battlegrounds._task_settings import TASK_MODES
             from marl_battlegrounds.evaluation._recording.map_identity import (
                 _authored_map,
                 _geometry_matches,
@@ -209,6 +210,7 @@ def _source_configs(
                 # Geometry only; V2 accepts any recorded Red Zone depth.
                 build_resolved_env_config_v2(source),
                 approved[1],
+                mode=TASK_MODES["tdm"],
             ):
                 raise ValueError(
                     "Source geometry differs from its registered map identity"
