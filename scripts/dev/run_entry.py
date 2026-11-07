@@ -43,9 +43,10 @@ hour to install and download, the training time, 10 minutes each to load and
 export, 30 minutes of play), so systemd never stops a healthy run. Inside the
 unit the environment keeps only ``PATH``, ``HOME``, ``LANG`` and
 ``CUDA_VISIBLE_DEVICES``, so no token or key in the maintainer's shell reaches
-the check or the entry. When the unit ends, ``journalctl --user -u <unit>``
-keeps its "Consumed ... memory peak" line, the unit's peak RAM with file cache
-included. systemd-oomd may still kill a unit whose memory is under heavy
+the check or the entry. The log's last line gives the unit's peak RAM, read
+from its cgroup's ``memory.peak`` with file cache included (systemd's own
+"Consumed" line leaves the peak out when a unit ends by itself, so it is not
+the record). systemd-oomd may still kill a unit whose memory is under heavy
 pressure before 48 GB (this machine's user manager kills at 50% pressure);
 ``journalctl -u systemd-oomd`` then names it.
 
@@ -261,9 +262,10 @@ def _check_here(kind: str, repository: str, commit: str, folder: Path) -> int:
     """Run the check in this process, sealed; the unit that ``_start`` made calls this.
 
     The intake test keeps ``check_entry``'s own 15 minutes; the official run
-    trains for ``entry.OFFICIAL_TRAIN_MINUTES`` and keeps its folder. Returns 0
-    when no must-pass step failed, else 1. The record and the kept folder are
-    as described at the top of this file.
+    trains for ``entry.OFFICIAL_TRAIN_MINUTES`` and keeps its folder. At the end
+    it prints the unit's peak RAM (see ``_peak_ram``) as the log's last line.
+    Returns 0 when no must-pass step failed, else 1. The record and the kept
+    folder are as described at the top of this file.
     """
     _clear_environment()
     here = folder / kind
@@ -280,7 +282,24 @@ def _check_here(kind: str, repository: str, commit: str, folder: Path) -> int:
         result = entry.check_entry(
             here, repository=repository, commit=commit, sandbox=sandbox
         )
+    print(_peak_ram())
     return 0 if result.passed else 1
+
+
+def _peak_ram() -> str:
+    """Say the peak RAM of this process's cgroup so far, as one line of text.
+
+    Inside the unit, the cgroup is the unit's own, so the peak covers the check
+    and every program it started, file cache included (``memory.peak``, cgroup
+    v2). Returns "Peak RAM: not measured ..." when the file cannot be read, for
+    example outside cgroup v2; it never raises.
+    """
+    try:
+        cgroup = Path("/proc/self/cgroup").read_text().strip().split("::", 1)[1]
+        peak = Path("/sys/fs/cgroup", cgroup.lstrip("/"), "memory.peak").read_text()
+        return f"Peak RAM of this unit: {int(peak) / 1e9:.2f} GB (memory.peak)."
+    except (OSError, IndexError, ValueError):
+        return "Peak RAM: not measured (no cgroup memory.peak here)."
 
 
 def _run_sealed(clone: Path, command: Sequence[str]) -> int:
