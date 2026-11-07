@@ -1,273 +1,42 @@
-# Tournament Rulebook
-
-**Version 1.** These are the official rules of the MARL-BattleGrounds
-tournament for Team Deathmatch, from Season 1 onward. King of the Hills and
-Capture the Flag get their own ladders and numbers later. How games become
-ratings is defined in the
-[tournaments guide](tournaments.md);
-this rulebook sets who may enter, what a run may use, and the limits.
-Every entry trains under the same budget on the same machine, so the rules
-reward MARL methods that are efficient in both samples and compute.
-
-**Submission edits, 10 October 2026.** Rules 4, 6.3 and 6.4 now name the
-`entry` commands that check and send an entry, the `uv.lock` and `entry.yaml`
-files a submission holds, and read-only keys for private repositories. These
-edits change how you submit, not any limit or rating rule, so this is still
-Version 1. One more submission edit, 11 October 2026: Rule 6.3 now asks that
-`uv.lock` install a released marl-battlegrounds from PyPI.
-
-**Season 1 edits, October 2026.** The Season now opens Season 1 early, with
-version 1.0.2, gives its dates and Season 2's, and says where tables are
-published. Rule 2.1 now says who stops the run at each limit. Rule 2.2 now
-says what your code may do, instead of describing a sealed machine. Rule 1.2
-adds five cost columns. The opening says what the shared budget rewards. No
-limit or rating rule changed, so this is still Version 1.
-
-Website: https://marl-battlegrounds.com/#leaderboard-rules
-
-## Words Used Here
-
-- **Game step:** one tick of one game. In 5v5, one game step holds 10 agent
-  decisions.
-- **System:** anything that returns a team's actions from its agents'
-  permitted inputs.
-- **Field:** the nine systems in a season's table, the Big Nine.
-- **Member:** a system in the field. **Challenger:** a submitted system.
-- **Maintainers:** the people who run MARL-BattleGrounds.
-
-## The Season
-
-- **One table a month, from January 2027.** A new table is published at 00:00 UK time
-  (Europe/London) on the first day of each month and stays the same all
-  month. Each season gives the exact instant in UTC and in your local time.
-- **Cutoff: 72 hours before.** Submissions for a season close 72 elapsed
-  hours before its table is published.
-- **The Big Nine.** Every season's field holds nine systems.
-- **Season 0** is our six baselines and three scripted bots, rated on the
-  test maps.
-- **Season 1** opens with version 1.0.2. Submissions close at 00:00 UK time
-  on December 29, 2026, and its table is published at 00:00 UK time on
-  January 1, 2027.
-- **Season 2** is February 2027: submissions from the Season 1 cutoff until
-  00:00 UK time on January 29, 2027, and its table on February 1. After that,
-  one season a month, named after the month its table stands.
-- **Where:** each table is published on the website's
-  [leaderboard](https://marl-battlegrounds.com/#leaderboard), and the season's
-  games and every entrant on Hugging Face.
-
-## Rule 1. Who May Enter
-
-1.1 **Any JAX System may enter:** learned, scripted, search-based, hybrid or
-built on a language model. It must run as pure JAX and export to our
-portable file.
-
-1.2 The table shows each entry's type (Learned, Scripted, Hybrid or Language
-Model) and whether it uses an outside pretrained model. It also shows five
-costs from our official run and our Rule 4 check: Steps to Entry (the game
-steps of training behind the entered save), Run Steps (every game step the run
-played, as counted in Rule 2.1), Training Time, Play Speed and Play Memory.
-They never change rank, rating or admission.
-
-1.3 Season 0's three scripted bots are reference opponents built as part of
-the benchmark. Rules 2 and 3 do not apply to them.
-
-## Rule 2. Budget and Machine
-
-2.1 **At most 255 million game steps and 8 hours.** Every game your run plays
-counts, validation included. Your run must stop by itself within 255
-million game steps; we stop it at 8 hours.
-
-2.2 **The machine:** one RTX 5090 (32 GB), an AMD Ryzen 9 9950X3D (16 cores,
-32 threads), 48 GB of RAM and 50 GB of disk. **Your code may not use the
-network, and may read and write only its own folder and the starting models
-it lists (Rule 2.3).** We read your code before we run it.
-
-2.3 Installing happens before the clock, without the GPU, in at most 1 hour.
-List every download with its hash.
-
-## Rule 3. What Your Run May Use
-
-3.1 **Released MARL-BGs models** are free to use as training opponents or
-teammates. Used as starting weights, as a frozen part of your entry, or as a
-teacher you learn from, their training steps count toward your 255 million.
-
-3.2 **Outside pretrained models** (for example a language model) are allowed
-if they were public at least 90 days before the cutoff, were not made by
-your team, never trained on MARL-BGs or a copy of it, and are licensed so we
-can release your entry.
-
-3.3 **Nothing else learned from MARL-BGs outside our run:** no weights,
-tables, datasets or recorded games. Hand-chosen settings are fine.
-
-3.4 **Maps 0-46 are yours** to use as you like. Your run never touches test
-maps 47-51 or the scenarios. At home you may test a finished system on maps
-47-51, but never choose anything by those results.
-
-## Rule 4. Play Limits
-
-Measured with our public check command,
-`python -m marl_battlegrounds entry check`: your system plays itself, 512
-games at once, on one RTX 5090. This is playing speed with the game running,
-not training speed. We also check it in its official games.
-
-4.1 **At least 5,000 game steps per second.**
-
-4.2 **At most 10 GB of GPU memory.**
-
-## Rule 5. Information
-
-5.1 **Teammates may message each other, one tick late.** Within a tick, each
-actor decides alone. A message sent on one tick arrives on the next.
-
-5.2 **Adapt inside a game, not across games.** Each game stands alone: memory
-starts fresh every game, and weights never change during evaluation.
-
-5.3 **Shared sight.** Each agent sees what lies in its own sight and line of
-sight, plus what its living teammates see (SharedObs). No system ever reads
-hidden game data.
-
-## Rule 6. Submitting
-
-6.1 **One submission per team per season.** A team is its people and their
-labs.
-
-6.2 **One seat per team.** Your new system replaces your current member only
-if it rates higher. The Season 0 systems are exempt. The maintainers count as
-one team.
-
-6.3 **Send a Git repository at one commit** with: a train command that keeps
-its chosen entry saved in its output folder; a `uv.lock` file that installs
-a CUDA build of JAX and a released marl-battlegrounds from PyPI (any
-version, never a changed copy); a load function that only loads that entry, in at most
-10 minutes; and an `entry.yaml` file that names your train command, load
-function, config, training maps, entry type and any starting models with
-their hashes. `python -m marl_battlegrounds entry new FOLDER` writes a
-starter that has them all.
-
-6.4 **Send it through the GitHub issue form.**
-`python -m marl_battlegrounds entry submit` opens the form with your answers
-filled in, once `entry check` has passed on that commit. If your repository
-is private, tick the box on the form: we reply with a read-only key for that
-one entry, and you add it to your repository as a deploy key, with write
-access off. If you add it within 7 days of our reply, your arrival time is
-the issue's time; otherwise your entry arrives when you add the key.
-
-6.5 We first run it for 15 minutes as a test. If the test fails, you may fix
-it once without losing your submission or your place in the queue.
-
-6.6 **Everything is open-sourced** under Apache-2.0, the license MARL-BGs
-uses: code, results and every saved model (a portable model file at least
-every 5,000,000 steps, plus the entered save), admitted or not, published with
-the season's table. Training state is not released.
-
-6.7 **Every entrant is released** into one general pool you can download,
-whether or not it joins the field. Each season's Big Nine also gets its own
-folder. Leaving the field ends membership, not history.
-
-## Rule 7. Our Run
-
-7.1 **We run your script once,** on our internal RTX 5090 with nothing else
-on it. That run is your entry: when it ends or hits a limit, we enter what it
-last saved as its choice.
-
-7.2 If your code fails, that uses up your season's submission. If our side
-fails, we rerun it at no cost to you.
-
-7.3 **Arrival order.** We check complete submissions one at a time, in the
-order they arrive, against the field as it stands after the previous
-challenger. The published table changes only when the next monthly table is
-published.
-
-7.4 **Unfinished work rolls forward** to the next season and keeps its place
-in the queue.
-
-7.5 On a GPU, our run does not repeat your home run exactly. You may turn on
-deterministic mode: it repeats on an RTX 5090, but trains 3.6 times slower in
-the same 8 hours. Very likely not worth a lucky seed.
-
-## Rule 8. The Evaluation
-
-8.1 You are Team A. Spawn ends swap between paired games. 200 games against
-each member, 40 on each test map 47-51, mirrored 5v5. First to 20 points
-wins; at tick 300 it is a draw. Red Zone depth 5.0; 128 games at once.
-
-8.2 Games run in XLA's deterministic mode. We draw the seed at random when your
-games are played, after your training run, and publish it with your results.
-With an RTX 5090 and our software lock, the games should replay exactly: we
-repeated them exactly on our own card; a second RTX 5090 is not tested yet.
-
-8.3 **Mirrored rosters.** Both teams use the same roster in the same order:
-the standard five-class 5v5 of Mage, Warrior, Hunter, Rogue and Priest.
-
-8.4 **Full records, no invented results.** Full metrics are recorded from the
-first tick of every challenger game. The field's own games carry full metrics
-too; Season 0's come from a replay that matched all 7,200 of its games. A
-resource or write failure never becomes a made-up win, draw or loss.
-
-8.5 **Scenarios do not count.** Scenario results never feed Elo.
-
-## Rule 9. Ratings
-
-9.1 One joint Elo fit of the field plus the challenger, average 1,200, refit
-before each challenger, with 95% intervals. Elo is shown and compared as
-whole numbers.
-
-9.2 **A challenger enters if its Elo is higher than the lowest member's.**
-Equal is not enough. The lowest member leaves.
-
-9.3 If several members tie for last, the one with the lower expected score
-against the field leaves; then the one admitted earliest (among Season 0
-systems, the later one in Season 0's declared order).
-
-9.4 Rank 1 of each season joins the Hall of Champions. A system that stays
-Rank 1 gets one banner showing its reign.
-
-9.5 Every challenger's result is published, admitted or not.
-
-9.6 **Rank follows Elo.** Tiers are labels beside it: 200-Elo bands from
-Iron (below 800) to Grandmaster (2,000 and up), each with five 40-Elo
-divisions. Tiers never change rank, rating or admission.
-
-9.7 A claim that a system moved tier or division must also give its Elo gain
-with its interval.
-
-9.8 Elo from different seasons cannot be compared: each season has its own
-field.
-
-9.9 **Local runs never count.** A run on your own computer never promotes
-anything and never publishes a result.
-
-## Rule 10. Fair Play
-
-10.1 **A rule's purpose binds too.** Getting around a limit breaks it, even
-if no line names the trick. Ask if unsure.
-
-10.2 Our own new entries follow every rule, and we submit them before we open
-outside submissions.
-
-10.3 A rule break found later removes the entry, the member it pushed out
-returns, and its people may not submit for 12 seasons.
-
-10.4 Rules change only between seasons, announced at least 30 days before
-the cutoff. Each table names its rulebook version.
-
-## Why These Numbers
-
-- **255 million game steps and 8 hours** sit just above our own slowest
-  baseline. Our six baselines took about 3.6 to 7.0 hours to reach 250 million
-  game steps on one RTX 5090, counting each first run and its continuation (see the
-  [hyperparameter search record](../scripts/paper_experiments/hyperparameter_search.md)), so
-  every Season 0 learned entrant meets the limits a challenger faces.
-- **One budget for everyone** means an entry wins by learning more from each
-  game step and doing more with each hour on the card. That rewards methods
-  that are efficient in both samples and compute.
-- **The play limits** exist because every entrant becomes a downloadable
-  training opponent for later challengers, so a slow or memory-hungry entrant
-  would slow down everyone who trains against it. Every Season 0 entrant
-  plays well above the speed floor and well under the memory limit.
-- **One official run by us, on one fixed and published machine,** follows the
-  MineRL 2020 and Procgen 2020 competitions, which also retrained every
-  submission themselves under fixed limits on experience, time and hardware.
-- **Teammate messages arrive one tick late,** as in classic learned
-  communication research such as DIAL, where each agent acts on the messages
-  sent on the previous step.
+# Tournament Rules
+
+These rules cover Team Deathmatch on the Official Leaderboard. We publish a
+new leaderboard at 00:00 UK time on January 1, April 1, July 1 and October 1,
+and the entry deadline is 72 hours before each. Your entry plays the nine
+systems on the leaderboard and takes the lowest one's place if its Elo is
+higher.
+
+1. **Any JAX System.** Any system that runs as pure JAX and exports to our
+   [portable model file](tournaments.md#how-we-run-and-score) may enter, sent as
+   one Git commit that passes `entry check`.
+2. **One Run, One Budget.** We train your entry once on
+   [our RTX 5090](tournaments.md#how-we-run-and-score) with no internet for at
+   most 8 hours, and it must stop itself within 255 million game steps,
+   counting each tick of every game.
+3. **Only Our Run Counts.** Your entry is the last model our run chose to
+   enter, or else the last model it saved.
+4. **Stay Off the Test Maps.** Your run trains and chooses its entry only on
+   maps 0 to 46, never on test maps 47 to 51 or the built-in scenarios.
+5. **Fast Enough to Play.** Your entry must play at least 5,000 game steps per
+   second within 10 GB of GPU memory in `entry check`'s speed test on our card,
+   which runs 512 games at once.
+6. **Each Agent Decides Alone.** Within a tick each agent acts only on what it
+   sees, its teammates' sight included, and on messages its teammates sent on
+   earlier ticks.
+7. **Learn Only in Our Run.** Your run may bring nothing trained or recorded
+   on MARL-BGs except released MARL-BGs models: training with or against them
+   is free, but starting from, containing or imitating one adds its training
+   steps to your 255 million.
+8. **No Duplicates.** Submit as often as you like, but we skip entries that
+   differ only in settings, such as seeds, hyperparameters, budget or reward
+   weights, from a leaderboard system or an entry sent this season.
+9. **Everything Is Open Source.** Your run saves a portable model at least
+   every 5 million training steps, and we release your code, results and those
+   models under Apache-2.0, entered or not, so everything you send must allow
+   that.
+10. **Play Fair.** Getting around a rule's purpose breaks it, and a break found
+    later removes the entry and bars the account that sent it for one year.
+
+How we run and score entries is in the
+[tournaments guide](tournaments.md#enter-the-leaderboard). Ask us if a rule is
+unclear.
