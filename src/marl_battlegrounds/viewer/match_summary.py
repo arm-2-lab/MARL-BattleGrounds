@@ -70,11 +70,12 @@ from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlot,
     AssignedPolicySlotV1,
     AssignedPolicySlotV2,
+    CaptureTheFlagCompletedEventV1,
     ContentAddressedIdentityV1,
     EvaluationEpisodeContext,
     EvaluationEpisodeContextV2,
-    EvaluationEpisodeContextV5,
     EvaluationFrame,
+    FlagCapturedEventV1,
     LethalDamageContributionEventV1,
     RecipientHealthResolutionEventV1,
     SourceDamageOutputEventV1,
@@ -89,6 +90,8 @@ from marl_battlegrounds.rendering.scene import (
     AbilityActivatedEventV2,
     AgentDiedEventV2,
     AgentRespawnedEventV2,
+    CaptureTheFlagCompletedEventV2,
+    FlagCapturedEventV2,
     LethalDamageContributionEventV2,
     RecipientHealthResolutionEventV2,
     SourceDamageOutputEventV2,
@@ -210,8 +213,14 @@ class MatchSummaryV1(_MatchModel):
 
     Attributes
     ----------
+    task_mode : Literal[0, 1, 3]
+        The recorded task: 0 combat diagnostics (no score, no result), 1 Team
+        Deathmatch, 3 Capture the Flag. Both scored modes need a positive
+        ``score_threshold`` (TDM's points or CTF's captures to win, the
+        scorebug's "First To") and a result scope.
     scores : tuple of (int, int)
-        Team A and Team B scores after this tick.
+        Team A and Team B scores after this tick: points in Team Deathmatch,
+        captures in Capture the Flag.
     previous_scores : tuple of (int, int) or None
         Team A and Team B scores before this tick (at the transition start).
         Equal to ``scores`` on frame zero and on a tick where nobody scored.
@@ -249,7 +258,7 @@ class MatchSummaryV1(_MatchModel):
     episode_id: _Name
     source_frame_index: _Count
     simulator_step_count: _Count
-    task_mode: Literal[0, 1]
+    task_mode: Literal[0, 1, 3]
     score_threshold: _Count
     scores: tuple[_Count, _Count]
     outcome: MatchOutcome
@@ -318,7 +327,9 @@ class MatchSummaryV1(_MatchModel):
             if self.outcome != "not_applicable":
                 raise ValueError("combat diagnostics have no TDM result")
         elif self.score_threshold == 0 or self.outcome == "not_applicable":
-            raise ValueError("TDM requires its configured threshold and result scope")
+            raise ValueError(
+                "a scored mode requires its configured threshold and result scope"
+            )
         return self
 
 
@@ -623,9 +634,12 @@ def build_match_summary_v1(
         Team A then Team B, current, previous and 10-ticks-ago scores,
         outcome, incoming deaths with home-fall flags, returning agents, and
         available map/seed/episode metadata. Missing attribution is None, not
-        a claimed zero. ``episode_limit`` is the game's last tick in Team Deathmatch
-        (``maximum_episode_steps``, also for a game that starts mid-way) and
-        the expected number of transitions in combat diagnostics. Team names
+        a claimed zero. ``episode_limit`` is the game's last tick in a scored
+        mode, Team Deathmatch or Capture the Flag (``maximum_episode_steps``,
+        also for a game that starts mid-way), and the expected number of
+        transitions in combat diagnostics. In Capture the Flag the scores are
+        captures, the threshold is the captures to win, and the outcome comes
+        from the ``capture_the_flag_completed`` event. Team names
         and ``slot_controller_names`` are the recorded controller names,
         exactly as recorded; records without per-slot names give
         ``slot_controller_names`` None and keep their team names or older
@@ -634,8 +648,7 @@ def build_match_summary_v1(
     Raises
     ------
     ValueError
-        If the context is a Capture the Flag context V5 (its summary is not
-        built yet), the frame and context disagree, the start frame is not the frame
+        If the frame and context disagree, the start frame is not the frame
         just before ``frame``, completion events conflict, a score-change event
         does not join the frame's score, incoming events refer to another
         transition or contain inconsistent attribution, or
@@ -650,9 +663,6 @@ def build_match_summary_v1(
     The result is global researcher data: in Agent POV it may feed docked
     researcher panels only, never anything drawn on or over the arena.
     """
-    if isinstance(context, EvaluationEpisodeContextV5):
-        # The Capture the Flag summary comes with the viewer's CTF checkpoint.
-        raise ValueError("Capture the Flag match summaries are not available yet")
     if frame.episode_id != context.identity.episode_id:
         raise ValueError("match summary frame must join its episode context")
     if transition_start_frame is not None and (
@@ -668,12 +678,19 @@ def build_match_summary_v1(
         raise ValueError("on frame zero the scores ten ticks ago are the scores")
     incoming_transition_id = f"{frame.episode_id}:transition:{frame.frame_index - 1}"
     task_mode = context.resolved_env_config.task_mode
-    outcome: MatchOutcome = "in_progress" if task_mode == 1 else "not_applicable"
+    scored = task_mode in (1, 3)
+    outcome: MatchOutcome = "in_progress" if scored else "not_applicable"
     completed = tuple(
         event
         for event in incoming_events
         if isinstance(
-            event, (TeamDeathmatchCompletedEventV1, TeamDeathmatchCompletedEventV2)
+            event,
+            (
+                TeamDeathmatchCompletedEventV1,
+                TeamDeathmatchCompletedEventV2,
+                CaptureTheFlagCompletedEventV1,
+                CaptureTheFlagCompletedEventV2,
+            ),
         )
     )
     if len(completed) > 1:
@@ -745,17 +762,22 @@ def build_match_summary_v1(
     else:
         previous = list(scores)
         for event in incoming_events:
-            if not isinstance(
+            if isinstance(
                 event,
                 (TeamDeathmatchScoreChangedEventV1, TeamDeathmatchScoreChangedEventV2),
             ):
+                team_index = event.team_index
+            elif isinstance(event, (FlagCapturedEventV1, FlagCapturedEventV2)):
+                # A capture scores for the carrier's team: the flag's enemy.
+                team_index = 1 - event.flag_team_index
+            else:
                 continue
             if (
                 event.transition_id != incoming_transition_id
-                or event.successor_score != scores[event.team_index]
+                or event.successor_score != scores[team_index]
             ):
                 raise ValueError("match score change must join the frame's score")
-            previous[event.team_index] = event.previous_score
+            previous[team_index] = event.previous_score
         previous_scores = (previous[0], previous[1])
     display_sides = _team_display_sides(
         context.resolved_env_config.map_width,
@@ -832,13 +854,13 @@ def build_match_summary_v1(
         ),
         map=recorded_map(context),
         observation_mode=context.execution_information_mode,
-        # The tick at which the game ends: in Team Deathmatch the configured
-        # last tick (validation proves initial tick + expected_horizon equals
+        # The tick at which the game ends: in a scored mode (Team Deathmatch or
+        # Capture the Flag) the configured last tick (validation proves initial tick + expected_horizon equals
         # it, so a game started mid-way, such as at tick 91, still reads "of
         # 300"); otherwise the expected number of transitions.
         episode_limit=(
             context.resolved_env_config.maximum_episode_steps
-            if task_mode == 1
+            if scored
             else context.expected_horizon
         ),
         root_seed=context.seed_protocol.root_seed,

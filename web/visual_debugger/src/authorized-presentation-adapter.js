@@ -958,7 +958,9 @@ export function projectCertifiedInspectionRoute(
  * Return a frozen view with audience, map, adapted agents/auras, class/spawn mechanics,
  * spawn pads/waves, the host's merged team sight (`team_sight`, with its turn
  * shapes: every Agent POV frame, live or replayed; null in Oracle View and from
- * older producers), selection keys, ranges, pending route, and selected legality.
+ * older producers), both flags (`capture_the_flag`: a Capture the Flag game's flags
+ * as the audience may see them, a carrier only by its key; null in every other
+ * mode), selection keys, ranges, pending route, and selected legality.
  * Unavailable routes/legality are null; no selected body gives empty ranges. Nested
  * approved source values are shared. No global slot or command field is added.
  *
@@ -1112,6 +1114,11 @@ export function authorizedPresentationSceneView(
     // Agent POV, live or replayed: the host's merged team sight for the Night
     // Veil, with its turn shapes (null in Oracle View and older producers).
     team_sight: isRecord(value.scene.team_sight) ? value.scene.team_sight : null,
+    // Both flags in a Capture the Flag game, as this audience may see them (null
+    // in every other mode).
+    capture_the_flag: isRecord(value.scene.capture_the_flag)
+      ? value.scene.capture_the_flag
+      : null,
     selection: Object.freeze({
       controlled_presentation_key: value.viewer_mode === "live" ? ownerKey : null,
       inspection_owner_presentation_key: inspectedOwnerKey,
@@ -1884,7 +1891,12 @@ export function authorizedPresentationTechnicalFacts(value) {
       Object.freeze({
         id: "task_mode",
         label: "Task Mode",
-        value: match.task_mode === 1 ? "TDM" : "Combat diagnostic",
+        value:
+          match.task_mode === 1
+            ? "TDM"
+            : match.task_mode === 3
+              ? "CTF"
+              : "Combat diagnostic",
       }),
     );
     if (match.map) {

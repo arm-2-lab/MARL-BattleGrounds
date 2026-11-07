@@ -6037,7 +6037,7 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
         (match.score_threshold !== 0 ||
           match.scores.some((/** @type {number} */ score) => score !== 0) ||
           match.outcome !== "not_applicable")) ||
-      (match.task_mode === 1 &&
+      (match.task_mode !== 0 &&
         (match.score_threshold === 0 || match.outcome === "not_applicable"))
     ) {
       invalid("Match summary does not join the current task and source epoch.");
