@@ -23,7 +23,7 @@ from jax import Array
 from jax.core import Tracer
 from numpy.typing import NDArray
 
-from marl_battlegrounds._task_settings import TASK_NAMES
+from marl_battlegrounds._task_settings import TASK_NAMES, TaskName
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
@@ -591,6 +591,10 @@ class _Execution:
         Number of distinct explicitly selected full-metric episode IDs.
     replay_capacity : int
         Number of distinct explicitly selected replay episode IDs.
+    task : TaskName
+        The task name make was called with, "tdm" or "ctf". It follows from
+        task_mode (a neutral handle plays "tdm"), so it adds no compiled
+        version.
     task_mode : int
         The one task mode every game on this handle plays, a Core TASK_MODE_*
         value fixed by make. Core receives it as an int32 constant.
@@ -608,6 +612,7 @@ class _Execution:
     metrics: MetricMode
     full_capacity: int
     replay_capacity: int
+    task: TaskName
     task_mode: int
     training_facts: bool = False
 
@@ -651,6 +656,16 @@ class Environment:
     def training_facts(self) -> bool:
         """Whether steps return selected privileged facts for training feedback."""
         return self._execution.training_facts
+
+    @property
+    def task(self) -> TaskName:
+        """The task name this handle plays, fixed by make: "tdm" or "ctf".
+
+        A "tdm" handle given a neutral config still reports "tdm". The task's
+        Core mode number is ``TASK_MODES[env.task]``; the mode readers, such as
+        score_threshold_for_mode, read a neutral game as Team Deathmatch.
+        """
+        return self._execution.task
 
     @property
     def full_metrics_episodes(self) -> tuple[int, ...]:
@@ -1907,6 +1922,7 @@ def make(
             metrics,
             len(full_ids),
             len(replay_ids),
+            task,
             task_mode,
             training_facts,
         ),

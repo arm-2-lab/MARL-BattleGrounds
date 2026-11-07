@@ -23,7 +23,8 @@ never Team Deathmatch's, listed_map_id accepts only the task's own entries, and
 TASK_MODES equals Core's mode constants. make("ctf") plays Capture the Flag on
 a listed map with the mode's default threshold, refuses a Red Zone depth, and a
 task name and its exact config must share a mode; the error names the task to
-pass. One dispatcher, make_standard_config, builds each task's standard config
+pass. Each handle's task property names the task make fixed, "tdm" also for a
+neutral config. One dispatcher, make_standard_config, builds each task's standard config
 with the task's defaults (DEFAULT_SCORE_THRESHOLDS and
 DEFAULT_RED_ZONE_DEPTHS), takes only exactly 0.0 as a Capture the Flag depth,
 and is what normalize_episode_specs builds from map IDs; task_for_mode names
@@ -287,6 +288,11 @@ def test_a_task_and_its_exact_config_share_one_mode() -> None:
         make("tdm", env_config=_CONFIG)
     with pytest.raises(ValueError, match=r"this environment plays task_mode 3$"):
         make("ctf").reset(jax.random.key(0), tdm_config)
+    neutral = make_standard_team_deathmatch_config(
+        map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B, red_zone_depth=0.0
+    )._replace(task_mode=0, team_deathmatch_score_threshold=0)
+    handles = (make("ctf"), make("tdm"), make("tdm", env_config=neutral))
+    assert [env.task for env in handles] == ["ctf", "tdm", "tdm"]
 
 
 def _same(left: object, right: object) -> bool:
