@@ -112,7 +112,12 @@ def _writer_owner(tmp_path: Path) -> Any:  # noqa: ANN401
         input_scale=1.0, spawn_frame="left", parameter_sharing="all"
     )
     owner.config = SimpleNamespace(
-        method="mappo", ppo=settings, seed=1, num_envs=4, retain_all_actors=False
+        method="mappo",
+        ppo=settings,
+        seed=1,
+        num_envs=4,
+        retain_all_actors=False,
+        task="tdm",
     )
     owner.qmix = owner.pqn = None
     owner.state = SimpleNamespace(
