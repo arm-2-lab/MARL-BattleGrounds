@@ -1597,6 +1597,13 @@ print(ratings[0]["label"], ratings[0]["elo"])
 hf download {ORG}/{DATASET_REPO} --repo-type dataset --local-dir {DATASET_REPO}
 ```
 
+With MARL-BGs 1.0.4 or later, one command downloads only the training opponents,
+and training then finds them with downloads off:
+
+```bash
+python -m marl_battlegrounds models download {ORG}/{DATASET_REPO}/training-opponents
+```
+
 Every file was re-released once, on {RE_RELEASE_DAY}, to remove local folder
 paths: saved descriptions and records now name models by their released names
 and dataset addresses, and the weights are byte-identical.
@@ -1887,8 +1894,9 @@ and commit, so a resumed run loads the same file.
 
 ## Enter the Leaderboard
 
-Any method that runs as pure JAX may enter, not only MARL: learned, scripted,
-search-based, hybrid or built on a language model. Each entry plays the current
+Any method that runs as pure JAX and exports to our portable model file may
+enter, not only MARL: learned, scripted, search-based, hybrid or built on a
+language model. Each entry plays the current
 Big Nine and takes the lowest member's place if its Elo is higher, so the
 benchmark gets harder as entries improve. Every entrant and its
 saved models are released here with its season's table, so the opponent pool
