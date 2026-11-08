@@ -3595,11 +3595,11 @@ def _handle_capture_the_flag_outcome_and_rewards(
 def _handle_king_of_the_hill_outcome_and_rewards(
     next_state: EnvState, config: EnvConfig
 ) -> tuple[Reward, DoneFlags, Array]:
-    """Keep the reserved King of the Hill branch structurally compatible.
+    """Return King of the Hills' rewards, done flags and outcomes for one transition.
 
     next_state and config are passed to the shared neutral-output helper.
-    Return its zero Reward, horizon-only DoneFlags and zero outcomes (4,).
-    Host validation rejects this mode; this branch is not implemented KOTH play.
+    Return its zero Reward, horizon-only DoneFlags and zero outcomes (4,):
+    hill points and the King of the Hills outcome are not scored yet.
     """
     return _canonical_no_outcome_and_rewards(next_state, config)
 

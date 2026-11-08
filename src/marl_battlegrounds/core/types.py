@@ -364,10 +364,9 @@ class EnvConfig(NamedTuple):
     task_mode: int
     """The task selected for one episode.
 
-    Python int for one host config: 0 neutral, 1 Team Deathmatch or 3 Capture
-    the Flag. Mode 2 (King of the Hills) is reserved and rejected by current
-    validation. Each mode's own settings must be neutral in every other mode
-    (config.neutral_objective_fields).
+    Python int for one host config: 0 neutral, 1 Team Deathmatch, 2 King of
+    the Hills or 3 Capture the Flag. Each mode's own settings must be neutral
+    in every other mode (config.neutral_objective_fields).
     """
     team_deathmatch_score_threshold: int
     """The score threshold used to end a Team Deathmatch episode.
@@ -426,27 +425,34 @@ class EnvConfig(NamedTuple):
     king_of_the_hills_score_threshold: int
     """The points a team needs to win a King of the Hills game.
 
-    Python int; 0 in every other mode. King of the Hills itself is not yet
-    accepted by validation, so this is 0 for now.
+    Python int, at least 1 in King of the Hills, and small enough that the
+    highest reachable score, threshold +
+    config.maximum_king_of_the_hills_score_increment(points per step, sweep
+    bonus) - 1, is at most 2**24, so every score stays exact in float32: at
+    most 16,777,211 with 1 point per hill and a bonus of 3. 0 in every other
+    mode.
     """
     king_of_the_hills_hill_positions: Array  # (MAX_HILL_SLOTS, 2)
     """Each hill's center, [x, y] in map units.
 
     Float32 (3, 2). Slot 0 is the hill in the map's left half, slot 1 the hill
     exactly on the midline, slot 2 the hill in the right half. An unused slot
-    is all zero. All zero outside King of the Hills.
+    is all zero. In King of the Hills a used center lies on the map, used
+    hills are farther apart than their two radii, and no spawn pad lies on a
+    hill. All zero outside King of the Hills.
     """
     king_of_the_hills_hill_radii: Array  # (MAX_HILL_SLOTS,)
     """Each hill's radius in map units.
 
-    Float32 (3,). A radius of 0 marks an unused slot. All zero outside King of
-    the Hills.
+    Float32 (3,). A radius of 0 marks an unused slot; a used radius is finite
+    and at least the smallest normal float32, and King of the Hills needs at
+    least one. All zero outside King of the Hills.
     """
     king_of_the_hills_hill_points_per_step: int
     """The points per tick a team scores for each owned hill that is not contested.
 
-    Python int. An owned hill scores while it stays owned, empty ticks
-    included. 0 outside King of the Hills.
+    Python int, at least 1 in King of the Hills. An owned hill scores while it
+    stays owned, empty ticks included. 0 outside King of the Hills.
     """
     king_of_the_hills_three_hill_sweep_bonus_points_per_step: int
     """The extra points per tick while one team owns all three hills uncontested.
@@ -456,7 +462,7 @@ class EnvConfig(NamedTuple):
     king_of_the_hills_empty_hill_ownership_steps: int
     """How many empty ticks in a row a hill stays its owner's before turning neutral.
 
-    Python int, 0 or more. Empty means none of the owner's agents is on it. At
+    Python int in [0, 2**31 - 1]. Empty means none of the owner's agents is on it. At
     0 a hill turns neutral on its first empty tick. 0 outside King of the
     Hills.
     """
@@ -569,7 +575,10 @@ class EnvState(NamedTuple):
     king_of_the_hills_scores: Array  # (NUM_TEAMS,)
     """Each team's King of the Hills points so far.
 
-    Int32 (2,) in [Team A, Team B] order; zero outside King of the Hills.
+    Int32 (2,) in [Team A, Team B] order. In King of the Hills each is at
+    least 0 and at most the highest reachable score (see
+    king_of_the_hills_score_threshold); an authored start stays below the
+    threshold. Zero outside King of the Hills.
     """
 
     capture_the_flag_flag_positions: Array  # (NUM_TEAMS, 2)
@@ -612,7 +621,8 @@ class EnvState(NamedTuple):
     """Each hill's owner: 0 nobody, 1 Team A, 2 Team B.
 
     Int32 (3,). The owner stays through a contest, and an empty owned hill
-    stays owned while its countdown runs. Zero outside King of the Hills.
+    stays owned while its countdown runs. An unused hill slot (radius 0) is
+    never owned or contested. Zero outside King of the Hills.
     """
     king_of_the_hills_empty_hill_ownership_countdowns: Array  # int32 (MAX_HILL_SLOTS,)
     """How many more empty ticks each hill stays its owner's.

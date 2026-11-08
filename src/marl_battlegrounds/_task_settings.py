@@ -35,6 +35,21 @@ DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 1.25
 DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS = 30
 DEFAULT_CTF_FLAG_HOME_POSITIONS = ((0.5, 5.0), (19.5, 5.0))
 
+# The King of the Hills defaults, used by its test config builder until the
+# mode gets a task name: points per tick for each owned hill with no enemy on
+# it; extra points per tick while one team owns all three hills that way; the
+# empty ticks in a row a hill stays its owner's; each hill's radius in map
+# units; the hill centers on the 20 by 10 maps, by slot (slot 0 left of the
+# midline, slot 1 on it, slot 2 right of it); and the points needed to win
+# with three hills and with one.
+DEFAULT_KOTH_HILL_POINTS_PER_STEP = 1
+DEFAULT_KOTH_THREE_HILL_SWEEP_BONUS_POINTS_PER_STEP = 3
+DEFAULT_KOTH_EMPTY_HILL_OWNERSHIP_STEPS = 0
+DEFAULT_KOTH_HILL_RADIUS = 1.25
+DEFAULT_KOTH_HILL_CENTERS = ((5.0, 5.0), (10.0, 5.0), (15.0, 5.0))
+DEFAULT_KOTH_SCORE_THRESHOLD = 100
+DEFAULT_ONE_HILL_KOTH_SCORE_THRESHOLD = 50
+
 # The Core mode each task name plays (EnvConfig.task_mode): Team Deathmatch is
 # 1 and Capture the Flag 3, the values of core.types.TASK_MODE_TDM and
 # TASK_MODE_CTF, written here as plain integers because Core loads JAX and this

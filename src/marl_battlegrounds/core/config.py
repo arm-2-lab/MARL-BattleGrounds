@@ -2,7 +2,8 @@
 
 resolve_agent_profile performs a pure JAX catalog lookup with team padding.
 maximum_team_deathmatch_score_increment and maximum_team_deathmatch_score_threshold
-own the Team Deathmatch score bounds, which depend on the Red Zone depth.
+own the Team Deathmatch score bounds, which depend on the Red Zone depth, and
+maximum_king_of_the_hills_score_increment owns the King of the Hills bound.
 neutral_objective_fields owns the value every Capture the Flag and King of the
 Hills field holds outside its own mode, and the validators enforce it. The
 validators check complete configurations, product movement calibration,
@@ -14,6 +15,7 @@ or synchronize device data. Keep it at configuration, loading and tooling
 boundaries, outside compiled reset/step loops. These checks do not change inputs
 or create policies, episodes, logs or replay files."""
 
+import itertools
 import math
 from typing import Any, Final
 
@@ -22,7 +24,10 @@ import numpy as np
 from jax import Array
 
 from marl_battlegrounds.core import combat
-from marl_battlegrounds.core.axis_mappings import target_action_to_global_slot
+from marl_battlegrounds.core.axis_mappings import (
+    spawn_bank_on_right,
+    target_action_to_global_slot,
+)
 from marl_battlegrounds.core.combat import (
     HUNTER_BASIC_SLOW_DURATION_TICKS,
     HUNTER_TRAP_STUN_DURATION_TICKS,
@@ -150,6 +155,37 @@ def maximum_team_deathmatch_score_threshold(red_zone_depth: float) -> int:
     """
     return _MAX_EXACT_FLOAT32_INTEGER - (
         maximum_team_deathmatch_score_increment(red_zone_depth) - 1
+    )
+
+
+def maximum_king_of_the_hills_score_increment(
+    hill_points_per_step: int, three_hill_sweep_bonus_points_per_step: int
+) -> int:
+    """Return the most King of the Hills points one team can gain in one step.
+
+    Parameters
+    ----------
+    hill_points_per_step : int
+        EnvConfig.king_of_the_hills_hill_points_per_step, a Python int, never a
+        traced JAX value.
+    three_hill_sweep_bonus_points_per_step : int
+        EnvConfig.king_of_the_hills_three_hill_sweep_bonus_points_per_step, a
+        Python int.
+
+    Returns
+    -------
+    int
+        3 * hill_points_per_step + three_hill_sweep_bonus_points_per_step: the
+        team owns all three hills uncontested and gets the sweep bonus. 6 with
+        1 point per hill and a bonus of 3.
+
+    Notes
+    -----
+    Host only. Python ints never wrap, as int32 arithmetic can. The one owner
+    of this bound; the score threshold and state checks derive from it.
+    """
+    return (
+        MAX_HILL_SLOTS * hill_points_per_step + three_hill_sweep_bonus_points_per_step
     )
 
 
@@ -1005,6 +1041,134 @@ def _validate_capture_the_flag_settings(config: EnvConfig) -> None:
         )
 
 
+def _validate_king_of_the_hills_settings(config: EnvConfig) -> None:
+    """Check the King of the Hills settings of one config in that mode.
+
+    Every other check of config has passed, so its storage, map size, roster
+    and spawn pads are known. The points per step must be at least 1, the
+    sweep bonus at least 0 and the threshold at least 1. The threshold plus
+    maximum_king_of_the_hills_score_increment, minus 1, must be at most
+    2**24, so every score a game can reach stays exact in float32 context
+    features. The empty-hill ownership steps must be in [0, 2**31 - 1] ticks.
+
+    The hills, compared in float32: one to three slots are used. An unused
+    slot has radius 0.0 and center (0.0, 0.0), bit for bit. A used slot's
+    radius is finite and at least the smallest normal float32 (JAX treats
+    smaller values as zero), and its center lies on the map, in the slot's
+    own part of the world: slot 0 left of the midline (2x below map_width),
+    slot 1 exactly on it and slot 2 right of it. Used hills are farther apart
+    than their two radii, so no agent stands on two hills at once. No spawn
+    pad, used or not, lies on a hill (within its radius of its center). The
+    two spawn banks lie on opposite halves of the map (spawn_bank_on_right
+    differs), so the hill nearest one team's spawn is the farthest from the
+    other's. Raise ValueError naming the first failing setting. Host only.
+    """
+    hill_points = config.king_of_the_hills_hill_points_per_step
+    sweep_bonus = config.king_of_the_hills_three_hill_sweep_bonus_points_per_step
+    threshold = config.king_of_the_hills_score_threshold
+    for field_name, value, lowest in (
+        ("king_of_the_hills_hill_points_per_step", hill_points, 1),
+        ("king_of_the_hills_three_hill_sweep_bonus_points_per_step", sweep_bonus, 0),
+        ("king_of_the_hills_score_threshold", threshold, 1),
+    ):
+        if value < lowest:
+            raise ValueError(
+                f"{field_name} must be at least {lowest} in King of the Hills, "
+                f"not {value}."
+            )
+    highest_score = (
+        threshold
+        + maximum_king_of_the_hills_score_increment(hill_points, sweep_bonus)
+        - 1
+    )
+    if highest_score > _MAX_EXACT_FLOAT32_INTEGER:
+        raise ValueError(
+            "king_of_the_hills_score_threshold + 3 * "
+            "king_of_the_hills_hill_points_per_step + "
+            "king_of_the_hills_three_hill_sweep_bonus_points_per_step - 1 must be "
+            f"at most {_MAX_EXACT_FLOAT32_INTEGER}, so every score stays exact in "
+            f"float32, not {highest_score}."
+        )
+    ownership_steps = config.king_of_the_hills_empty_hill_ownership_steps
+    if not 0 <= ownership_steps <= _INT32_MAX:
+        raise ValueError(
+            "king_of_the_hills_empty_hill_ownership_steps must be in "
+            f"[0, {_INT32_MAX}], not {ownership_steps}."
+        )
+
+    centers = np.asarray(config.king_of_the_hills_hill_positions)
+    radii = np.asarray(config.king_of_the_hills_hill_radii)
+    map_size = np.asarray((config.map_width, config.map_height), dtype=np.float32)
+    width = np.float32(config.map_width)
+    sides = ("left of", "exactly on", "right of")
+    used: list[int] = []
+    for slot, (center, radius) in enumerate(zip(centers, radii, strict=True)):
+        if radius == 0.0:
+            if np.signbit(radius) or center.tobytes() != bytes(center.nbytes):
+                raise ValueError(
+                    f"Hill slot {slot} has radius 0, so it is unused and "
+                    f"king_of_the_hills_hill_positions[{slot}] and "
+                    f"king_of_the_hills_hill_radii[{slot}] must be exactly 0.0, "
+                    f"not {center.tolist()} and {float(radius)}."
+                )
+            continue
+        if not (bool(np.isfinite(radius)) and radius >= _FLOAT32_SMALLEST_NORMAL):
+            raise ValueError(
+                f"king_of_the_hills_hill_radii[{slot}] must be 0.0 for an unused "
+                "slot, or finite and at least "
+                f"{float(_FLOAT32_SMALLEST_NORMAL)} for a hill, not {float(radius)}."
+            )
+        if not bool(
+            np.all(np.isfinite(center) & (center >= 0.0) & (center <= map_size))
+        ):
+            raise ValueError(
+                f"king_of_the_hills_hill_positions[{slot}] must lie on the map, with "
+                f"x in [0, map_width] and y in [0, map_height], not {center.tolist()}."
+            )
+        with np.errstate(over="ignore"):
+            twice_x = np.float32(2.0) * center[0]
+        side = int(twice_x > width) - int(twice_x < width) + 1
+        if side != slot:
+            raise ValueError(
+                f"king_of_the_hills_hill_positions[{slot}] must have x {sides[slot]} "
+                f"the midline map_width / 2 = {float(width) / 2}, not "
+                f"{float(center[0])}: slot 0 holds the left hill, slot 1 the "
+                "midline hill and slot 2 the right hill."
+            )
+        used.append(slot)
+    if not used:
+        raise ValueError(
+            "King of the Hills needs at least one hill: give a slot of "
+            "king_of_the_hills_hill_radii a radius above 0."
+        )
+    for first, second in itertools.combinations(used, 2):
+        gap = np.linalg.norm(centers[first] - centers[second])
+        reach = radii[first] + radii[second]
+        if not gap > reach:
+            raise ValueError(
+                f"Hills {first} and {second} must be farther apart than their two "
+                f"radii ({float(reach)}), so no agent stands on both, not "
+                f"{float(gap)}."
+            )
+    pads = np.asarray(config.team_spawn_pad_positions)
+    on_hill = np.linalg.norm(pads[:, :, None] - centers[used], axis=-1) <= radii[used]
+    if bool(np.any(on_hill)):
+        team, pad, hill = np.argwhere(on_hill)[0]
+        raise ValueError(
+            f"team_spawn_pad_positions[{team}][{pad}] lies on hill {used[hill]}: "
+            "every spawn pad must be farther from each hill's center than its "
+            "radius."
+        )
+    team_a_on_right, team_b_on_right = np.asarray(
+        spawn_bank_on_right(config.team_spawn_pad_positions, config.map_width)
+    ).tolist()
+    if team_a_on_right == team_b_on_right:
+        raise ValueError(
+            "King of the Hills needs the two spawn banks on opposite halves of "
+            "the map: spawn_bank_on_right must differ between Team A and Team B."
+        )
+
+
 def validate_env_config(config: EnvConfig) -> None:
     """Validate one resolved episode configuration on the host before reset.
 
@@ -1013,7 +1177,8 @@ def validate_env_config(config: EnvConfig) -> None:
     config : EnvConfig
         One scalar configuration. Python int/float settings and JAX array
         fields must meet the types, bounds and shapes documented by EnvConfig.
-        The supported modes are neutral, Team Deathmatch and Capture the Flag.
+        The supported modes are neutral, Team Deathmatch, King of the Hills and
+        Capture the Flag.
 
     Returns
     -------
@@ -1028,9 +1193,9 @@ def validate_env_config(config: EnvConfig) -> None:
         A container, Python scalar, JAX array or dtype is wrong.
     ValueError
         A shape, finite-value check, bound, mode, padding, catalog agreement or
-        geometry rule fails. The reserved King of the Hills mode is rejected.
-        Each mode's own settings must hold their neutral values in every other
-        mode: the Team Deathmatch threshold and Red Zone depth are 0 outside
+        geometry rule fails. Each mode's own settings must hold their neutral
+        values in every other mode: the Team Deathmatch threshold and Red Zone
+        depth are 0 outside
         Team Deathmatch, and the Capture the Flag and King of the Hills
         settings equal neutral_objective_fields outside their modes.
 
@@ -1041,9 +1206,10 @@ def validate_env_config(config: EnvConfig) -> None:
     scientific configurations may use a validated movement scale in (0, 1];
     validate_product_env_config adds the product's fixed calibration. The Red
     Zone depth is checked after the map size and before the Team Deathmatch
-    threshold range, and the objective settings after that, so a config with
-    several faults reports the first in that order. Team Deathmatch and Capture
-    the Flag need at least one active member on each team.
+    threshold range, and the Capture the Flag settings after that. The King of
+    the Hills settings come last, because they read the checked spawn pads. A
+    config with several faults reports the first in that order. Every mode
+    except the neutral one needs at least one active member on each team.
     """
     if type(config) is not EnvConfig:
         raise TypeError(f"config must be an EnvConfig, not {type(config).__name__}.")
@@ -1052,15 +1218,17 @@ def validate_env_config(config: EnvConfig) -> None:
         raise TypeError(
             f"task_mode must be an int, not {type(config.task_mode).__name__}."
         )
-    if config.task_mode == TASK_MODE_KOTH:
-        raise ValueError(
-            f"task_mode {config.task_mode} is reserved but is not implemented."
-        )
-    if config.task_mode not in (TASK_MODE_NEUTRAL, TASK_MODE_TDM, TASK_MODE_CTF):
+    if config.task_mode not in (
+        TASK_MODE_NEUTRAL,
+        TASK_MODE_TDM,
+        TASK_MODE_KOTH,
+        TASK_MODE_CTF,
+    ):
         raise ValueError(
             "task_mode must identify an available mode: "
-            f"{TASK_MODE_NEUTRAL} (neutral), {TASK_MODE_TDM} (Team Deathmatch) "
-            f"or {TASK_MODE_CTF} (Capture the Flag), not {config.task_mode}."
+            f"{TASK_MODE_NEUTRAL} (neutral), {TASK_MODE_TDM} (Team Deathmatch), "
+            f"{TASK_MODE_KOTH} (King of the Hills) or {TASK_MODE_CTF} (Capture "
+            f"the Flag), not {config.task_mode}."
         )
 
     if type(config.team_deathmatch_score_threshold) is not int:
@@ -1196,14 +1364,14 @@ def validate_env_config(config: EnvConfig) -> None:
         recovery_delay_catalog=recovery_delay_catalog,
         recovery_regeneration_fraction_catalog=(recovery_regeneration_fraction_catalog),
     )
-    if config.task_mode in (TASK_MODE_TDM, TASK_MODE_CTF):
+    if config.task_mode != TASK_MODE_NEUTRAL:
         host_active_mask = np.asarray(profile.active_mask)
         team_a_has_active_member = bool(np.any(host_active_mask[:MAX_AGENTS_PER_TEAM]))
         team_b_has_active_member = bool(np.any(host_active_mask[MAX_AGENTS_PER_TEAM:]))
         if not team_a_has_active_member or not team_b_has_active_member:
             raise ValueError(
-                "Team Deathmatch and Capture the Flag require at least one "
-                "configured active member on each team."
+                "Team Deathmatch, King of the Hills and Capture the Flag require "
+                "at least one configured active member on each team."
             )
     _validate_team_spawn_pad_positions(
         config.team_spawn_pad_positions,
@@ -1212,6 +1380,8 @@ def validate_env_config(config: EnvConfig) -> None:
         obstacles=obstacles,
         profile=profile,
     )
+    if config.task_mode == TASK_MODE_KOTH:
+        _validate_king_of_the_hills_settings(config)
 
 
 def validate_product_env_config(config: EnvConfig) -> None:
@@ -1421,7 +1591,9 @@ def validate_env_state(config: EnvConfig, state: EnvState) -> None:
     Every Capture the Flag and King of the Hills field must have its
     neutral_objective_fields storage, and its neutral value outside its own
     mode. Inside Capture the Flag the captures and the three flag states are
-    checked too (_validate_capture_the_flag_state).
+    checked too (_validate_capture_the_flag_state), and inside King of the
+    Hills the points and each hill's owner and countdown
+    (_validate_king_of_the_hills_state).
     """
     if type(config) is not EnvConfig:
         raise TypeError(f"config must be an EnvConfig, not {type(config).__name__}.")
@@ -1765,6 +1937,61 @@ def validate_env_state(config: EnvConfig, state: EnvState) -> None:
     )
     if config.task_mode == TASK_MODE_CTF:
         _validate_capture_the_flag_state(config, state)
+    if config.task_mode == TASK_MODE_KOTH:
+        _validate_king_of_the_hills_state(config, state)
+
+
+def _validate_king_of_the_hills_state(config: EnvConfig, state: EnvState) -> None:
+    """Check one King of the Hills snapshot's points and hills.
+
+    config and state are scalar and have passed every other check, so their
+    storage is known. Each team's points must be in [0, threshold +
+    maximum_king_of_the_hills_score_increment - 1], the most a finished game
+    can reach in its last tick. Each hill's owner must be 0 (nobody), 1 (Team
+    A) or 2 (Team B), and its countdown in [0,
+    king_of_the_hills_empty_hill_ownership_steps] on an owned hill and 0 on a
+    hill nobody owns. An unused hill slot (radius 0) is neither contested nor
+    owned. Raise ValueError naming the first failing score or hill. Host only;
+    reads array values.
+    """
+    highest_score = (
+        config.king_of_the_hills_score_threshold
+        + maximum_king_of_the_hills_score_increment(
+            config.king_of_the_hills_hill_points_per_step,
+            config.king_of_the_hills_three_hill_sweep_bonus_points_per_step,
+        )
+        - 1
+    )
+    scores = np.asarray(state.king_of_the_hills_scores)
+    if bool(np.any((scores < 0) | (scores > highest_score))):
+        raise ValueError(
+            f"king_of_the_hills_scores must be in [0, {highest_score}], "
+            f"not {scores.tolist()}."
+        )
+    used = np.asarray(config.king_of_the_hills_hill_radii) > 0.0
+    contested = np.asarray(state.king_of_the_hills_hill_is_contested)
+    owners = np.asarray(state.king_of_the_hills_hill_owners).tolist()
+    countdowns = np.asarray(
+        state.king_of_the_hills_empty_hill_ownership_countdowns
+    ).tolist()
+    ownership_steps = config.king_of_the_hills_empty_hill_ownership_steps
+    for slot, (owner, countdown) in enumerate(zip(owners, countdowns, strict=True)):
+        if owner not in (NO_TEAM_ID, TEAM_A_ID, TEAM_B_ID):
+            raise ValueError(
+                f"king_of_the_hills_hill_owners[{slot}] must be 0 (nobody), 1 "
+                f"(Team A) or 2 (Team B), not {owner}."
+            )
+        if not used[slot] and (owner != NO_TEAM_ID or contested[slot]):
+            raise ValueError(
+                f"Hill slot {slot} is unused, so it must be neither contested "
+                "nor owned."
+            )
+        if not 0 <= countdown <= (ownership_steps if owner != NO_TEAM_ID else 0):
+            raise ValueError(
+                "king_of_the_hills_empty_hill_ownership_countdowns"
+                f"[{slot}] must be in [0, {ownership_steps}] on an owned hill and "
+                f"0 on a hill nobody owns, not {countdown} with owner {owner}."
+            )
 
 
 def _validate_capture_the_flag_state(config: EnvConfig, state: EnvState) -> None:
@@ -1844,8 +2071,8 @@ def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
         Matching scalar configuration, already checked by validate_env_config.
     state : EnvState
         Authored ten-slot snapshot satisfying the ordinary runtime schema.
-        A Team Deathmatch or Capture the Flag start must be below both the
-        horizon and its mode's score threshold.
+        A Team Deathmatch, King of the Hills or Capture the Flag start must be
+        below both the horizon and its mode's score threshold.
 
     Returns
     -------
@@ -1859,8 +2086,8 @@ def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
     TypeError
         A runtime container, storage or dtype check fails.
     ValueError
-        A runtime check, Team Deathmatch or Capture the Flag start limit,
-        shield-history rule or living-body clearance rule fails.
+        A runtime check, a scored mode's start limit, a shield-history rule or
+        a living-body clearance rule fails.
     AssertionError
         An internal target mapping returns None for a validated nonzero category.
 
@@ -1880,6 +2107,11 @@ def validate_scenario_initial_state(config: EnvConfig, state: EnvState) -> None:
             "Team Deathmatch",
             state.team_deathmatch_scores,
             config.team_deathmatch_score_threshold,
+        ),
+        TASK_MODE_KOTH: (
+            "King of the Hills",
+            state.king_of_the_hills_scores,
+            config.king_of_the_hills_score_threshold,
         ),
         TASK_MODE_CTF: (
             "Capture the Flag",

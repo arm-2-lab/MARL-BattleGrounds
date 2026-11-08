@@ -4,7 +4,7 @@ The Team Deathmatch Red Zone depth must be an exact Python float. It is 0.0,
 or a value whose float32 copy is a normal number no larger than the float32
 map width; every mode but Team Deathmatch needs 0.0, as it needs a threshold
 of 0. Each refusal has an exact message, and the depth is checked after the map
-size and before the score threshold range. King of the Hills stays reserved.
+size and before the score threshold range.
 
 The largest score threshold depends on the depth. One step can give a team 5
 points at depth 0.0 and 10 at a positive depth
@@ -62,7 +62,6 @@ from marl_battlegrounds.core.types import (
     OBSTACLE_FEATURES,
     OBSTACLE_TYPE_PILLAR,
     OBSTACLE_TYPE_WALL,
-    TASK_MODE_KOTH,
     TASK_MODE_NEUTRAL,
     TASK_MODE_TDM,
     TEAM_A_ID,
@@ -283,11 +282,6 @@ def test_validator_rejects_wrong_top_level_and_profile_types() -> None:
 def test_task_mode_requires_an_exact_python_integer(task_mode: object) -> None:
     with pytest.raises(TypeError, match="task_mode must be an int"):
         validate_env_config(_replace_config(_valid_config(), task_mode=task_mode))
-
-
-def test_king_of_the_hills_remains_unavailable() -> None:
-    with pytest.raises(ValueError, match="reserved but is not implemented"):
-        validate_env_config(_replace_config(_valid_config(), task_mode=TASK_MODE_KOTH))
 
 
 @pytest.mark.parametrize("task_mode", (-1, 4, 99))

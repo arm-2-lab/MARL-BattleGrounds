@@ -9,8 +9,8 @@ config and snapshot, -0.0 included; wrong storage is refused. A Capture the
 Flag config with the default settings is accepted. It refuses a nonzero Team
 Deathmatch threshold or Red Zone depth, a non-neutral King of the Hills
 setting, an empty team, homes no farther apart than the touch plus capture
-distance, and each out-of-range Capture the Flag setting. King of
-the Hills stays reserved. The two resolved config records refuse a Capture the
+distance, and each out-of-range Capture the Flag setting. The two resolved
+config records refuse a Capture the
 Flag config, whose identity records every field, while a Team Deathmatch
 identity keeps its 13 keys. A Capture the Flag snapshot accepts each flag at
 home, carried by a living enemy at that enemy's position, or dropped on the map
@@ -35,7 +35,6 @@ from marl_battlegrounds.core.config import (
     validate_scenario_initial_state,
 )
 from marl_battlegrounds.core.types import (
-    TASK_MODE_KOTH,
     TEAM_A_ID,
     TEAM_B_ID,
     EnvConfig,
@@ -167,11 +166,6 @@ def test_capture_the_flag_needs_an_agent_on_each_team() -> None:
     )
     with pytest.raises(ValueError, match="at least one configured active member"):
         validate_env_config(_CTF._replace(agent_profile=profile))
-
-
-def test_king_of_the_hills_stays_reserved() -> None:
-    with pytest.raises(ValueError, match="reserved but is not implemented"):
-        validate_env_config(_TDM._replace(task_mode=TASK_MODE_KOTH))
 
 
 def test_old_records_refuse_capture_the_flag_and_identities_keep_tdm_keys() -> None:

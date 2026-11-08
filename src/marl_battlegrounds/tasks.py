@@ -36,6 +36,13 @@ from marl_battlegrounds._task_settings import (
     DEFAULT_CTF_FLAG_HOME_POSITIONS,
     DEFAULT_CTF_FLAG_INTERACTION_DISTANCE,
     DEFAULT_CTF_SCORE_THRESHOLD,
+    DEFAULT_KOTH_EMPTY_HILL_OWNERSHIP_STEPS,
+    DEFAULT_KOTH_HILL_CENTERS,
+    DEFAULT_KOTH_HILL_POINTS_PER_STEP,
+    DEFAULT_KOTH_HILL_RADIUS,
+    DEFAULT_KOTH_SCORE_THRESHOLD,
+    DEFAULT_KOTH_THREE_HILL_SWEEP_BONUS_POINTS_PER_STEP,
+    DEFAULT_ONE_HILL_KOTH_SCORE_THRESHOLD,
     DEFAULT_SCORE_THRESHOLDS,
     DEFAULT_TDM_SCORE_THRESHOLD,
     TASK_NAMES,
@@ -85,6 +92,7 @@ from marl_battlegrounds.core.types import (
     PRIEST_CLASS_ID,
     ROGUE_CLASS_ID,
     TASK_MODE_CTF,
+    TASK_MODE_KOTH,
     TASK_MODE_TDM,
     WARRIOR_CLASS_ID,
     EnvConfig,
@@ -860,10 +868,11 @@ def _make_config(
     team_sizes : tuple[int, int]
         Active counts for Team A and Team B.
     rules : dict[str, Any]
-        The mode's own EnvConfig fields, from _team_deathmatch_rules or
-        _capture_the_flag_rules: task_mode, the Team Deathmatch threshold and
-        Red Zone depth, and any Capture the Flag settings. Every Capture the
-        Flag and King of the Hills field it leaves out takes its neutral value.
+        The mode's own EnvConfig fields, from _team_deathmatch_rules,
+        _capture_the_flag_rules or _king_of_the_hills_rules: task_mode, the
+        Team Deathmatch threshold and Red Zone depth, and any Capture the Flag
+        or King of the Hills settings. Every Capture the Flag and King of the
+        Hills field it leaves out takes its neutral value.
     max_steps : int
         Required episode step limit.
     movement_scale : float, optional
@@ -953,6 +962,44 @@ def _capture_the_flag_rules(
         "capture_the_flag_dropped_flag_auto_return_steps": (
             dropped_flag_auto_return_steps
         ),
+    }
+
+
+def _king_of_the_hills_rules(
+    *,
+    hill_centers: Sequence[tuple[float, float] | None],
+    score_threshold: int,
+    hill_radius: float,
+    hill_points_per_step: int,
+    three_hill_sweep_bonus_points_per_step: int,
+    empty_hill_ownership_steps: int,
+) -> dict[str, Any]:
+    """Return a King of the Hills config's own fields for _make_config.
+
+    hill_centers has one entry per hill slot, an [x, y] center or None for an
+    unused slot, which gets center (0, 0) and radius 0; every used hill gets
+    hill_radius. The Team Deathmatch threshold and Red Zone depth are 0, their
+    neutral values outside Team Deathmatch. Core's validators check every
+    value later, including the number of slots.
+    """
+    return {
+        "task_mode": TASK_MODE_KOTH,
+        "team_deathmatch_score_threshold": 0,
+        "team_deathmatch_red_zone_depth": 0.0,
+        "king_of_the_hills_score_threshold": score_threshold,
+        "king_of_the_hills_hill_positions": jnp.asarray(
+            [(0.0, 0.0) if center is None else center for center in hill_centers],
+            dtype=jnp.float32,
+        ),
+        "king_of_the_hills_hill_radii": jnp.asarray(
+            [0.0 if center is None else hill_radius for center in hill_centers],
+            dtype=jnp.float32,
+        ),
+        "king_of_the_hills_hill_points_per_step": hill_points_per_step,
+        "king_of_the_hills_three_hill_sweep_bonus_points_per_step": (
+            three_hill_sweep_bonus_points_per_step
+        ),
+        "king_of_the_hills_empty_hill_ownership_steps": empty_hill_ownership_steps,
     }
 
 
@@ -1091,6 +1138,109 @@ def make_standard_capture_the_flag_config(
             flag_interaction_distance=flag_interaction_distance,
             flag_capture_distance=flag_capture_distance,
             dropped_flag_auto_return_steps=dropped_flag_auto_return_steps,
+        ),
+        max_steps=max_steps,
+    )
+
+
+def make_standard_king_of_the_hills_config(
+    *,
+    map_id: int,
+    team_a_roster: Sequence[AgentClassName],
+    team_b_roster: Sequence[AgentClassName],
+    hill_centers: Sequence[tuple[float, float] | None] = DEFAULT_KOTH_HILL_CENTERS,
+    score_threshold: int | None = None,
+    max_steps: int = 300,
+    hill_radius: float = DEFAULT_KOTH_HILL_RADIUS,
+    hill_points_per_step: int = DEFAULT_KOTH_HILL_POINTS_PER_STEP,
+    three_hill_sweep_bonus_points_per_step: int = (
+        DEFAULT_KOTH_THREE_HILL_SWEEP_BONUS_POINTS_PER_STEP
+    ),
+    empty_hill_ownership_steps: int = DEFAULT_KOTH_EMPTY_HILL_OWNERSHIP_STEPS,
+) -> EnvConfig:
+    """Build King of the Hills on an installed Team Deathmatch map, for tests.
+
+    King of the Hills has no task name or maps of its own yet, so make
+    refuses it; Core and the clients test the mode with this builder.
+
+    Parameters
+    ----------
+    map_id : int
+        Map ID from 0 through 51 in the Team Deathmatch listing
+        (list_tdm_maps). Its obstacles and spawn banks are used unchanged.
+    team_a_roster, team_b_roster : sequence of str
+        Each team's ordered one-to-five class names, as in
+        make_standard_team_deathmatch_config.
+    hill_centers : sequence of (float, float) or None, optional
+        One entry per hill slot, three in all, each an [x, y] center in map
+        units or None for an unused slot. Slot 0 holds the hill left of the
+        midline, slot 1 the hill exactly on it and slot 2 the hill right of
+        it. The default, DEFAULT_KOTH_HILL_CENTERS, is (5, 5), (10, 5) and
+        (15, 5). For example, (None, (10.0, 5.0), None) is one midline hill.
+    score_threshold : int or None, default=None
+        Points a team needs to win. None gives 100 with three hills
+        (DEFAULT_KOTH_SCORE_THRESHOLD) and 50 with fewer
+        (DEFAULT_ONE_HILL_KOTH_SCORE_THRESHOLD).
+    max_steps : int, default=300
+        Episode step limit, subject to Core's valid range. Reaching it without
+        a winner is a draw.
+    hill_radius : float, default=1.25
+        Every used hill's radius in map units (DEFAULT_KOTH_HILL_RADIUS).
+    hill_points_per_step : int, default=1
+        Points per tick for each owned hill with no enemy on it
+        (DEFAULT_KOTH_HILL_POINTS_PER_STEP).
+    three_hill_sweep_bonus_points_per_step : int, default=3
+        Extra points per tick while one team owns all three hills that way
+        (DEFAULT_KOTH_THREE_HILL_SWEEP_BONUS_POINTS_PER_STEP).
+    empty_hill_ownership_steps : int, default=0
+        Empty ticks in a row a hill stays its owner's before it turns neutral
+        (DEFAULT_KOTH_EMPTY_HILL_OWNERSHIP_STEPS).
+
+    Returns
+    -------
+    EnvConfig
+        Scalar configuration with task_mode 2 and exact source spawn banks.
+        Unused hill slots are all zero. The Team Deathmatch threshold, the Red
+        Zone depth and every Capture the Flag setting are 0. Rosters,
+        movement, waves and the spawn shield are as in
+        make_standard_team_deathmatch_config.
+
+    Raises
+    ------
+    TypeError
+        A roster container or configuration scalar has an unsupported type.
+    ValueError
+        A map ID, roster entry/size or rule value fails its catalog or Core
+        check, for example a hill in the wrong slot or over a spawn pad.
+
+    Notes
+    -----
+    Hills stay where they are when the spawn banks are exchanged; which hill
+    is nearest a team follows from its pads. Like the other factories, this
+    does not balance spawn locations, run games, draw randomness or modify
+    the installed assets.
+    """
+    ids = _roster_ids(team_a_roster, name="team_a_roster") + _roster_ids(
+        team_b_roster, name="team_b_roster"
+    )
+    if score_threshold is None:
+        three_hills = all(center is not None for center in hill_centers)
+        score_threshold = (
+            DEFAULT_KOTH_SCORE_THRESHOLD
+            if three_hills
+            else DEFAULT_ONE_HILL_KOTH_SCORE_THRESHOLD
+        )
+    return _make_config(
+        map_geometry(_map_info(map_id, "tdm")),
+        ids,
+        (len(team_a_roster), len(team_b_roster)),
+        rules=_king_of_the_hills_rules(
+            hill_centers=hill_centers,
+            score_threshold=score_threshold,
+            hill_radius=hill_radius,
+            hill_points_per_step=hill_points_per_step,
+            three_hill_sweep_bonus_points_per_step=three_hill_sweep_bonus_points_per_step,
+            empty_hill_ownership_steps=empty_hill_ownership_steps,
         ),
         max_steps=max_steps,
     )
