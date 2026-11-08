@@ -1,8 +1,11 @@
 """Check optional Hydra bootstrap, CLI compatibility and parser restoration.
 
-These software probes never train, load models or start numerical libraries.
-Fresh subprocesses cover entry, help, config, finite sweeps and shell completion.
-Later composition and study tests extend this same public launcher boundary.
+These software probes never train or load models. Fresh subprocesses cover
+entry, help, config, finite sweeps and shell completion. One subprocess saves a
+tiny Orbax checkpoint on the CPU inside a real Hydra job: after prepare_hydra,
+Orbax's INFO lines stay out of the output, while other loggers' INFO and absl
+warnings still show. No other probe starts a numerical library. Later
+composition and study tests extend this same public launcher boundary.
 """
 
 import argparse
@@ -119,6 +122,38 @@ def test_bootstrap_is_idempotent() -> None:
     before: Any = utils.get_args_parser
     adapter.prepare_hydra()
     assert utils.get_args_parser is main.get_args_parser is before
+
+
+def test_hydra_job_hides_orbax_info_but_keeps_other_lines(tmp_path: Path) -> None:
+    lesson = tmp_path / "lesson.py"
+    lesson.write_text("""import logging
+from pathlib import Path
+import hydra
+from marl_battlegrounds.experiments.hydra import prepare_hydra
+@hydra.main(version_base="1.3", config_path=None, config_name=None)
+def main(_):
+    import jax.numpy as jnp
+    import orbax.checkpoint as ocp
+    logging.getLogger("lesson").info("Kept lesson INFO")
+    with ocp.StandardCheckpointer() as saver:
+        saver.save(Path.cwd() / "saved", {"weights": jnp.ones(3)})
+    logging.getLogger("absl").warning("Kept absl WARNING")
+prepare_hydra()
+main()
+""")
+    result = subprocess.run(
+        [sys.executable, "-B", str(lesson), f"hydra.run.dir={tmp_path / 'launch'}"],
+        cwd=tmp_path,
+        env={**os.environ, "JAX_PLATFORMS": "cpu"},
+        text=True,
+        capture_output=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert (tmp_path / "saved").is_dir()
+    assert "Kept lesson INFO" in output
+    assert "Kept absl WARNING" in output
+    assert "[absl][INFO]" not in output
 
 
 @pytest.mark.skipif(

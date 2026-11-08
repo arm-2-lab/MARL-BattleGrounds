@@ -1,9 +1,11 @@
 """Compose, preview and launch experiments through the existing public API.
 
 Install marl-battlegrounds[hydra] to use this module. Hydra composes settings;
-MARL-BGs owns validation, execution and saved records. On Python 3.14 a small
-compatibility patch affects only Hydra parser creation, before worker startup.
-It never edits installed dependencies or leaves argparse validation disabled.
+MARL-BGs owns validation, execution and saved records. Every launcher calls
+prepare_hydra, which hides Orbax's INFO checkpoint lines. On Python 3.14 a
+small compatibility patch affects only Hydra parser creation, before worker
+startup. It never edits installed dependencies or leaves argparse validation
+disabled.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import argparse
 
 # These imports remain host-only. Import training execution inside run_training.
 import json
+import logging
 import math
 import os
 import sys
@@ -88,16 +91,26 @@ def _compatible_args_parser(
 
 
 def prepare_hydra() -> None:
-    """Install the narrow parser backport once for Python 3.14 and Hydra 1.3.8.
+    """Prepare this process for a Hydra launcher: quiet Orbax, patch the parser.
 
-    Hydra 1.3.8 keeps 1.3.7's parser, so it still needs the backport. Other
-    Python versions use the upstream parser unchanged. On Python 3.14 an
-    unqualified Hydra version raises RuntimeError with the supported install
-    command. Patch both upstream references, including hydra.main's imported
-    name. Call on the main thread before workers. Repeated calls do nothing.
-    This changes no installed file and starts no application or numerical work.
+    Hydra's logging setup shows INFO records, and Orbax writes about 20 INFO
+    lines through absl's "absl" logger for every checkpoint it saves or
+    restores. So this sets that logger to WARNING: Orbax's warnings and errors
+    still show, and so does INFO from every other logger, including
+    MARL-BGs' own. Hydra's logging setup keeps the level, because it leaves
+    loggers it does not name alone. This applies to every logger user in the
+    process, so only our launchers call it, never library code.
+
+    On Python 3.14 it also installs the narrow parser backport once for Hydra
+    1.3.8, which keeps 1.3.7's parser. Other Python versions use the upstream
+    parser unchanged. On Python 3.14 an unqualified Hydra version raises
+    RuntimeError with the supported install command. Patch both upstream
+    references, including hydra.main's imported name. Call on the main thread
+    before workers. Repeated calls change nothing more. This changes no
+    installed file and starts no application or numerical work.
     """
     global _parser_patched
+    logging.getLogger("absl").setLevel(logging.WARNING)
     if _parser_patched or sys.version_info[:2] != (3, 14):
         return
     if version("hydra-core") != "1.3.8":
