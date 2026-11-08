@@ -412,16 +412,13 @@ def _ppo_state(state: LearnerState) -> PPOTrainState:
 
 
 @lru_cache(maxsize=16)
-def _ppo_spec(
-    ppo: PPOConfig, method: str = "mappo", training_state_schema: int = 2
-) -> PPOTrainState:
+def _ppo_spec(ppo: PPOConfig, method: str, training_state_schema: int) -> PPOTrainState:
     """Trace the known initializer once per static config to obtain safe leaf specs.
 
     This host helper executes no network initialization or optimizer step. The
     cached tree contains only shapes/dtypes, not weights or experiment arrays.
-    The cache includes method, which defaults to recurrent MAPPO, and the
-    training-state schema that sets a centralized critic's input width (2, the
-    Team Deathmatch schema, by default).
+    The cache includes method and the training-state schema, which sets a
+    centralized critic's input width.
     """
     return cast(
         PPOTrainState,

@@ -21,15 +21,16 @@ twenty pre-contact steps; and twins with one authored death per team agree
 through the respawn wave for a full and a padded roster, in both teams. Unused
 observer rows are never flagged, and "world", the removed "right" and any other
 name are refused by the flag helper. Actor input schemas 2 and 3 share the
-current layout (ACTOR_INPUT_SCHEMA_VERSION is 3): 5,165
+current layout (ACTOR_INPUT_SCHEMA_VERSION, the default, is 2): 5,165
 features with the Red Zone depth as context column 19 (flat feature 1128),
 and the training state is 920 features with the depth right after the score
-threshold (slice 391 to 392). That schema names every state and config field
+threshold (slice 391 to 392). That schema (TRAINING_STATE_SCHEMA_VERSION, the
+default, and TRAINING_STATE_FEATURE_SIZE) names every state and config field
 except the Capture the Flag and King of the Hills ones (the
 neutral_objective_fields names), which it leaves out so Team Deathmatch critics
-keep their 920 features. Training state schema 3 (973 features, the default
-and TRAINING_STATE_FEATURE_SIZE) appends exactly those fields in declaration
-order, and its first 920 features equal schema 2's. A hand-built state with
+keep their 920 features. Training state schema 3 (973 features) appends
+exactly those fields in declaration order, and its first 920 features equal
+schema 2's. A hand-built state with
 both teams' scores, both flags carried, and a contested hill and two owned
 ones checks every new feature: the carriers are one indicator per agent row,
 and each hill's owner is two indicators, both 0 for nobody. Historical
@@ -268,7 +269,7 @@ def test_actor_schema_covers_every_field_with_distinct_values(
             encoded = np.asarray(value)
         expected.append(encoded.reshape(-1))
         offset += width
-    assert ACTOR_INPUT_SCHEMA_VERSION == 3
+    assert ACTOR_INPUT_SCHEMA_VERSION == 2
     assert offset == ACTOR_FEATURE_SIZE == 5165
     assert dict(ACTOR_FEATURE_SIZES) == {1: 5164, 2: 5165, 3: 5165}
     assert CONTEXT_FEATURES == 20
@@ -485,10 +486,10 @@ def test_training_schema_covers_every_team_deathmatch_field(
         assert TRAINING_STATE_FEATURE_OFFSETS[name] == slice(offset, offset + flat.size)
         expected.append(flat)
         offset += flat.size
-    assert TRAINING_STATE_SCHEMA_VERSION == 3
-    assert offset == TRAINING_STATE_FEATURE_SIZES[2] == 920
-    assert TRAINING_STATE_FEATURE_SIZE == TRAINING_STATE_FEATURE_SIZES[3] == 973
-    newest = np.asarray(encode_training_state(state, config))
+    assert TRAINING_STATE_SCHEMA_VERSION == 2
+    assert offset == TRAINING_STATE_FEATURE_SIZE == 920
+    assert dict(TRAINING_STATE_FEATURE_SIZES) == {2: 920, 3: 973}
+    newest = np.asarray(encode_training_state(state, config, schema=3))
     np.testing.assert_array_equal(newest[:920], actual)
     depth = TRAINING_STATE_FEATURE_OFFSETS["config.team_deathmatch_red_zone_depth"]
     assert depth == slice(391, 392)
@@ -514,9 +515,9 @@ def test_training_schema_3_encodes_each_objective_feature(
             [0, 5, 9], jnp.int32
         ),
     )
-    actual = np.asarray(encode_training_state(state, config))
+    actual = np.asarray(encode_training_state(state, config, schema=3))
     np.testing.assert_array_equal(
-        actual[:920], np.asarray(encode_training_state(state, config, schema=2))
+        actual[:920], np.asarray(encode_training_state(state, config))
     )
 
     def part(name: str) -> np.ndarray:

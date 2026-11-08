@@ -830,13 +830,15 @@ DEFAULT_PQN_CONFIG = PQNConfig()
 # Host-readable format versions shared by model code and saved descriptions.
 ACTION_SCHEMA_VERSION = 1
 
-# The newest actor input schema. 3 has schema 2's layout; Team Deathmatch runs
-# record 2 and other modes' runs 3 (actor_input_schema), so a converted old
-# actor can tell a Team Deathmatch-only view from one that saw objectives.
-ACTOR_INPUT_SCHEMA_VERSION = 3
-# The newest training-state schema. Team Deathmatch runs record 2
-# (training_state_schema).
-TRAINING_STATE_SCHEMA_VERSION = 3
+# The actor input schema of the default mode, Team Deathmatch, and the default
+# of every System factory. Other modes' runs record 3 (actor_input_schema),
+# which has schema 2's layout, so a converted old actor can tell a Team
+# Deathmatch-only view from one that saw objectives.
+ACTOR_INPUT_SCHEMA_VERSION = 2
+# The training-state schema of the default mode, Team Deathmatch, and the
+# default of the encoder and the learner initializers. Other modes' runs record
+# 3 (training_state_schema), which adds their objective state.
+TRAINING_STATE_SCHEMA_VERSION = 2
 
 
 def training_state_schema(task: str) -> int:
@@ -850,16 +852,16 @@ def training_state_schema(task: str) -> int:
     Returns
     -------
     int
-        2 for "tdm", so Team Deathmatch networks and saved records stay as they
-        were; TRAINING_STATE_SCHEMA_VERSION (3) for every other mode. The run's
-        critic or mixer reads baselines.inputs.TRAINING_STATE_FEATURE_SIZES of
-        this schema.
+        TRAINING_STATE_SCHEMA_VERSION (2) for "tdm", so Team Deathmatch networks
+        and saved records stay as they were; 3 for every other mode, which adds
+        the objective state. The run's critic or mixer reads
+        baselines.inputs.TRAINING_STATE_FEATURE_SIZES of this schema.
 
     Notes
     -----
     Host-only and static. It checks nothing, so the caller validates the name.
     """
-    return 2 if task == "tdm" else TRAINING_STATE_SCHEMA_VERSION
+    return TRAINING_STATE_SCHEMA_VERSION if task == "tdm" else 3
 
 
 def actor_input_schema(task: str) -> int:
@@ -873,17 +875,17 @@ def actor_input_schema(task: str) -> int:
     Returns
     -------
     int
-        2 for "tdm", so Team Deathmatch records stay as they were;
-        ACTOR_INPUT_SCHEMA_VERSION (3) for every other mode. Schemas 2 and 3
-        share one layout (5,165 features); the version records which games the
-        actor learned from.
+        ACTOR_INPUT_SCHEMA_VERSION (2) for "tdm", so Team Deathmatch records
+        stay as they were; 3 for every other mode. Schemas 2 and 3 share one
+        layout (5,165 features); the version records which games the actor
+        learned from.
 
     Notes
     -----
     Host-only and static. It checks nothing, so the caller validates the name.
     The mirror of training_state_schema.
     """
-    return 2 if task == "tdm" else ACTOR_INPUT_SCHEMA_VERSION
+    return ACTOR_INPUT_SCHEMA_VERSION if task == "tdm" else 3
 
 
 QMIX_TIE_RULE = "first_legal_maximum"

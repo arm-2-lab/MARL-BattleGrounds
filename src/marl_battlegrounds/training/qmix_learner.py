@@ -1435,11 +1435,11 @@ def update_qmix_learner(
 
 
 @lru_cache(maxsize=16)
-def _qmix_spec(qmix: QMIXConfig, training_state_schema: int = 2) -> QMIXTrainState:
+def _qmix_spec(qmix: QMIXConfig, training_state_schema: int) -> QMIXTrainState:
     """Trace initialize_qmix once per config and training-state schema for specs.
 
-    The schema (2, the Team Deathmatch schema, by default) sets the mixer's state
-    width. Only shapes and dtypes are kept; nothing is initialized.
+    The schema sets the mixer's state width. Only shapes and dtypes are kept;
+    nothing is initialized.
     """
 
     def build(key: Array) -> QMIXTrainState:

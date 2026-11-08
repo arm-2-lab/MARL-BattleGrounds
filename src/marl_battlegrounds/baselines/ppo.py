@@ -128,6 +128,7 @@ from marl_battlegrounds.baselines.inputs import (
     ACTOR_INPUT_SCHEMA_VERSION,
     SPAWN_FRAMES,
     TRAINING_STATE_FEATURE_SIZES,
+    TRAINING_STATE_SCHEMA_VERSION,
     encode_actor_inputs,
     schema_1_actor_input,
     spawn_frame_flag,
@@ -1098,7 +1099,7 @@ def initialize_ppo(
     config: PPOConfig = DEFAULT_PPO_CONFIG,
     *,
     method: str = "mappo",
-    training_state_schema: int = 2,
+    training_state_schema: int = TRAINING_STATE_SCHEMA_VERSION,
 ) -> PPOTrainState:
     """Initialize untrained BG-width actor/critic parameters and optimizers.
 
@@ -1113,7 +1114,7 @@ def initialize_ppo(
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
         Static network choice. IPPO uses local critic inputs; feedforward methods
         initialize two-layer models without recurrent parameters or memory.
-    training_state_schema : {2, 3}, default=2
+    training_state_schema : {2, 3}, default=TRAINING_STATE_SCHEMA_VERSION (2)
         The run's training-state schema, which sets a centralized critic's
         input width: 920 features for 2 (Team Deathmatch) and 973 for 3
         (``baselines.inputs.training_state_schema``). Methods with a local
@@ -1520,8 +1521,9 @@ def make_recurrent_mappo_system(
         Optional identity text attached to the System. No file is opened or
         loaded, and this text alone does not verify an artifact's contents.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
-        Actor input schema the weights were trained on: 2, the current
-        5,165-feature schema (the default), or 1, the historical 5,164-feature
+        Actor input schema the weights were trained on: 2, the 5,165-feature
+        schema of Team Deathmatch actors (the default); 3, the same layout for
+        actors trained in other modes; or 1, the historical 5,164-feature
         schema of actors trained before Red Zone. Schema 1 uses the cached
         _schema_1_actor_apply hook, which removes the Red Zone depth column
         and keeps the old spawn-side formula, so the actor plays as before.
@@ -1540,8 +1542,8 @@ def make_recurrent_mappo_system(
     ------
     ValueError
         The scale is not a positive finite real number, is Boolean, the spawn
-        frame is not "world" or "left", actor_input_schema is not the int 1
-        or 2, or the System rejects an empty or invalid display name.
+        frame is not "world" or "left", actor_input_schema is not the int 1,
+        2 or 3, or the System rejects an empty or invalid display name.
 
     Notes
     -----
@@ -1752,9 +1754,10 @@ def make_ppo_system(
     checkpoint : str or None, default=None
         Optional identity label. This function opens no checkpoint files.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
-        Actor input schema the weights were trained on: 2, the current
-        5,165-feature schema (the default), or 1 for actors trained before
-        Red Zone (5,164 features). Schema 1 picks the cached legacy hook
+        Actor input schema the weights were trained on: 2, the 5,165-feature
+        schema of Team Deathmatch actors (the default); 3, the same layout for
+        actors trained in other modes; or 1 for actors trained before Red Zone
+        (5,164 features). Schema 1 picks the cached legacy hook
         (_schema_1_actor_apply or _schema_1_feedforward_actor_apply) once
         here, so the actor sees and acts exactly as before. The factory does
         not compare the weights' width with the schema.

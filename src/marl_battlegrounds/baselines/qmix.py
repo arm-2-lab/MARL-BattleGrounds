@@ -103,6 +103,7 @@ from marl_battlegrounds.baselines.inputs import (
     ACTOR_INPUT_SCHEMA_VERSION,
     SPAWN_FRAMES,
     TRAINING_STATE_FEATURE_SIZES,
+    TRAINING_STATE_SCHEMA_VERSION,
     encode_actor_inputs,
     schema_1_actor_input,
     spawn_frame_flag,
@@ -568,7 +569,7 @@ def initialize_qmix(
     key: Array,
     config: QMIXConfig = DEFAULT_QMIX_CONFIG,
     *,
-    training_state_schema: int = 2,
+    training_state_schema: int = TRAINING_STATE_SCHEMA_VERSION,
 ) -> QMIXTrainState:
     """Create untrained QMIX networks, equal targets and complete Adam states.
 
@@ -583,7 +584,7 @@ def initialize_qmix(
     config : QMIXConfig, default=DEFAULT_QMIX_CONFIG
         Settings for input_scale, parameter_sharing, q_lr and Adam (QMIX does
         not clip gradients).
-    training_state_schema : {2, 3}, default=2
+    training_state_schema : {2, 3}, default=TRAINING_STATE_SCHEMA_VERSION (2)
         The run's training-state schema, which sets the mixer's state width:
         920 features for 2 (Team Deathmatch) and 973 for 3
         (``baselines.inputs.training_state_schema``).
@@ -1200,9 +1201,10 @@ def make_qmix_system(
     checkpoint : str or None, default=None
         Optional identity label. No file is opened.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
-        Actor input schema the weights were trained on: 2, the current
-        5,165-feature schema (the default), or 1 for Q-networks trained before
-        Red Zone (5,164 features). Schema 1 picks the cached
+        Actor input schema the weights were trained on: 2, the 5,165-feature
+        schema of Team Deathmatch Q-networks (the default); 3, the same layout
+        for Q-networks trained in other modes; or 1 for Q-networks trained
+        before Red Zone (5,164 features). Schema 1 picks the cached
         _schema_1_q_actor_apply hook once here, so the actor sees and acts
         exactly as before. The factory does not compare the weights' width
         with the schema.

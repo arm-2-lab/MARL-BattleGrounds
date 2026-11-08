@@ -20,9 +20,9 @@ schema 1 (5,164 features) is kept only so actors trained before Red Zone still
 play exactly as before.
 schema_1_actor_input turns a current view into the old 19-column view; the
 encoder and spawn_frame_flag then pick the old layout and the old spawn-side
-formula from that static width. Training state schema 2 (920 features) adds
-the same depth after the score threshold. Training state schema 3 (973
-features, the default) keeps schema 2's features and offsets and appends the
+formula from that static width. Training state schema 2 (920 features, the
+default) adds the same depth after the score threshold. Training state schema
+3 (973 features) keeps schema 2's features and offsets and appends the
 Capture the Flag and King of the Hills state and settings. Team Deathmatch
 runs keep schema 2; training_state_schema says which schema a run records.
 
@@ -551,7 +551,7 @@ TRAINING_STATE_FEATURE_SIZES: Mapping[int, int] = MappingProxyType(
         for version, layout in _TRAINING_STATE_LAYOUTS.items()
     }
 )
-# The newest schema's width (973), which encode_training_state gives by default.
+# The default schema's width (920), which encode_training_state gives by default.
 TRAINING_STATE_FEATURE_SIZE = TRAINING_STATE_FEATURE_SIZES[
     TRAINING_STATE_SCHEMA_VERSION
 ]
@@ -766,16 +766,17 @@ def encode_training_state(
         axes may broadcast to L, using ordinary right-aligned broadcasting. For
         example, scalar-game config works with (B,) states, and (B,) config works
         with (T, B) states. Keep values paired with their actual game/decision.
-    schema : {3, 2}, default=TRAINING_STATE_SCHEMA_VERSION (3)
-        The training-state schema, a static Python int. 3 gives every mode's
-        fields. 2 is the 920-feature view that Team Deathmatch runs use, as
-        every run saved before schema 3 did (training_state_schema).
+    schema : {2, 3}, default=TRAINING_STATE_SCHEMA_VERSION (2)
+        The training-state schema, a static Python int. 2 is the 920-feature
+        view that Team Deathmatch runs use, as every run saved before schema 3
+        did. 3 adds the other modes' fields. training_state_schema(task) says
+        which one a run of a mode uses.
 
     Returns
     -------
     Array
-        Float32 (*L, TRAINING_STATE_FEATURE_SIZES[schema]): 973 features
-        under schema 3 and 920 under schema 2, at TRAINING_STATE_FEATURE_OFFSETS
+        Float32 (*L, TRAINING_STATE_FEATURE_SIZES[schema]): 920 features
+        under schema 2 and 973 under schema 3, at TRAINING_STATE_FEATURE_OFFSETS
         (schema 2's offsets are the same). In schema 2, state fields precede
         config fields in declaration order, so the Red Zone depth (map units)
         follows the score threshold. Schema 3 appends the Capture the Flag and
