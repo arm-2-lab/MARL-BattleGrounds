@@ -14,7 +14,9 @@ optional ``flag_trajectories`` (both null outside Capture the Flag), and the
 frame's optional host facts
 ``champion_streaks`` (Champion Streaks), ``match_honors`` (the game-over
 Honors), ``match_moments`` (the Herald Cards history), ``next_end_spots``
-(the Next Step Ghost) and ``recent_falls`` (the Fallen panel history).
+(the Next Step Ghost) and ``recent_falls`` (the Fallen panel history). The
+Oracle builder's outgoing transition is a recorded transition, V1 or V2, never
+a metrics transition view.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
-from typing import cast
+from typing import cast, get_args, get_type_hints
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -62,7 +64,9 @@ from marl_battlegrounds.evaluation._replays.replay import (
 )
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV1,
+    EvaluationTransition,
     EvaluationTransitionV1,
+    EvaluationTransitionV2,
     canonical_digest_sha256,
 )
 from marl_battlegrounds.evaluation.replay_io import load_replay_bundle_v1
@@ -1624,14 +1628,10 @@ def test_rendering_projection_source_has_no_forbidden_ownership_imports() -> Non
 
 
 def test_outgoing_builder_accepts_transition_not_transition_view() -> None:
-    annotations = (
-        inspect.signature(build_replay_oracle_authorized_presentation_v1)
-        .parameters["outgoing_transition"]
-        .annotation
-    )
-    assert "EvaluationTransitionV1" in str(annotations)
-    assert "EvaluationTransitionViewV1" not in str(annotations)
-    assert EvaluationTransitionV1 is not EvaluationTransitionViewV1
+    hints = get_type_hints(build_replay_oracle_authorized_presentation_v1)
+    assert hints["outgoing_transition"] == EvaluationTransition | None
+    accepted = get_args(EvaluationTransition.__value__)
+    assert accepted == (EvaluationTransitionV1, EvaluationTransitionV2)
 
 
 def test_red_zone_map_record_accepts_only_the_exact_scoring_strips() -> None:
