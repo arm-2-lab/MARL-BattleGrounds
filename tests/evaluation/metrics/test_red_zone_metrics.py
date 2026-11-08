@@ -347,7 +347,14 @@ def test_historical_replay_marks_red_zone_unavailable_and_keeps_older_columns(
     direct = full_values(
         full,
         config,
-        priority_values(config, final, initial.step_count, priority, outcome),
+        priority_values(
+            config,
+            final,
+            initial.step_count,
+            priority,
+            outcome,
+            final.team_deathmatch_scores,
+        ),
     )
     statistics = cast(
         list[dict[str, object]],

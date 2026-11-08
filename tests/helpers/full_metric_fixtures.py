@@ -149,7 +149,12 @@ def advance(run: MetricRun, actions: Action) -> tuple[MetricRun, Info]:
 
 def priority(run: MetricRun) -> MetricValues:
     return priority_values(
-        run.config, run.state, run.initial_step, run.priority, run.outcome
+        run.config,
+        run.state,
+        run.initial_step,
+        run.priority,
+        run.outcome,
+        run.state.team_deathmatch_scores,
     )
 
 

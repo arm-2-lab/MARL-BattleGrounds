@@ -1,8 +1,9 @@
 """Accumulate compact priority metrics from Core rewards and transition facts.
 
 The numerical trees cover one episode and support outer JAX batching. They
-hold returns and observed deaths; final values also read authoritative Core
-scores, elapsed steps and outcome. Availability is a separate boolean mask.
+hold returns and observed deaths; final values also read Core's elapsed steps
+and the scores and outcome of the episode's own mode, which the caller passes.
+Availability is a separate boolean mask.
 This module neither retains trajectories nor writes host reports.
 """
 
@@ -103,8 +104,9 @@ def priority_values(
     initial_step_count: Array,
     totals: PriorityTotals,
     outcome: Array,
+    scores: Array,
 ) -> MetricValues:
-    """Read Core scores/outcomes and de-broadcast its canonical team rewards.
+    """Read the mode's scores and outcome, and de-broadcast Core's team rewards.
 
     A score may include scenario initialization; observed kills do not. Team
     reward is repeated per active teammate by Core, so summing those copies
@@ -115,15 +117,20 @@ def priority_values(
     config : EnvConfig
         Exact scalar episode config, including ten active-slot flags.
     state : EnvState
-        Latest scalar Core state supplying scores and elapsed steps.
+        Latest scalar Core state supplying elapsed steps.
     initial_step_count : Array
         Scalar starting step, so authored starts count only
         transitions in the recorded episode.
     totals : PriorityTotals
         Running PriorityTotals from those same transitions.
     outcome : Array
-        Scalar Core outcome code: 0 before an outcome, 1 Team A win,
-        2 Team B win, or 3 draw.
+        Scalar Core outcome code of the episode's own mode: 0 before an
+        outcome, 1 Team A win, 2 Team B win, or 3 draw.
+    scores : Array
+        Int32 (2,), [Team A, Team B], the scores of the episode's own mode, as
+        ``environment.team_scores_for_mode`` reads them from state: points
+        from kills in Team Deathmatch, captures in Capture the Flag. The
+        team_a_score, team_b_score and score_difference columns hold them.
 
     Returns
     -------
@@ -139,7 +146,6 @@ def priority_values(
     active = config.agent_profile.active_mask
     first_active = jnp.argmax(active.reshape(2, 5), axis=1)
     team_returns = totals.agent_returns.reshape(2, 5)[jnp.arange(2), first_active]
-    scores = state.team_deathmatch_scores
     outcomes = jnp.stack(
         tuple(outcome == code for code in PRIORITY_OUTCOME_CODES.values())
     )

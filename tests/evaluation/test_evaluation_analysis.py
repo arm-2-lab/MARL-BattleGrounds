@@ -494,7 +494,14 @@ def test_replay_scalar_prefixes_match_direct_metrics_and_wide_csv(
         expected = full_values(
             full,
             config,
-            priority_values(config, state, initial.step_count, priority, outcome),
+            priority_values(
+                config,
+                state,
+                initial.step_count,
+                priority,
+                outcome,
+                state.team_deathmatch_scores,
+            ),
         )
         summary = analysis.summary(index)
         topics = tuple(

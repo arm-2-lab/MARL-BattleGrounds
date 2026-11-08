@@ -450,7 +450,12 @@ def _metrics(
     (totals, priority), _ = jax.lax.scan(collect, (totals, priority), facts)
     outcome = facts.info.transition_facts.team_deathmatch_facts.outcome.max(axis=0)
     critical = jax.vmap(priority_values)(
-        final.config, final.core_state, initial.initial_step_count, priority, outcome
+        final.config,
+        final.core_state,
+        initial.initial_step_count,
+        priority,
+        outcome,
+        final.core_state.team_deathmatch_scores,
     )
     return totals, critical, jax.vmap(full_values)(totals, final.config, critical)
 

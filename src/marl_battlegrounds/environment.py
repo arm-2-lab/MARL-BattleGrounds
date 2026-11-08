@@ -1406,6 +1406,7 @@ class Environment:
                 state.initial_step_count,
                 totals,
                 outcome_for_mode(info, self._execution.task_mode),
+                team_scores_for_mode(core_state, self._execution.task_mode),
             )
             values = values._replace(valid=values.valid & state.collect_metrics)
         advances, overflow = _checked_increment(

@@ -13,7 +13,9 @@ so a handle reports its own mode's (captures and the Capture the Flag result on
 a Capture the Flag handle, points and the Team Deathmatch result otherwise),
 and its training facts keep only its own mode's objective record: Core's
 Capture the Flag record on a Capture the Flag handle, nothing on a Team
-Deathmatch handle. make_standard_capture_the_flag_config builds the same config
+Deathmatch handle. The priority metrics' team_a_score, team_b_score and
+score_difference hold the handle's own mode's scores, never the other mode's.
+make_standard_capture_the_flag_config builds the same config
 as converting the Team Deathmatch one on Capture the Flag's own map geometry,
 with its settings passed through; list_ctf_maps and maps_for_task give each
 mode's 52 maps, and scenarios_for_task each mode's scenarios (Team Deathmatch's
@@ -47,13 +49,19 @@ from marl_battlegrounds._task_settings import (
     DEFAULT_SCORE_THRESHOLDS,
 )
 from marl_battlegrounds.core import env as core
-from marl_battlegrounds.core.types import TASK_MODE_CTF, TASK_MODE_KOTH, TASK_MODE_TDM
+from marl_battlegrounds.core.types import (
+    TASK_MODE_CTF,
+    TASK_MODE_KOTH,
+    TASK_MODE_TDM,
+    Action,
+)
 from marl_battlegrounds.environment import (
     outcome_for_mode,
     score_threshold_for_mode,
     team_scores_for_mode,
 )
 from marl_battlegrounds.evaluation.evaluate import normalize_episode_specs
+from marl_battlegrounds.evaluation.metric_catalog import PRIORITY_METRIC_NAMES
 from marl_battlegrounds.modes.capture_the_flag import _assets as ctf_assets
 from marl_battlegrounds.modes.team_deathmatch import _assets as tdm_assets
 from marl_battlegrounds.policies.route_field import (
@@ -170,6 +178,47 @@ def test_each_mode_reads_its_own_scores_outcome_and_facts() -> None:
     assert ctf.king_of_the_hills_facts is None
     tdm = _training_facts(info, TASK_MODE_TDM)
     assert tdm.capture_the_flag_facts is None and tdm.king_of_the_hills_facts is None
+
+
+@pytest.mark.parametrize(
+    ("task", "own", "other"),
+    [
+        ("ctf", "capture_the_flag_scores", "team_deathmatch_scores"),
+        ("tdm", "team_deathmatch_scores", "capture_the_flag_scores"),
+    ],
+)
+def test_the_priority_scores_are_the_handle_s_own_mode_s(
+    task: str, own: str, other: str
+) -> None:
+    config = _CONFIG
+    if task == "tdm":
+        config = make_standard_team_deathmatch_config(
+            map_id=29, team_a_roster=_TEAM_A, team_b_roster=_TEAM_B
+        )
+    env = make(task, env_config=config)
+    _, state = env.reset(jax.random.key(0))
+    core_state = state.core_state._replace(
+        **{
+            own: jnp.asarray([2, 1], jnp.int32),
+            other: jnp.asarray([5, 0], jnp.int32),
+        }
+    )
+    idle = jnp.zeros(10, jnp.int32)
+    *_, info = env.step(
+        jax.random.key(1),
+        state._replace(core_state=core_state),
+        Action(idle, idle, idle),
+    )
+    assert info.priority is not None
+    values = dict(
+        zip(PRIORITY_METRIC_NAMES, info.priority.values.tolist(), strict=True)
+    )
+    scores = (
+        values["team_a_score"],
+        values["team_b_score"],
+        values["score_difference"],
+    )
+    assert scores == (2.0, 1.0, 1.0)
 
 
 def test_only_a_capture_the_flag_handle_returns_capture_the_flag_training_facts() -> (

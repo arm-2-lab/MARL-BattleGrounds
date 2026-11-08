@@ -180,10 +180,15 @@ def _values(
     config: EnvConfig, initial_step: Array, carry: _Carry, outcome: Array, *, full: bool
 ) -> MetricValues:
     """Read current priority values, adding full values only for the static full
-    mode.
+    mode. Replay analysis plays Team Deathmatch only, so the scores are its own.
     """
     priority = priority_values(
-        config, carry.state, initial_step, carry.priority, outcome
+        config,
+        carry.state,
+        initial_step,
+        carry.priority,
+        outcome,
+        carry.state.team_deathmatch_scores,
     )
     return full_values(carry.diagnostics, config, priority) if full else priority
 
