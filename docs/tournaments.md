@@ -214,9 +214,11 @@ and cannot measure the speed test. Passing the check does not test the full 8
 hours, RAM or disk. A method name is taken once an entry under it has run this
 season or waits in the queue; you may reuse your own only to resend a run that
 saved nothing. So a new version needs a new name, for example `hydra-mappo-2`.
-An entry made with 1.0.3 still runs 1.0.3's `entry check` and `entry submit`,
-with the old rule numbers and form, because its `uv.lock` pins 1.0.3. To get the
-new ones, change `==1.0.3` to `==1.0.4` on both marl-battlegrounds lines in
+An entry made with 1.0.3 still runs 1.0.3's tools, because its `uv.lock` pins
+1.0.3. Its `entry check` names the old rule numbers. Its `entry submit` opens the
+new form with your repository and commit filled in, but also prints notes about
+team members, an entry type and agreements, which no longer apply. To get the
+new tools, change `==1.0.3` to `==1.0.4` on both marl-battlegrounds lines in
 `pyproject.toml`, then run `uv lock` and commit both files.
 
 ### How We Run and Score
