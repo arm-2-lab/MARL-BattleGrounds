@@ -10,7 +10,7 @@ num_envs: 32
 total_env_steps: 10000000
 curriculum: false
 score_threshold_curriculum: false
-red_zone_depth: 5.0
+red_zone_depth: null
 shaping: false
 reward: null
 shaping_coefficient: 0.01
