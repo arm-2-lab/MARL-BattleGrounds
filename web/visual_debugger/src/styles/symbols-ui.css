@@ -1,5 +1,5 @@
 /*
- * Symbol Tips, the Champion Card and Frame Explanation (lane J). styles.css
+ * Symbol Tips, the Champion Card and Frame Explanation. styles.css
  * imports this file. Owners: src/tooltip.js (the card and symbol owners, and
  * the Champion Card: renderChampionCard) and src/looks/frame-explanation.js
  * (callouts in the explain layer and the list).
@@ -47,7 +47,7 @@
 }
 
 /* The Champion Card (src/tooltip.js renderChampionCard; design C "Clean List",
-   owner, 2 October 2026). Its tokens are the BattleClient vision's values,
+   2 October 2026). Its tokens are the BattleClient vision's values,
    set here so the Replay Viewer draws the same card. */
 .champion-card {
   --cc-panel: #0f1624;
@@ -366,7 +366,7 @@
   font-weight: 700;
 }
 
-/* Live play follows the vision page: a champion's card is the vision's hover
+/* Live play follows the BattleClient vision: a champion's card is the hover
    card (#hcard, drawn by src/tooltip.js createHoverCard), and buttons explain
    themselves by their labels, so the older semantic champion card, the
    tooltip copy of the Champion Card (a scorebug portrait registers one for

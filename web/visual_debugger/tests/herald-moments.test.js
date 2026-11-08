@@ -304,7 +304,7 @@ test("Scores Level, Ultimate Combo and 30 Ticks Left are plates that need their 
   assert.equal(moon.title, "30 Ticks Left");
   assert.equal(moon.eyebrow, "Draw If No Team Reaches 20");
   assert.equal(moon.glyphs[0].type, "crescent");
-  // The owner removed the 10, 5, 4, 3, 2 and 1 Ticks Left cards (4 Oct 2026).
+  // No 10, 5, 4, 3, 2 or 1 Ticks Left cards (4 Oct 2026).
   for (const left of [10, 5, 4, 3, 2, 1]) {
     assert.deepEqual(
       kinds(

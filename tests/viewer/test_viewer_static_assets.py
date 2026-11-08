@@ -12,7 +12,7 @@ Contracts checked here:
   that nothing imports is served but not required. An ``@import`` inside a
   comment is not an import. Every other ``@import`` form, and a stylesheet
   that is not UTF-8, is refused with a clear error.
-- The owner's emblem images are required assets.
+- The MARL-BGs emblem images are required assets.
 - Starting from ``index.html``, every stylesheet link, icon, image, script,
   CSS ``@import``, CSS ``url()``, JavaScript module import and absolute
   ``/assets/`` or ``/src/`` path written in a script resolves to a route that

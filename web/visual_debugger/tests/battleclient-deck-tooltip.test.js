@@ -1,6 +1,6 @@
 /**
  * @file Check that the old semantic tooltip never opens over the live Command
- * Deck, as on the approved vision page, whose deck controls have no hover card.
+ * Deck, as in the BattleClient vision, whose deck controls have no hover card.
  *
  * Contracts: insideLiveCommandDeck is true for #command-deck and anything
  * inside it, and false for null and for elements outside it; the tooltip

@@ -380,7 +380,7 @@ test("each planned page slot starts hidden, empty and unmarked by product", asyn
     /^<div\b(?=[^>]*\bpopover="manual")/u,
   );
   // No Visual Key and no top-bar Frame Explanation (its one button is the
-  // arena corner's): owner, 3 and 4 Oct 2026.
+  // arena corner's): 3 and 4 Oct 2026.
   assert.doesNotMatch(markup, /id="(?:visual-key|frame-explanation)-button"/u);
   // Finish and Save starts hidden and unmarked (src/main.js shows it while
   // the match records; topbar.css hides it in the Replay Viewer); Restart is

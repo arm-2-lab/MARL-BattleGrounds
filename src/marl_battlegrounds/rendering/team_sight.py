@@ -58,8 +58,8 @@ from marl_battlegrounds.rendering.authorized_presentation import (
 
 # The team-sight sweep (Agent POV Night Veil). One ray every 1.5 degrees plus a
 # pair of rays just either side of every stone corner, pillar tangent and point
-# where a reach circle meets a stone or the floor edge, as the approved vision
-# page's sweep does (vision_build.py, sight_shape).
+# where a reach circle meets a stone or the floor edge, as the BattleClient
+# vision's sweep does (vision_build.py, sight_shape).
 _SIGHT_RAY_STEP_DEGREES = 1.5
 _SIGHT_CRITICAL_NUDGE = 1e-4
 # Each sensor's shape is pulled toward its sensor by a different tiny fraction:

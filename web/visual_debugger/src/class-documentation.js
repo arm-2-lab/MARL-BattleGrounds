@@ -175,8 +175,8 @@ const CLASS_DOCUMENTATION = Object.freeze({
     ultimateName: "Freezing Trap",
     ultimateTemplate:
       "Freezing Trap deals {{ultimateRawDamage}} base damage to one enemy and stuns it for {{trapStunDuration}}. Damage bonuses and reductions affect the damage dealt. Damage breaks an existing trap.",
-    // Provisional name: "Serrated Arrows" became the Basic, so the passive
-    // needs its own name. The owner has been asked to confirm or rename it.
+    // Provisional name, not yet confirmed: "Serrated Arrows" became the
+    // Basic, so the passive needs its own name.
     passiveName: "Far Sight",
     passiveTemplate:
       "Far Sight lets the Hunter see everything within {{observationRadius}} around it, farther than any other class. Stone still blocks its sight.",

@@ -13,7 +13,7 @@
  * right rail frame. Other files style what goes inside the dock (the Rune
  * Scrubber), the Arena Frames and the rail tabs.
  *
- * Every client follows the approved BattleClient vision page:
+ * Every client follows the BattleClient vision:
  * src/styles/battleclient/*.css restyle this shared markup inside #bc with
  * more specific rules, live play since 1 Oct 2026 and the Replay Viewer
  * since 3 Oct 2026 (its #bc grid: top bar, scorebug, the stage with the

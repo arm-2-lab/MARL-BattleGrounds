@@ -1,7 +1,7 @@
 /*
  * BattleClient layout: the #bc grid of the live combat screen (the
- * BattleClient and the DevClient combat screen), ported from the approved
- * vision page. Four areas: the top bar across the top, the scorebug under
+ * BattleClient and the DevClient combat screen), ported from the BattleClient
+ * vision. Four areas: the top bar across the top, the scorebug under
  * it, then the stage (arena and deck) beside a 340 px rail that scrolls on
  * its own. 4 Oct 2026: no status line under the deck; its message is
  * the deck's header line and its buttons are in the top bar.

@@ -1,6 +1,6 @@
 /*
  * BattleClient scorebug (#scorebug) and party portraits, ported from the
- * approved vision page: each team's host (crest, name, controller line),
+ * BattleClient vision: each team's host (crest, name, controller line),
  * its five portraits (#party-a, #party-b), its score out of the goal with a
  * segment bar, and the middle (tick, First To, Respawn Wave In).
  *
@@ -18,8 +18,8 @@
  * (src/looks/camera.js). It is placed in the right-hand score column's grid
  * area as an absolute box, so it takes no grid space, and it leaves the
  * column's outer 7.5rem to the score and its bar: the tips sit in the empty
- * inner half next to the middle and cover nothing (3 Oct 2026, Micro
- * List M7). Every other client keeps it hidden.
+ * inner half next to the middle and cover nothing (3 Oct 2026). Every
+ * other client keeps it hidden.
  *
  * Who fills it: src/match-summary.js writes the scores, bars, the middle,
  * data-team-a-side and data-plain (the Scorebug switch off: a plain text

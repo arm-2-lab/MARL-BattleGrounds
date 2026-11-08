@@ -1,7 +1,7 @@
 /**
  * @file The Champion's Hotbar look: the plan marks of live play in the
- * BattleClient and the DevClient combat screen, drawn as the approved vision
- * page draws them (`vision_template.html`, renderArena). Plans are Moon
+ * BattleClient and the DevClient combat screen, drawn as the BattleClient
+ * vision draws them (`vision_template.html`, renderArena). Plans are Moon
  * Silver and hollow; the blows themselves are drawn later, in class colors,
  * by the combat looks.
  *
@@ -102,7 +102,7 @@ import {
  */
 
 /**
- * The sizes of the hotbar marks as the vision page draws them on its 25 px
+ * The sizes of the hotbar marks as the BattleClient vision draws them on its 25 px
  * body (VISION_BODY_RADIUS), in that drawing's pixels unless named otherwise.
  * The live field is drawn at the window's size, so every size here is
  * multiplied by (body radius on screen / 25) before it is drawn: the marks
@@ -184,7 +184,7 @@ export const MOVE_DIRECTIONS = Object.freeze([
 const MAGE_CLASS_ID = 1;
 const WARRIOR_CLASS_ID = 2;
 
-/** The body radius, in pixels, of the vision page's own drawing; FOOTPRINT sizes are for it. */
+/** The body radius, in pixels, of the BattleClient vision's own drawing; FOOTPRINT sizes are for it. */
 export const VISION_BODY_RADIUS = 25;
 
 /**
@@ -199,7 +199,7 @@ function sizeScale(radius) {
   return radius / VISION_BODY_RADIUS;
 }
 
-/** Pixels per world unit of the vision page's own field drawing (1032 x 532, 16 px pad). */
+/** Pixels per world unit of the BattleClient vision's own field drawing (1032 x 532, 16 px pad). */
 export const VISION_PIXELS_PER_UNIT = 50;
 
 /**

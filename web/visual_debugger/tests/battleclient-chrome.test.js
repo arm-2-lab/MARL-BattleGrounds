@@ -1,7 +1,7 @@
 /**
  * @file Check the BattleClient's top bar, arena view tag, hover card, How to
- * Play rule cards and Visual Filters drawer list against the approved vision
- * page and the 1 October 2026 decisions.
+ * Play rule cards and Visual Filters drawer list against the BattleClient
+ * vision.
  *
  * Contracts: the place line splits into a bold map name and "Map 47 · Team
  * Deathmatch" (a scenario shows its tale title; matchPlaceTitle keeps its old

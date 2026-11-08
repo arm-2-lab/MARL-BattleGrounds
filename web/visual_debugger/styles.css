@@ -17,13 +17,13 @@
  *
  * BattleClient. The eight src/styles/battleclient/ files come first: they
  * give live play (the BattleClient and the DevClient combat screen) the
- * approved vision page's grid, regions and tokens, one region per file, every
+ * BattleClient vision's grid, regions and tokens, one region per file, every
  * rule scoped to html[data-product-kind="combat_debugger"] and more specific
  * than the shared rules below, so the Replay Viewer never changes.
  *
  * Color tokens. The :root block is the one owner of the palette. Look files,
  * panels and the DevClient read these custom properties; no JavaScript file
- * holds a second copy. The one exception is the vision page's own token set
+ * holds a second copy. The one exception is the BattleClient's own token set
  * on #bc in src/styles/battleclient/base.css, which live play's chrome reads.
  * The static Matplotlib renderer mirrors the team and class colors
  * (src/marl_battlegrounds/rendering/scene_geometry.py), and
@@ -93,7 +93,7 @@
 }
 
 /*
- * The palette. Hex values are the approved Runefield V5 colors. Names say
+ * The palette. Hex values are the Runefield V5 colors. Names say
  * what a color paints. Comments name the main use; look files may use a
  * token anywhere its meaning fits. Never change --export-backdrop or
  * --export-backdrop-grid: PNG export refuses any other backdrop, and the

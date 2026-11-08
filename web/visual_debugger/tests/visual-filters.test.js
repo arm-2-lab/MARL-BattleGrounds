@@ -323,7 +323,7 @@ test("locked registry exposes 99 switches with exact labels, groups and defaults
     "death_announcer",
     "red_zone_floors",
   ]);
-  // V5 turns these earlier switches on by default (plan P9 and the Rune Zones pick).
+  // V5 turns these earlier switches on by default.
   for (const id of [
     "target_selection_visuals",
     "status_application",

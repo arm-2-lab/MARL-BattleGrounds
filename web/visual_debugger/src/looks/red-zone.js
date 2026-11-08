@@ -25,7 +25,7 @@
  * plain line (2 px bone over 4 px ink) and each home keeps one 14 px mark
  * (Replay Viewer only; live play always draws the full layout).
  * With Red Zone Floors off a plain thin Grave Bone line marks each inner edge
- * (plan P26): the rule edge is never hidden.
+ * instead, so the rule edge is never hidden.
  *
  * Who calls it: `scene.js` calls records, then build, and puts the nodes just
  * above the floor, under the spawns, bodies and effects. `visual-filters.js`
@@ -83,7 +83,7 @@ export const FOOTPRINT = Object.freeze({
 });
 
 /**
- * The BattleClient vision page's field scale: 50 px per world unit. Live play
+ * The BattleClient vision's field scale: 50 px per world unit. Live play
  * (records input.vision) multiplies the border and gravestone strokes and the
  * skull-and-"×2" mark (its size and its clear box) by the field's pixels per
  * unit over this, so they keep their size beside the field at any window

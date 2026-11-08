@@ -1,4 +1,4 @@
-"""Check the Vision Moment: the BattleClient vision page's frozen frame as a real game.
+"""Check the Vision Moment: the BattleClient vision's frozen frame as a real game.
 
 build_vision_moment returns the standard map 47 (Teutoburg Forest) config with
 its two spawn banks exchanged, so Team A spawns and has its Red Zone on the
@@ -10,7 +10,7 @@ Blessing of Freedom on both Mages, respawn-wave clocks (2, 2) (one below the
 recording's (3, 3), so the vision's "Respawn Wave in 3 Ticks" is true: Core
 brings the fallen back in clock + 1 ticks), the recorded out-of-combat
 countdowns and no action history. Its action masks allow what
-the vision page allows: the Team A Warrior only Charge on the Team B Mage
+the vision allows: the Team A Warrior only Charge on the Team B Mage
 (or no target), the Team B Mage only its Basic on Team A's Mage, Hunter and
 Priest (or no target). vision_moment_scenario is an
 interactive scene outside the DevClient registry that focuses the Team A

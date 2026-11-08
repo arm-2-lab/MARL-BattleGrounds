@@ -1,12 +1,12 @@
 /**
  * @file Check that the BattleClient deck's words are true for every roster
- * mix (src/tactics-turn.js, main-session ruling P6, 3 Oct 2026):
+ * mix (src/tactics-turn.js):
  * - startGreeting: the first status-line sentence counts the Manual champions
  *   of each team ("You play five champions on Team A."), keeps the vision's
  *   sentence for one champion on each team, for Policies Only and for one
  *   champion in Agent POV or Oracle View.
- * - howToPlayLines: one Manual champion gets exactly the vision page's lines,
- *   the same lines index.html holds; several get "silver rings", "Policies
+ * - howToPlayLines: one Manual champion gets exactly the lines that
+ *   index.html holds; several get "silver rings", "Policies
  *   play the rest." only when a policy plays, and how to order another
  *   champion; Policies Only names Run, Play One Turn and Pause and no order
  *   keys.

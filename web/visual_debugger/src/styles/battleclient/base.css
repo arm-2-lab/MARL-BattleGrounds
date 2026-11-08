@@ -1,7 +1,7 @@
 /*
  * BattleClient base: the tokens, type and small shared parts of the live
  * combat screen (the BattleClient and the DevClient combat screen), ported
- * from the approved BattleClient vision page (a maintainers' design file).
+ * from the BattleClient vision (a maintainers' design file).
  *
  * Owns: the vision's color tokens on #bc, the #bc root (font, size, color,
  * no text selection), the page background and one-screen body for live play,
@@ -40,9 +40,9 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   background: #0a0d14;
 }
 
-/* biome-ignore format: the vision page writes each token in upper case, and
-   a page reads a custom property back exactly as written, so the text stays
-   as the vision has it. */
+/* biome-ignore format: the BattleClient vision writes each token in upper case,
+   and a page reads a custom property back exactly as written, so the text
+   stays as the vision has it. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"]) .bc {
   --ink: #0A0D14;
   --panel: #0F1624;
@@ -133,8 +133,8 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   --text: var(--root-text);
 }
 
-/* As on the vision page, a hidden part stays hidden even when its own rule
-   sets a display. */
+/* As in the BattleClient vision, a hidden part stays hidden even when its
+   own rule sets a display. */
 html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
   .bc
   [hidden] {

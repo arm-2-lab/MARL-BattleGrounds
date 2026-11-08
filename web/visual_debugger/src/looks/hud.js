@@ -3,8 +3,8 @@
  * HUD's one Tab stop. The score strip beside them is painted by
  * `match-summary.js`.
  *
- * Live play (BattleClient and DevClient combat screen) draws the approved
- * vision page's scorebug instead (#scorebug in index.html): this file fills
+ * Live play (BattleClient and DevClient combat screen) draws the BattleClient
+ * vision's scorebug instead (#scorebug in index.html): this file fills
  * its hosts and portraits (liveScorebugModel, pure; paintLiveScorebug, DOM),
  * and match-summary.js fills its scores, bars and middle. Each host shows its
  * crest, team name, the "Yours" tag (Team A, the researcher's side, unless
@@ -36,7 +36,7 @@
  * sends (in Agent POV it moves the view to that champion, even one the
  * viewing team cannot see now).
  *
- * What it draws (plan P1, P12, P15, P21, P23): per team, Team A on the left,
+ * What it draws: per team, Team A on the left,
  * a header (crest, "Team A" or "Team B", the policy name as a controller
  * line in the Replay Viewer, "Standing 4 of 5")
  * and one frame per champion. A frame has a sigil (team disc, class emblem and
@@ -56,7 +56,7 @@
  * this look reaches the presentation adapter. The pure `records` is also used
  * by the Agent POV leak test.
  *
- * Beats (plan 4.2): the DOM always holds the END state. Values that must wait
+ * Beats: the DOM always holds the END state. Values that must wait
  * come only from the caller's `beatView(frame, "end", {visualFilters})`
  * (choreography-plan.js), never from an earlier frame: a champion that falls
  * this tick gets a "before" node with its life from before the blow
@@ -69,7 +69,7 @@
  * still show END at once: the tray before the tick cannot be rebuilt exactly
  * from the tick's own rows (ages, refreshes and breaks change remaining ticks).
  *
- * Boundary (Agent POV, plan P23 and owner rules s5, s11):
+ * Boundary (Agent POV):
  * - BattleClient and DevClient (product "combat_debugger"): every frame reads
  *   only the POV arena scene and the POV visual events. A champion the POV
  *   team cannot see (an enemy, or a NoSharedObs teammate) reads "Unseen" with
@@ -174,7 +174,7 @@ export const BUDGET = EMPTY_BUDGET;
  */
 export const PAINT_PARTS = Object.freeze([]);
 
-/** Status chips shown in a frame's tray before "+N" (plan P15). */
+/** Status chips shown in a frame's tray before "+N". */
 export const TRAY_CHIP_LIMIT = 2;
 
 /**
@@ -1632,7 +1632,7 @@ export function yoursTeam(controllers) {
  * or DevClient frame; controllers is the launch's LiveControllers
  * (NO_CONTROLLERS before the configuration arrives).
  *
- * Rules (the approved vision page): every champion a human orders is
+ * Rules (from the BattleClient vision): every champion a human orders is
  * "You"; others read "ID n". The focus look goes to the champion the player
  * looks at (sources.controlledKey: the one whose orders show, or a policy's
  * champion in Watch Only), never to an unseen one. In live play the scene's

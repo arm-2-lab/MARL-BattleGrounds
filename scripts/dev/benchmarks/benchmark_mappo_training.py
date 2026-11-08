@@ -30,7 +30,7 @@ Use ``timeout 600s python -m scripts.dev.benchmarks.benchmark_mappo_training
 for one full public train() call with the exact JSON settings. This mode requires
 MAPPO with 512 environments (four with --cpu-smoke) and at most 3,932,160 real
 transitions. It includes declared checkpoints, validation, captures and reports.
-There are at most three approved matched GPU cases; a timeout authorizes no retry.
+Run at most three matched GPU cases, and never retry a case that times out.
 First-block time combines compilation and execution; later blocks and inclusive
 output timers come from the normal saved records. Untimed work stays a named
 residual, never an assumed host bottleneck. Compilation alone and transfer cost
@@ -888,7 +888,7 @@ def _gpu_identity(uuid: str | None, *, cpu_smoke: bool) -> tuple[str, str | None
 
 
 def _full_training_config(path: Path, *, cpu_smoke: bool) -> TrainConfig:
-    """Read one unchanged MAPPO config inside the declared P9 measurement bounds.
+    """Read one unchanged MAPPO config inside this benchmark's measurement bounds.
 
     GPU cases use 512 environments; CPU tool checks use four. Both retain the
     exact JSON budget and settings, at most 3,932,160 real transitions. This

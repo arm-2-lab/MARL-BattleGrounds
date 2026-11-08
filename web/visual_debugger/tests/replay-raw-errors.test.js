@@ -1,6 +1,6 @@
 /**
  * @file Check that the Replay Viewer keeps raw error text for developers
- * (src/main.js logRawError; 4 Oct 2026, Micro List M15). The page shows
+ * (src/main.js logRawError; 4 Oct 2026). The page shows
  * only plain words, and logRawError writes the exact error to the browser
  * console as one line, "MARL-BGs <context>: <text>": an Error gives its name
  * and message, anything else its string form, and runs of whitespace (line

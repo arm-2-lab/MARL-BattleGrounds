@@ -3,7 +3,7 @@
  * recipient rim, the Last Seen ring and the Spotted Glint. Oracle View draws
  * nothing.
  *
- * What it draws (store part "Fog and Vision", plan P18 and P19):
+ * What it draws (store part "Fog and Vision"):
  * - Sight veil (`pov_sight_veil`, the Stone Shadows look): every blind spot
  *   of the viewing team is darkened with Ink at 45%: the floor beyond its
  *   living sensors' sight reach and the shadows that stones cast. The lit
@@ -101,12 +101,12 @@ import {
 
 /**
  * The fixed numbers of this look, from the store (Fog and Vision, Stone
- * Shadows) and plan P18. Lengths ending in Factor multiply the body radius R in
+ * Shadows). Lengths ending in Factor multiply the body radius R in
  * CSS pixels; Ms values are milliseconds of 1x tick time; opacities are 0..1.
  */
 /**
  * The Night Veil's opacities in live play (the BattleClient and the DevClient
- * combat screen), as the approved vision page draws them (`veil` in
+ * combat screen), as the BattleClient vision draws them (`veil` in
  * vision_template.html): the unseen floor in Ink at 52%, a 5% Lift on the lit
  * floor, the focused champion's Reach Edge at 45% and its teammates' dashed
  * edges at 30%. The Replay Viewer keeps FOG_LOOK's store numbers.
@@ -1166,9 +1166,9 @@ function lastSeenRecord(input, event) {
  *   input.scene (optional) still holds that body at END. input.transform
  *   (optional) sizes the ring from a 0.5-unit body; without it R is 23 px.
  *   teamId is the row's team (1 or 2), taken by the plan from the public
- *   roster, so the ring is in that team's light as the store draws it (main
- *   session ruling P5, 3 October 2026); null (a body the roster does not
- *   name) gives neutral Moon Silver.
+ *   roster, so the ring is in that team's light, as the store draws it.
+ *   A null teamId (a body the roster does not name) gives neutral Moon
+ *   Silver.
  * - Scene form: input.scene (the audience's arena scene), input.transform,
  *   input.audience (default scene.audience). Nothing unless the audience is
  *   "agent_pov". input.part picks the layer: "under" (default; the fog layer)

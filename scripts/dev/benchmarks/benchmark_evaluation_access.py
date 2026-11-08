@@ -1,4 +1,4 @@
-"""Measure the bounded Packet 6 evaluator and result-access workflow.
+"""Measure the evaluator and result-access workflow on a fixed, bounded workload.
 
 Run through ``python -m scripts.dev.benchmarks.benchmark_evaluation --evaluation-access
 --evaluation-case CASE --output DIRECTORY``. Cases are legacy, manual, systems,

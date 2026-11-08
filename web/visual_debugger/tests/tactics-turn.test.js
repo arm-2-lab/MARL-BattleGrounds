@@ -20,7 +20,7 @@
  * "N Champions", Manual left out). It also checks that the module never
  * reads the raw transport HUD or the match summary by name, and reads the
  * researcher space in one place only: servedManualOrdersOf, for the viewing
- * team's own staged orders in Agent POV (ruling P1, 3 Oct 2026).
+ * team's own staged orders in Agent POV (3 Oct 2026).
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";

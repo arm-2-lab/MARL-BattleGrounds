@@ -1,6 +1,6 @@
 """Check that replays keep every controller's name, per team and per champion.
 
-Owner decision, 2 October 2026. The contracts checked here:
+Since 2 October 2026. The contracts checked here:
 
 - ``team_controller_names`` names each of a team's five slots: a Policy, a
   shared or independent Policy adapter, a ``marl_bgs.team`` (including class

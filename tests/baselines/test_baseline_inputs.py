@@ -40,11 +40,11 @@ encoding equals the schema-2 encoding without feature 1128, eager and under
 jit, and it refuses a view that is not 20 columns wide. The encoder and the
 flag helper pick the schema from the static context width and refuse any
 width other than 20 and 19. The flag's side rule follows the schema: on a
-bank centred exactly at widths 17.3 and 20.3, a schema-2 view reads left
+bank centered exactly at widths 17.3 and 20.3, a schema-2 view reads left
 (Core's exact rule) while a schema-1 view keeps the old float32 mean formula
 and reads right. Contact and combat under the
 mirror are not compared here: Core reproduces a mirrored game only approximately
-after contact, so trained-model checks live in the packet's post-hoc replay.
+after contact, so trained models are checked in a separate post-hoc replay.
 """
 
 import itertools

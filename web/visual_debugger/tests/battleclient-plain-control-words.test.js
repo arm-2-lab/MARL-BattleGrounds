@@ -1,9 +1,9 @@
 /**
  * @file Check the plain words of the page's own control help and accessible
- * names (owner ruling M13, 3 Oct 2026): the control-help table in
+ * names (3 Oct 2026): the control-help table in
  * src/main.js uses no developer words (authorized, immutable, captured,
  * transition, Python, artifact, serialized, clamped, deterministic, prefix,
- * wire), its rows read as the tips lane's word table gives them, and a
+ * wire), its checked rows keep their exact plain wording, and a
  * body's accessible label says what a click does ("Click to give it orders
  * or look at it."). The status lifecycle names in src/vocabulary.js and the
  * event cards in src/looks/look-support.js read as plain sentences.

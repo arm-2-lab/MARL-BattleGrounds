@@ -20,7 +20,7 @@
  *   windows over the Red Zone rule lines. Normal motion only; never in a still.
  *   Its END opacity is 0; `dimAnimation` describes the browser animation for the
  *   choreographer's animation factory (fill "backwards").
- * All three are off by default and on in the Broadcast preset (plan P27).
+ * visual-filters.js sets each one's default and its value in each preset.
  *
  * Who calls it: the renderer (motes and veil in a layer under the Red Zone; the
  * dim between the stones and the Strike Band) and the choreographer (the dim's

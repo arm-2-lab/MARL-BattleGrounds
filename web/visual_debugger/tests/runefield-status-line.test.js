@@ -3,7 +3,7 @@
  * lane that applies each status (none for Spawn Shield, In Combat and unknown
  * statuses), and the one-line status rule statusLineV1, which is the Champion
  * Card row in one line: "Name (Effect) · N ticks left · sentence with the
- * exact number. From a <Class>." (owner rulings, 2 October 2026). The source
+ * exact number. From a <Class>." (2 October 2026). The source
  * is named by class only (never an Agent ID or "a hidden source"), an aura of
  * the champion's own class reads "From its own aura.", the time words follow
  * statusTimeText ("This tick", "Now", "While near"), and a missing number, a

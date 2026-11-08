@@ -7,7 +7,8 @@ initialize_scenario_state is the separate host-validated authored-start path.
 
 Core owns action acceptance, observations, health/status/death/respawn rules,
 task rewards and event facts. Geometry and combat catalogs remain shared
-authorities in their own modules. Policies, native environment batching,
+authorities in their own modules, and Capture the Flag's flag rules live in
+core/objectives.py, which step calls. Policies, native environment batching,
 episode scheduling, logging, metrics collection and persistence live outside
 this module. Numerical entry points do not auto-reset terminal states."""
 
@@ -78,6 +79,10 @@ from marl_battlegrounds.core.geometry import (
     has_clear_line_of_sight,
     project_charge_endpoints_with_geometry,
     project_movement_with_geometry,
+)
+from marl_battlegrounds.core.objectives import (
+    CaptureTheFlagFlagStateAggregationResult,
+    build_flag_state_aggregation_result,
 )
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_IS_ENEMY,
@@ -3717,6 +3722,29 @@ def _not_team_deathmatch(
     return jnp.zeros((NUM_TEAMS,), dtype=jnp.int32)
 
 
+def _not_capture_the_flag(
+    current_state: EnvState,
+    config: EnvConfig,
+    next_agent_positions: Array,
+    is_newly_dead_by_recipient: Array,
+) -> CaptureTheFlagFlagStateAggregationResult:
+    """Keep the flags as they are, for every mode but Capture the Flag.
+
+    Returns current_state's three flag fields unchanged and neutral flag facts
+    (build_reset_capture_the_flag_facts). The four operands match
+    build_flag_state_aggregation_result, the other branch of step's mode
+    branch; only current_state is read.
+    """
+    del config, next_agent_positions, is_newly_dead_by_recipient
+
+    return CaptureTheFlagFlagStateAggregationResult(
+        next_capture_the_flag_flag_positions_by_flag=current_state.capture_the_flag_flag_positions,
+        next_capture_the_flag_flag_carrier_slots_by_flag=current_state.capture_the_flag_flag_carrier_slots,
+        next_capture_the_flag_dropped_flag_countdowns_by_flag=current_state.capture_the_flag_dropped_flag_countdowns,
+        capture_the_flag_facts=build_reset_capture_the_flag_facts(),
+    )
+
+
 # Public ---
 
 
@@ -3972,9 +4000,13 @@ def step(
     policy call, I/O, random draw or input mutation. Use jit/scan and an outer
     vmap for games. Stop or reset when DoneFlags.done becomes True: Core does
     not auto-reset, absorb terminal states or suppress rewards if called again.
+    In Capture the Flag, the flag rules
+    (objectives.build_flag_state_aggregation_result) run after this tick's
+    deaths and before the respawn wave, from end-of-movement positions; every
+    other mode passes its flags and flag facts through unchanged.
     Team Deathmatch can terminate and truncate together. Threshold ties draw;
     horizon expiry without a threshold winner also draws. Each new configured
-    death gives the other team 1 point, or 2 when the victim's centre at the
+    death gives the other team 1 point, or 2 when the victim's center at the
     start of the tick (when combat resolves, before Charge and ordinary
     movement) is inside its own team's Red Zone (red_zone_death_mask). Both
     teams' points apply before the outcome is chosen; a lethally hit agent that
@@ -4153,6 +4185,21 @@ def step(
         ),
     )
 
+    # Capture the Flag's flag rules run here: after this tick's deaths, before the
+    # respawn wave moves anyone. Every other mode keeps its flags unchanged.
+    capture_the_flag_flag_state_aggregation_result = cast(
+        CaptureTheFlagFlagStateAggregationResult,
+        jax.lax.cond(
+            config.task_mode == TASK_MODE_CTF,
+            build_flag_state_aggregation_result,
+            _not_capture_the_flag,
+            current_state,
+            config,
+            next_agent_positions,
+            death_facts.is_newly_dead_by_recipient,
+        ),
+    )
+
     # Every team clock advances independently, including an empty due wave.
     next_team_respawn_wave_countdowns = jnp.where(
         current_state.team_respawn_wave_countdowns == 0,
@@ -4204,12 +4251,13 @@ def step(
 
     next_state = EnvState(
         team_deathmatch_scores=next_team_deathmatch_scores,
-        # Carried unchanged for now: C1.2 moves the flags and K1 scores the hills.
+        # Capture the Flag scores and every King of the Hills field stay unchanged
+        # until their rules exist.
         capture_the_flag_scores=current_state.capture_the_flag_scores,
         king_of_the_hills_scores=current_state.king_of_the_hills_scores,
-        capture_the_flag_flag_positions=current_state.capture_the_flag_flag_positions,
-        capture_the_flag_flag_carrier_slots=current_state.capture_the_flag_flag_carrier_slots,
-        capture_the_flag_dropped_flag_countdowns=current_state.capture_the_flag_dropped_flag_countdowns,
+        capture_the_flag_flag_positions=capture_the_flag_flag_state_aggregation_result.next_capture_the_flag_flag_positions_by_flag,
+        capture_the_flag_flag_carrier_slots=capture_the_flag_flag_state_aggregation_result.next_capture_the_flag_flag_carrier_slots_by_flag,
+        capture_the_flag_dropped_flag_countdowns=capture_the_flag_flag_state_aggregation_result.next_capture_the_flag_dropped_flag_countdowns_by_flag,
         king_of_the_hills_hill_is_contested=current_state.king_of_the_hills_hill_is_contested,
         king_of_the_hills_hill_owners=current_state.king_of_the_hills_hill_owners,
         king_of_the_hills_empty_hill_ownership_countdowns=current_state.king_of_the_hills_empty_hill_ownership_countdowns,
@@ -4269,8 +4317,8 @@ def step(
         team_deathmatch_facts=TeamDeathmatchTransitionFacts(
             outcome=task_outcomes[TASK_MODE_TDM]
         ),
-        # Neutral for now: C1.2 records the CTF events and K1 the KOTH events.
-        capture_the_flag_facts=build_reset_capture_the_flag_facts(),
+        capture_the_flag_facts=capture_the_flag_flag_state_aggregation_result.capture_the_flag_facts,
+        # Neutral until King of the Hills has its rules.
         king_of_the_hills_facts=build_reset_king_of_the_hills_facts(),
     )
 

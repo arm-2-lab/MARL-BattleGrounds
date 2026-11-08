@@ -5069,8 +5069,8 @@ function buildAuthorizedPresentationChoreographyPlan(
     teamSide,
     // The frame's own host count: Agent POV frames carry only their team's.
     streaks: presentation.champion_streaks,
-    // The public roster's team of each public ID (allowed in Agent POV, as
-    // ruling L10 allows the public episode limit): which team a champion is on
+    // The public roster's team of each public ID (allowed in Agent POV, like
+    // the public episode limit): which team a champion is on
     // is a match setting every audience already sees in the scorebug's
     // portraits, never a hidden fact about where it is or what it does.
     teamByPublicId: new Map(

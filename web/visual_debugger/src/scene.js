@@ -34,7 +34,7 @@
  * ticks.
  *
  * Live play (`product_kind` "combat_debugger", the BattleClient and the
- * DevClient combat screen) follows the approved vision page: the field has
+ * DevClient combat screen) follows the BattleClient vision: the field has
  * the vision's 16/1032 pad, the reach rings are Basic and Ultimate only and
  * shown only with both Ranges (G) and the Reach Rings switch on, the target
  * gets the vision's corner brackets (champion-frame bracketPath "vision"), and
@@ -608,7 +608,7 @@ function placeGroupsInOrder(groups) {
  * Return the arena padding, in CSS pixels, for one render.
  *
  * The BattleClient and the DevClient combat screen (`product_kind`
- * "combat_debugger") draw the field as the approved vision page does: its
+ * "combat_debugger") draw the field as the BattleClient vision does: its
  * field drawing is 1032 px wide with a 16 px pad (50 px per world unit on a
  * 20 by 10 map), so the pad is 16/1032 of the arena width and every body,
  * mark and stone lands at the vision's place at any window size. The Replay
@@ -1260,7 +1260,7 @@ export class BattlefieldRenderer {
           // Live play: Reach Rings is the Ranges rings' own switch (G shows
           // and hides them while it is on; off hides them whatever G says),
           // and no ring is drawn for a selected target with Ranges off, as on
-          // the vision page. The Replay Viewer keeps the selected agent's
+          // the BattleClient vision. The Replay Viewer keeps the selected agent's
           // rings with Ranges off.
           showRanges:
             options.showRanges !== false &&
@@ -1826,7 +1826,7 @@ export class BattlefieldRenderer {
   }
 
   /**
-   * Stack the arena layers as the vision page does, for live play.
+   * Stack the arena layers as the BattleClient vision does, for live play.
    *
    * The BattleClient and the DevClient combat screen call this on each render
    * (it moves nothing once in place): the reach rings and the look ring

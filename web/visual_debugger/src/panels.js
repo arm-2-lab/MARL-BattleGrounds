@@ -22,7 +22,7 @@
  * Actions in Words switch turns that off and shows today's Submitted and
  * Accepted boxes.
  *
- * Agent POV boundary (plan P5 and P23):
+ * Agent POV boundary:
  * - Replay Viewer: the docked panels are the researcher's full record. In Agent
  *   POV they list every champion and carry the chip "Full Record · Not Limited
  *   to Agent N's View". Nothing here is drawn on or over the arena.
@@ -210,7 +210,7 @@ export function statusIconsFromMarks(visualFilterState = DEFAULT_VISUAL_FILTER_S
 
 /**
  * Return whether a frame is a BattleClient or DevClient frame in Agent POV,
- * where every panel reads only the POV scene (plan P23). Pure.
+ * where every panel reads only the POV scene. Pure.
  *
  * @param {unknown} presentation
  * @returns {boolean}
@@ -468,7 +468,7 @@ function exactOwnerClassMechanics(owner, rawClassMechanics) {
  * Return null when presentation/audience/scene is unavailable. Replay frames
  * (the docked full record) and live Oracle frames with a researcher branch use
  * the researcher scene. Live Agent POV frames (BattleClient and DevClient) use
- * only the POV arena scene (plan P23): a selected champion the team cannot see
+ * only the POV arena scene: a selected champion the team cannot see
  * gives owner null, so its details read "Unseen" until it is seen again; the
  * selection itself is kept by the caller. Other frames use the scene selected
  * by localInspectedPresentationKey (undefined uses its default).
@@ -1227,10 +1227,10 @@ function isFallenNoAction(view, sceneAgents, beats, which) {
 }
 
 /**
- * Build This Tick for a BattleClient or DevClient frame in Agent POV (plan
- * P23, s11 row 8): the POV agent's own recorded action from the frame's own
- * latest transition, and one "Not Observed" row for each teammate in the POV
- * scene. Enemies are not listed. Reads only the POV scene, the frame's own
+ * Build This Tick for a BattleClient or DevClient frame in Agent POV: the
+ * POV agent's own recorded action from the frame's own latest transition,
+ * and one "Not Observed" row for each teammate in the POV scene. Enemies
+ * are not listed. Reads only the POV scene, the frame's own
  * transition branch and its authority; never researcher_space. Pure.
  *
  * @param {Readonly<Record<string, any>>} presentation Approved live Agent POV
@@ -1362,7 +1362,7 @@ function livePovPendingRows(presentation, views) {
  * Write one status line for the agent details by the status rule
  * (statusLineV1): the Champion Card row's words, "Charge (Slow) · 5 ticks
  * left · It moves at ×0.5 speed. From a Warrior." The source is named by
- * class only (owner ruling, 2 October 2026), so the line is the same in
+ * class only (2 October 2026), so the line is the same in
  * Agent POV and Oracle View and never names an Agent ID or "a hidden
  * source". Pure.
  *
@@ -1616,7 +1616,7 @@ export class DebuggerPanels {
    *
    * Names are token chips (or plain "Agent ID N" when panelDisplayStyle says
    * so). Replay Viewer Agent POV shows the full record under the Full Record
-   * chip. BattleClient and DevClient Agent POV (plan P23) list every champion
+   * chip. BattleClient and DevClient Agent POV list every champion
    * of the match by identity only, read life, Ultimate, statuses and modifiers
    * from the POV arena scene alone, and show "Unseen" with no facts for a
    * champion the team cannot see. A life that drops to 0 this tick is marked

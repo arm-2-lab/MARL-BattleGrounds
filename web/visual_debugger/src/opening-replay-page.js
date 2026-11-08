@@ -1,6 +1,6 @@
 /**
  * @file The dark "Opening Replay" page that Open Replay writes into its new
- * tab (BattleClient and DevClient; 3 Oct 2026, Micro List M21).
+ * tab (BattleClient and DevClient).
  *
  * Open Replay opens an empty tab at the click (so the browser allows it),
  * then points it at the Replay Viewer's address when the game answers. The

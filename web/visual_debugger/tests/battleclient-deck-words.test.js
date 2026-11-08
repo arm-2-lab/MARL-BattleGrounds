@@ -1,6 +1,6 @@
 /**
- * @file Check the BattleClient deck's words and drawings against the approved
- * vision page (src/tactics-turn.js): the refusal sentences written from the
+ * @file Check the BattleClient deck's words and drawings (src/tactics-turn.js)
+ * against the vision: the refusal sentences written from the
  * host's masks before anything is sent (needs a target first, not allowed on
  * this target, Burst not allowed with its ready time, a policy's champion,
  * nobody is yours, a fresh start is needed, a fallen champion, and the

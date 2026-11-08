@@ -2,7 +2,7 @@
  * Styles for the Champion's Hotbar look (src/looks/hotbar.js): the silver plan
  * marks of live play. styles.css imports this file. Flat strokes and fills
  * only (export-safe); every mark ignores the pointer so clicks reach bodies.
- * Numbers and colors are the approved vision page's own (vision_template.html,
+ * Numbers and colors are the BattleClient vision's own (vision_template.html,
  * renderArena): Moon Silver #C9D4E8 and Ink #0A0D14 come from the live page's
  * vision tokens (--moon, --ink and the class colors on .bc), with the shared
  * palette as a fallback outside it.

@@ -92,7 +92,7 @@ def _run_witness(
         scenario.config.agent_profile.active_mask,
         scenario.config.agent_profile.team_ids,
     )
-    # Team A: Mage, Warrior, dead Hunter, dead Rogue, Priest. The author's
+    # Team A: Mage, Warrior, dead Hunter, dead Rogue, Priest. The scenario's
     # unspecified tick-4 movements and Warrior combat are fixed to Stay/no-combat
     # for this witness, not claimed as the only possible winning completion.
     moves = (

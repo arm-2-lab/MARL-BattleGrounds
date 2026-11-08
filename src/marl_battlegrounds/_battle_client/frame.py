@@ -81,7 +81,7 @@ type LiveDebuggerFrame = (
 def _actor_pov_recording_status(
     status: RecordingStatusV1 | None,
 ) -> RecordingStatusV1 | None:
-    """Project reducer-processing closeout into one audience-safe stable reason."""
+    """Show actor views "evaluation_unavailable" when evaluation processing failed."""
     if status is None or status.completion_reason != "evaluation_processing_failure":
         return status
     return RecordingStatusV1.model_validate(

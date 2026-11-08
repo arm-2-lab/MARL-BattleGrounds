@@ -85,7 +85,7 @@ export const COMMAND_PRODUCTS = Object.freeze(
 export const PYTHON_HANDLER = "python";
 
 /**
- * Keys not yet approved (plan P29). No row may bind them; they are
+ * Keys with no use yet. No row may bind them; they are
  * listed so they can be decided later: H (Clean Screen), [ and ], { and },
  * M, < and >, Home, End and /.
  */

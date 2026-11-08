@@ -14,7 +14,7 @@
  * commandRole, the deferred-draft checks, the deck words and the SVG
  * builders) touch no DOM, so Node tests can import them.
  *
- * What it owns, as drawn on the approved vision page (index.html holds the
+ * What it owns, as drawn in the BattleClient vision (index.html holds the
  * markup; this module fills it):
  *
  * - The deck (#command-deck): Your Champion (token, class, calling, Agent ID,
@@ -92,10 +92,10 @@
  * is in focus (an ID the host lets the POV team focus: its own champions or an
  * enemy it sees now), whether a policy plays it, the button legality tooltips
  * of the champion you order, the global command slot a click sends, and the
- * staged orders of your own team's Manual champions (your own orders, ruling
- * P1, 3 Oct 2026). The rail rows, the "N of M Set" pill, Do This Now and the
+ * staged orders of your own team's Manual champions (they are your own
+ * orders). The rail rows, the "N of M Set" pill, Do This Now and the
  * Lock In order list show staged orders only for the viewing team's Manual
- * champions (shownManualIdsOf, ruling L18; another team's Manual champion
+ * champions (shownManualIdsOf; another team's Manual champion
  * keeps its clickable rail row with no order, which reads "Out of Sight"
  * when this view cannot see it and "In Sight · Order Hidden" when it can).
  * "Set" in the pill and the rail means the server holds an order that is not
@@ -275,7 +275,7 @@ export function commandRole(command) {
 }
 
 /**
- * The movement action names by action id, as the vision page writes them:
+ * The movement action names by action id, in the BattleClient vision's words:
  * 0 Stay, 1 North, 2 South, 3 East, 4 West, 5 North-East, 6 North-West,
  * 7 South-East and 8 South-West. Frozen.
  *
@@ -314,7 +314,7 @@ export const STEP_PAD_KEYS = Object.freeze({
 
 /**
  * Every fixed label of the deck and its rail cards, in one place, so tests
- * and the page agree. Title Case labels, as on the vision page. Frozen.
+ * and the page agree. Title Case labels, as in the BattleClient vision. Frozen.
  */
 export const DECK_LABELS = Object.freeze({
   youControl: "You Control This Agent",
@@ -411,9 +411,9 @@ function paintAttributes(attribute, key) {
 }
 
 /**
- * The vision page's ability symbols by class key ("ab-…" ids in the page's
- * hidden SVG definitions) and the glyph icons.js draws when a symbol is not
- * on the page.
+ * The BattleClient vision's ability symbols by class key ("ab-…" ids in
+ * the page's hidden SVG definitions) and the glyph icons.js draws when a
+ * symbol is not on the page.
  */
 const ABILITY_ICONS = Object.freeze({
   mage: {
@@ -609,7 +609,7 @@ export function targetChipView(target, sceneAgents, rosterAgents = []) {
  * arena scene draws and the host allows the Basic or the Ultimate on it now.
  * The champion itself is listed only when the mask allows it (a Priest healing
  * itself). Pure; nothing is worked out from distances. Rows are sorted by
- * their shown ID, as on the vision page.
+ * their shown ID, as in the BattleClient vision.
  *
  * @param {unknown} mask The decision mask (`target_actions`,
  *   `target_use_ultimate_joint_mask`), or anything else for none.
@@ -737,7 +737,7 @@ export function stackedSlotName(name) {
 
 /**
  * Return the three action slots (None, the class's Basic, its Ultimate) as
- * the vision page draws them.
+ * the BattleClient vision draws them.
  *
  * Pure.
  *
@@ -895,8 +895,8 @@ export function orderSentence(order) {
  *
  * Pure. "plan" once the game is stopped (stopped: the host asks for a fresh
  * start), whatever else is true: no turn can be played any more, so the
- * phases show You Plan and the policies Waiting, as on the vision page after
- * Cancel Policy Work, even while the cancelled work still winds down
+ * phases show You Plan and the policies Waiting, as in the BattleClient vision
+ * after Cancel Policy Work, even while the cancelled work still winds down
  * ("cancelling"). Otherwise "choosing" while the host's policy work is
  * loading, thinking or cancelling, and between turns while Run plays
  * (running: the policies are always about to choose); "act" while it is
@@ -1368,8 +1368,8 @@ const NUMBER_WORDS = Object.freeze([
 ]);
 
 /**
- * The How to Play card's lines for one Manual champion, exactly as on the
- * approved vision page (index.html holds the same markup).
+ * The How to Play card's lines for one Manual champion, exactly as in the
+ * BattleClient vision (index.html holds the same markup).
  */
 const HOW_TO_PLAY_STEP =
   "Step with <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd> <kbd>A</kbd><kbd>D</kbd> <kbd>Z</kbd><kbd>S</kbd><kbd>C</kbd>. <kbd>X</kbd> is Stay.";
@@ -1380,9 +1380,9 @@ const HOW_TO_PLAY_TARGET =
  * Return the How to Play card's lines (HTML of each list item's text), true
  * for the roster mix.
  *
- * - One Manual champion: the vision page's four lines ("The silver ring is
- *   your champion. Policies play the rest.", the step keys, Shift + click and
- *   0 1 2, "Space locks in. Everyone acts at once.").
+ * - One Manual champion: the BattleClient vision's four lines ("The silver
+ *   ring is your champion. Policies play the rest.", the step keys, Shift +
+ *   click and 0 1 2, "Space locks in. Everyone acts at once.").
  * - Several Manual champions: "The silver rings are your champions." and
  *   "Policies play the rest." (or "You play every champion." when no policy
  *   plays), the same step and target lines, "Space locks in all your orders.
@@ -1452,7 +1452,7 @@ export function tickPlayedAnnouncement(input) {
 
 /**
  * Pick the one next step for Do This Now and the control it names, in the
- * vision page's words.
+ * BattleClient vision's words.
  *
  * Pure. `beacon` is a CSS selector of the control the Guide level outlines,
  * or null when no single control applies. It never asks for a target when
@@ -1597,7 +1597,7 @@ export function doThisNow(input) {
 
 /**
  * Decide, before anything is sent, whether the deck refuses an order input,
- * and with which sentence (the vision page's words).
+ * and with which sentence (in the BattleClient vision's words).
  *
  * Pure. A refused input is never sent: the deck shows the sentence in its
  * message line (or nothing, when `text` is null) and shakes the control.
@@ -1754,7 +1754,7 @@ export function deckAnnouncement(input) {
 
 /**
  * Return the Class Guide of one class, written from the host's real
- * class_mechanics in the vision page's words.
+ * class_mechanics in the BattleClient vision's words.
  *
  * Pure. Numbers come only from `mechanics`; names, calling and lore come from
  * class-documentation.js. Statuses are found by their family and the action
@@ -1856,8 +1856,8 @@ export function classGuideView(classId, mechanics) {
 }
 
 /**
- * Return one ability's icon markup for a Class Guide row: the vision page's
- * hidden symbol (`<use href="#ab-…">`) when the page has it, else the
+ * Return one ability's icon markup for a Class Guide row: the BattleClient
+ * vision's hidden symbol (`<use href="#ab-…">`) when the page has it, else the
  * icons.js glyph drawn as markup. Reads the document only to look the
  * symbol up and to build the glyph; changes nothing on the page.
  *
@@ -2011,7 +2011,7 @@ export function orderIsSet(order) {
 
 /**
  * Return the line of another team's Manual champion's rail row in Agent POV,
- * a row that shows no order (ruling L18): "Out of Sight" when this view
+ * a row that shows no order: "Out of Sight" when this view
  * cannot see the champion (the wording of 3 Oct 2026; the row then
  * shows nothing else about it), else "In Sight · Order Hidden". Never "Not
  * Observed".
@@ -2051,7 +2051,7 @@ export function fitPicks(picks) {
 
 /**
  * Return the Manual champions whose staged orders the deck and the rail may
- * show for one installed frame (ruling L18: another team's staged order is
+ * show for one installed frame (another team's staged order is
  * never shown in Agent POV).
  *
  * In Agent POV (authorizedPresentationAudience is "agent_pov") the result
@@ -2109,8 +2109,8 @@ export function shownManualIdsOf(presentation, sceneAgents, rosterRows, manualId
  * researcher branch (`researcher_space.pending_joint_action`), but keeps only
  * the actors listed in `shownIds` that are on the POV recipient's team
  * (team from the identity rows). Your own team's staged orders are your own
- * orders, so Agent POV shows them (main-session ruling P1, 3 Oct 2026); another
- * team's staged orders are never returned in Agent POV (ruling L18). A kept
+ * orders, so Agent POV shows them; another
+ * team's staged orders are never returned in Agent POV. A kept
  * target is named by class and ID only; nothing here carries a position or a
  * life.
  *
@@ -2218,8 +2218,8 @@ export function servedManualOrdersOf(presentation, rosterRows, shownIds = null) 
 }
 
 /**
- * Draw a team crest as SVG markup, as on the vision page: a ring in the team
- * color with a faint center (Team B adds a thin ink ring).
+ * Draw a team crest as SVG markup, as in the BattleClient vision: a ring in
+ * the team color with a faint center (Team B adds a thin ink ring).
  *
  * Pure. Export-safe SVG (flat fills and strokes). The team color is painted
  * through the .tc-a and .tc-b classes (see paintAttributes), so it shows only
@@ -2241,7 +2241,7 @@ export function crestSvg(team, size) {
 }
 
 /**
- * Return a point on a circle, clockwise from north, as the vision page does.
+ * Return a point on a circle, clockwise from north, as the BattleClient vision does.
  *
  * @param {number} center Center x and y.
  * @param {number} radius Radius.
@@ -2254,8 +2254,8 @@ function ringPoint(center, radius, degrees) {
 }
 
 /**
- * Draw a champion token as SVG markup, as on the vision page: the team disc
- * (Team B with its flat top and ivory bar), the class glyph, the twelve
+ * Draw a champion token as SVG markup, as in the BattleClient vision: the team
+ * disc (Team B with its flat top and ivory bar), the class glyph, the twelve
  * Ultimate ticks (size "M" only) and the team ring.
  *
  * Pure. Export-safe SVG. The caller supplies the glyph markup, so this
@@ -2369,7 +2369,7 @@ export function tokenGlyphBox(size) {
 
 /**
  * The title of another team's Manual champion's rail row in Agent POV: why it
- * shows no order (ruling L18) and what a click does.
+ * shows no order (Agent POV hides another team's orders) and what a click does.
  */
 const HIDDEN_ORDER_TITLE =
   "Agent POV shows one team's orders at a time. Click to give this champion orders.";
@@ -3577,13 +3577,13 @@ export function createTacticsTurn(context) {
    * `manualIds` lists every Manual champion of both teams (command plumbing:
    * is the focus yours, the start greeting). `shownManualIds` is the part
    * the page may SHOW staged orders for (shownManualIdsOf): in Agent POV only
-   * the viewing team's Manual champions (ruling L18), in Oracle View all of
+   * the viewing team's Manual champions, in Oracle View all of
    * them. The "N of M Set" pill, Do This Now's "still has the default order"
    * hint, the Lock In order list and the rail rows' orders read only
    * `shownManualIds`; the rail still lists every Manual champion, the others
    * with no order ("Out of Sight" or "In Sight · Order Hidden"). `servedOrders` holds the server's staged order of
    * every champion in `shownManualIds` (servedManualOrdersOf: in Oracle View
-   * every Manual champion, in Agent POV the viewing team's own, ruling P1);
+   * every Manual champion, in Agent POV the viewing team's own);
    * a row not in view prefers it to this page's memory, so orders kept from
    * earlier ticks show in both views. `fallHolds` lists the champions whose
    * fall this tick is still waiting for its Fall beat (fallHoldsOf): until
@@ -4504,7 +4504,7 @@ export function createTacticsTurn(context) {
       };
     }
     // The server's staged order (both views: in Agent POV the viewing team's
-    // own, ruling P1), so a fresh page and a page that switched views agree
+    // own), so a fresh page and a page that switched views agree
     // and orders kept from earlier ticks show. This page's memory of the
     // tick is used only when the server sent no row.
     const served = data.servedOrders.get(publicId) ?? null;
@@ -4532,7 +4532,7 @@ export function createTacticsTurn(context) {
    * Write the How to Play card's lines for this game's roster mix
    * (howToPlayLines), so the card never says "Policies play the rest" when
    * you play every champion, or asks for keys that do nothing in Policies
-   * Only. With one Manual champion it writes the vision page's own lines.
+   * Only. With one Manual champion it writes the BattleClient vision's lines.
    *
    * @param {ReturnType<typeof deckData>} data This repaint's facts.
    * @returns {void}
@@ -4601,7 +4601,7 @@ export function createTacticsTurn(context) {
    * Agent POV: life, reach, cooldowns and Allowed Now come only from the
    * audience's scene and inspection; a champion that scene does not draw
    * shows "Out of Sight" and no life. Your own team's staged orders show in
-   * both views (ruling P1); another team's never in Agent POV (L18).
+   * both views; another team's never show in Agent POV.
    *
    * A champion that fell on the tick now playing shows as it was before the
    * tick until its Fall beat (fallHoldsOf: alive, with its life before the
@@ -4871,9 +4871,9 @@ export function createTacticsTurn(context) {
       button.classList.toggle("armed", focusedManual && view.armed);
       button.classList.toggle("no", focusedManual && view.no);
       button.setAttribute("aria-pressed", String(focusedManual && view.armed));
-      // As on the vision page, a Not Allowed slot stays pressable: a press
-      // shows the refusal sentence and shakes the slot, so it is not marked
-      // aria-disabled (its tag says Not Allowed in its accessible name).
+      // As in the BattleClient vision, a Not Allowed slot stays pressable:
+      // a press shows the refusal sentence and shakes the slot, so it is not
+      // marked aria-disabled (its tag says Not Allowed in its accessible name).
       button.removeAttribute("aria-disabled");
       const tag = button.querySelector(".tag");
       if (tag instanceof HTMLElement) {
@@ -4912,7 +4912,7 @@ export function createTacticsTurn(context) {
 
     // 4 Lock In: the button only. The rail's This Turn checklist lists each
     // champion's order (4 Oct 2026: no second list in the deck).
-    // Agent POV: only the viewing team's orders (L18).
+    // Agent POV: only the viewing team's orders.
     const manualRows = data.shownManualIds.map((publicId) => manualRow(data, publicId));
     const titles = turnTitles({
       phase,
@@ -5123,7 +5123,7 @@ export function createTacticsTurn(context) {
    * data.shownManualIds) has its step, its action and Set or Default, or,
    * once its fall has reached its Fall beat, "Fallen · Returns in N Ticks"
    * with a Fallen tag and data-fallen="true" (it takes no orders); any
-   * other row (Agent POV: another team's Manual champion, ruling L18) has
+   * other row (Agent POV: another team's Manual champion) has
    * data-observed="false", no order and no Set or Default, yet a click on it
    * still gives that champion orders. When this view cannot see it
    * (data-sight="out") it shows only the champion's class and calling, the
@@ -5151,8 +5151,8 @@ export function createTacticsTurn(context) {
         '<p class="cl-head">Nobody Is Yours</p><p class="cl-note">Both teams are played by policies. Click any champion to look at it.</p>';
     } else {
       // Every Manual champion keeps its row (a click gives it orders); a row
-      // whose order this view may not show (Agent POV: another team's,
-      // ruling L18) has no order and no Set or Default. Out of this view's
+      // whose order this view may not show (Agent POV: another team's) has
+      // no order and no Set or Default. Out of this view's
       // sight it reads "Out of Sight" (3 Oct 2026) with the unseen
       // token and nothing else; in sight it reads "In Sight · Order Hidden".
       const knownById = new Map(view.manualRows.map((row) => [row.publicId, row]));

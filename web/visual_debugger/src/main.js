@@ -31,7 +31,7 @@
  * next, so every tick glides to its end; the server's run_state stays
  * "paused". Those turns leave the message line alone, so "Running." stays
  * there until Pause. While Run is active a Space, Enter or N from the player
- * is ignored (pageRunOwnsLockIn), as on the vision page. N is one tick: the
+ * is ignored (pageRunOwnsLockIn). N is one tick: the
  * battlefield forwards it and the page treats it as a Lock In key, like Space
  * (isLockInKeyName): as Manual it locks in, in Policies Only Python plays one
  * turn, and in scripted inspection it advances the next frame (the Lock In
@@ -52,7 +52,7 @@
  *
  * In the BattleClient and DevClient it also owns the live controls' behavior:
  * How to Play over the arena (#htp: ?, the How to Play button, Close and Full
- * Guide); the deck's message line (#msg) in the vision page's words for the
+ * Guide); the deck's message line (#msg) and its sentences for the
  * player's own commands (ownOrderFacts, laneRefusal, acceptedCommandSentence,
  * hostNoticeSentence; the words come from statusSentence in controls.js);
  * Tab, Shift+Tab, ‹ Prev and Next ›, which give the orders only to your
@@ -1334,7 +1334,7 @@ const replayClassGuide = (() => {
 })();
 
 /**
- * The Replay Viewer's Full Class Details (4 Oct 2026, Micro List M22): a
+ * The Replay Viewer's Full Class Details (4 Oct 2026): a
  * closed disclosure under the Class Guide holding the facts only the old long
  * Agent card showed: the order name, then the old card's own class part
  * (panels.js renderSemanticInspector: Class Overview, the Tactical Guide's
@@ -1387,7 +1387,7 @@ const cameraSwitch =
         // The camera's buttons are the arena's V and B keys (4 Oct
         // 2026: no camera buttons in the bottom row; no lit key is Whole Map).
         // Its tips sit in the scorebug's empty score half, covering nothing
-        // (3 Oct 2026, Micro List M7).
+        // (3 Oct 2026).
         ...(replayProductPage
           ? {
               switchCameras: /** @type {const} */ ([]),
@@ -4972,7 +4972,7 @@ function renderRecordingControls(installed) {
   ];
   for (const [element, available] of actionAvailability) {
     // Open Replay stays in the Recording popover, disabled until a save
-    // exists, as on the vision page; the others show only when they work,
+    // exists; the others show only when they work,
     // so none shows once Exit was accepted.
     if (element !== elements.recordingReviewButton) {
       element.toggleAttribute("hidden", !available || state.shuttingDown);
@@ -5368,7 +5368,7 @@ function setNotice(message, level = "info") {
 
 /**
  * Write a raw error to the browser console as one line, for developers
- * (4 Oct 2026, Micro List M15). The Replay Viewer page shows only plain
+ * (4 Oct 2026). The Replay Viewer page shows only plain
  * words; this keeps the exact text a bug report needs.
  *
  * @param {string} context What failed, in a few words ("PNG export failed").
@@ -5385,8 +5385,8 @@ function logRawError(context, error) {
 }
 
 /**
- * Write one message into the deck's message line (#msg, the deck's header), as
- * the vision page does: the text, `data-level` ("info", "warning" or "error")
+ * Write one message into the deck's message line (#msg, the deck's header):
+ * the text, `data-level` ("info", "warning" or "error")
  * and the `refuse` class for a warning or error (a refusal or a problem). Also
  * hands the same message to the deck (showStatusMessage), which keeps it for
  * its own repaint. BattleClient and DevClient only; the caller checks that.
@@ -5621,7 +5621,7 @@ function laneRefusal(command, facts) {
 }
 
 /**
- * Say three host notices in the vision page's words; every other notice is
+ * Say three host notices in the page's own words; every other notice is
  * shown as the host wrote it. Python's "The Systems are choosing this turn."
  * (its answer to Lock In and Play One Turn) keeps the page's own Lock In
  * sentence: "Waiting for all players to submit their actions…"
@@ -5638,7 +5638,7 @@ function laneRefusal(command, facts) {
  *
  * @param {string | null} notice The host's notice, or null.
  * @param {OwnOrderFacts | null} facts Facts after the command.
- * @returns {string | null} The vision sentence, or null to keep the notice.
+ * @returns {string | null} The page's sentence, or null to keep the notice.
  */
 function hostNoticeSentence(notice, facts) {
   if (typeof notice !== "string") return null;
@@ -6621,7 +6621,7 @@ function hurryLivePoll() {
  * tick on screen and a turn already out (Run sends the next turn once the
  * bodies of the tick on screen have landed) still land and play to their end;
  * only then does the loop stop and the message line say "Paused after the
- * current turn.", as on the vision page. Run pressed again before that turn has landed keeps the same loop
+ * current turn." Run pressed again before that turn has landed keeps the same loop
  * going; it never starts a second one, so no turn is sent twice. The loop
  * also stops at game over, at a fresh-launch stop, when the page goes
  * offline, needs a resync or shuts down, when a Manual slot appears, or when
@@ -6647,7 +6647,7 @@ function toggleLiveRun() {
  * active (from Run until its last turn has landed and settled, so also right
  * after Pause) and the command is a keyboard command whose key is a Lock In
  * key (isLockInKeyName: Enter or N in any case, or Space " "), with any
- * modifiers. The vision page ignores Lock In while Run plays; without this
+ * modifiers. Lock In is ignored while Run plays; without this
  * check, a Space or N pressed during a glide (All Act) would cut the glide
  * short and send a second turn. Pure; reads state.pageRunLoop and the
  * command (and calls isLockInKeyName). Live play only (the loop never runs
@@ -6924,7 +6924,7 @@ let lastLivePlanShown = null;
  * view switch after a tick played would glide that tick again under the new
  * view, and during that replay the deck counts the tick as All Act, so a step
  * key or 0 1 2 pressed right after the switch was dropped without a word.
- * A view change only changes what the human sees (a standing rule), so it must
+ * A view change only changes what the human sees, so it must
  * not replay motion or close orders.
  *
  * Call it right after choreographer.presentFrame with the plan it installed.
@@ -7261,7 +7261,7 @@ function recordingReplacementIsCurrent(request) {
  * Show Save, Discard and Cancel for one exact, already selected replacement.
  * perform sends one revision-guarded request; Cancel sends no request (the
  * dialog's close then says "Restart cancelled. The game goes on."). Save gets
- * keyboard focus, as on the vision page.
+ * keyboard focus.
  *
  * @param {NonNullable<typeof pendingRecordingReplacement>} request
  * @returns {boolean} Whether this request still owns the displayed match.
@@ -7274,7 +7274,7 @@ function showRecordingReplacementDialog(request) {
   elements.recordingDiscardIntent.textContent = request.label;
   if (!elements.recordingDiscardDialog.open)
     elements.recordingDiscardDialog.showModal();
-  // Save is the first and suggested choice, as on the vision page.
+  // Save is the first and suggested choice.
   elements.recordingSaveReplaceButton.focus({ preventScroll: true });
   return true;
 }
@@ -7820,12 +7820,12 @@ function acceptExit(payload) {
  *   for the focused battlefield (Esc then also says keys are off), "control"
  *   for a deck or rail button. quiet (default false) leaves the message line
  *   alone while the command is out and after it is accepted; the page's own
- *   Run sets it so "Running." stays on the line from turn to turn, as on the
- *   vision page. Refusals, stale or duplicate answers and failures still
+ *   Run sets it so "Running." stays on the line from turn to turn.
+ *   Refusals, stale or duplicate answers and failures still
  *   write their sentence. While the page's own Run is active
  *   (pageRunOwnsLockIn), a Space, Enter or N keyboard command that is not quiet
  *   (a key, the Lock In button or a queued Lock In) is ignored without a
- *   word and nothing is sent, as on the vision page; only Run's quiet turns
+ *   word and nothing is sent; only Run's quiet turns
  *   go out. A focus change (roster_selection, role "control") made while
  *   an earlier request is out is queued behind it (retainFocusChange) instead
  *   of being refused. deferredDrafts (default none) are order keys and focus
@@ -7889,7 +7889,7 @@ async function dispatchCommand(
     return;
   }
   // Tab, Shift+Tab, ‹ Prev and Next › visit only your champions that can take
-  // orders (the ruling of 3 October 2026): worked out here, at send time,
+  // orders (3 October 2026): worked out here, at send time,
   // from the newest frame, so a Tab queued behind an earlier order moves on
   // from where that order left the focus.
   const tabStep = ownChampionTabStep(command);
@@ -8545,7 +8545,7 @@ function dispatchCommandFromDraftControl(command, { restoreFocusTo = null } = {}
 
 /**
  * Work out what Tab or Shift+Tab does in live play with Manual champions
- * (the ruling of 3 October 2026): it gives the orders to your next (or
+ * (3 October 2026): it gives the orders to your next (or
  * previous) champion that can take orders, in slot order, and never to a
  * policy's champion. The deck's ‹ Prev and Next › send the same key, so they
  * follow the same rule. "Can take orders" means a Manual slot of the match
@@ -8748,8 +8748,8 @@ bindBattlefieldControls({
  * focus (a click on the arena gives it; Esc and a click elsewhere take it,
  * but a click on a top-bar button or a view switch keeps it).
  * Writes the message line's Keys chip ("Keys On" or "Keys Off · Click the
- * Arena", class `off`) and the `keys-on` class on #arena (its silver frame),
- * as on the vision page. BattleClient and DevClient only; in the Replay Viewer
+ * Arena", class `off`) and the `keys-on` class on #arena (its silver frame).
+ * BattleClient and DevClient only; in the Replay Viewer
  * the chip is not shown and #arena keeps no class.
  *
  * When keys turn on, a message line that still says they are off is made true
@@ -8902,7 +8902,7 @@ elements.battlefield.addEventListener(
         // A right click on a mark still clears the target (the battlefield
         // controls send the secondary pointer). Any other click on a mark
         // keeps its tooltip, sends nothing, and still turns keys on: the
-        // arena, not the mark, takes keyboard focus, as on the vision page.
+        // arena, not the mark, takes keyboard focus.
         if (event.button === 2) return;
         if (!isReplayMode()) {
           event.preventDefault();
@@ -9185,7 +9185,7 @@ if (!isReplayMode()) {
 
 /**
  * Open or close How to Play. In the BattleClient and DevClient it is the
- * overlay over the arena (#htp), as on the vision page; in the Replay Viewer it
+ * overlay over the arena (#htp); in the Replay Viewer it
  * is the Help dialog. Works at any time, also at game over and while a command
  * is out: it is page-local and sends nothing.
  *

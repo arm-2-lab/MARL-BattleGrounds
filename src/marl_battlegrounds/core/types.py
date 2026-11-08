@@ -1521,11 +1521,11 @@ class CaptureTheFlagTransitionFacts(NamedTuple):
     flag_was_dropped_by_agent: Array
     """Which carriers dropped a flag this tick by dying. Bool (10,)."""
     ally_flag_was_returned_by_agent: Array
-    """Which agents returned their own team's dropped flag this tick.
+    """Which agent returned its own team's dropped flag this tick.
 
-    Bool (10,): every eligible teammate touching a flag that went home by
-    touch. Eligible means active, and alive and unshielded at the start of the
-    tick.
+    Bool (10,): the nearest eligible teammate touching a flag that went home
+    by touch, ties to the lowest slot; at most one True per team. Eligible
+    means active, and alive and unshielded at the start of the tick.
     """
     enemy_flag_was_captured_by_agent: Array
     """Which carrier scored a capture this tick. Bool (10,); at most one True."""

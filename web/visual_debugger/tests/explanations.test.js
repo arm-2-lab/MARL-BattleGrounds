@@ -1,7 +1,7 @@
 /**
  * @file Check immutable explanation records, exact vocabulary and public agent
  * identity in browser help: champion labels read "Mage · ID 5" (with the chip,
- * source and Out of Sight forms beside them), statuses use the approved names
+ * source and Out of Sight forms beside them), statuses use the official names
  * such as "Serrated Arrows (Slow)" and "Spawn Shield (Invulnerable)", auras
  * read "Sorcerer's Empowerment (Damage Boost)", ability titles read "Burst
  * (Mage Ultimate)" and

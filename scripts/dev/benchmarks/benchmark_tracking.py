@@ -1,9 +1,9 @@
-"""Measure Packet 4 tracking and reset costs through the shared benchmark CLI.
+"""Measure episode tracking and reset costs through the shared benchmark CLI.
 
 Use ``python -m scripts.dev.benchmarks.benchmark_evaluation --tracking --output PATH``.
 Each selected case uses batch 32, sixteen decisions and five or more warm runs.
 Short unequal 4/7-step games stress reset handling; these are not learning-speed
-measurements. The manual case also runs against Packet 3's committed package.
+measurements. The manual case also runs against an earlier committed package.
 Inputs and common retained outputs match; optional starts/final training data
 are reported separately. This module never changes assets or production files.
 """

@@ -54,8 +54,8 @@
  *     TRAP" / "Ultimate Combo"; neutral.
  *   - Ticks Left: 30 ticks before the draw tick while no team has reached
  *     First To (a Moon Silver crescent; "DRAW IF NO TEAM REACHES 20" / "30
- *     Ticks Left"; neutral). The owner removed the 10, 5, 4, 3, 2 and 1
- *     cards and the countdown chip (4 Oct 2026).
+ *     Ticks Left"; neutral). There are no 10, 5, 4, 3, 2 or 1 cards and no
+ *     countdown chip (4 Oct 2026).
  *   A plain single takedown gets no card (its Fallen feed row tells it). With
  *   the Death Announcer switch off, the moments born from a fall (First
  *   Blood, Multi Takedown, Team Wiped, Trade, Ultimate Takedown, runs and

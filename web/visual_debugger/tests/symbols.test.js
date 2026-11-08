@@ -247,7 +247,7 @@ test("status symbols carry the approved status names", () => {
   );
   assert.equal(symbolForLifecycleToken("applied"), null);
   assert.equal(symbolById("rest")?.title, "Rest (Regeneration)");
-  // One owner: the display tokens show exactly the approved names.
+  // One owner: the display tokens show exactly the names in STATUS_NAMES.
   for (const tokenId of [...CANONICAL_STATUS_ORDER, "in_combat"]) {
     const token = resolveVisualToken("status", tokenId);
     assert.equal(token.label, statusNameFor(tokenId)?.title, tokenId);
