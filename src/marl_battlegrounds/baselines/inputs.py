@@ -785,11 +785,11 @@ def encode_training_state(
         carries the enemy flag, so no slot number is a feature value. Each
         hill's owner is two indicators, Team A then Team B, both zero when
         nobody owns it; contested hills are 1. Outside their mode these 53
-        features are zero. Task IDs have four
-        indicators, including Neutral and reserved KOTH/CTF; profile team IDs
-        have three. Class, team and accepted-action indicators for unused slots
-        are zero. Dead members keep physical state and history. All ordered
-        spawn pads remain present. No seed, map ID or other runner ID is added.
+        features are zero. Task IDs have four indicators: Neutral, TDM, KOTH
+        and CTF; profile team IDs have three. Class, team and accepted-action
+        indicators for unused slots are zero. Dead members keep physical state
+        and history. All ordered spawn pads remain present. No seed, map ID or
+        other runner ID is added.
 
     Raises
     ------
@@ -802,9 +802,9 @@ def encode_training_state(
     Use this view only in a separate critic or mixer. It must not influence
     actor-producing System inputs or memory. Inputs are unchanged; the function
     works in jit/vmap/scan without host data checks or I/O. Core-valid dtypes,
-    categories and state/config pairing are caller preconditions. Reserved task
-    indicators do not enable those tasks in Core. Boolean fields become 0/1;
-    physical values retain units. Integers above 16,777,216 may round in float32.
+    categories and state/config pairing are caller preconditions. Boolean
+    fields become 0/1; physical values retain units. Integers above 16,777,216
+    may round in float32.
     Store this view once per game, not once per teammate; any critic broadcast
     belongs at network application. No normalization or recurrent reset occurs.
     """
