@@ -861,6 +861,9 @@ def _prepare(
 
     New and resumed roots must pass the shared source-path guard. Reject unsafe
     locations before freezing source identity, acquiring locks or making folders.
+    A new study's output_dir must be new or empty. When it already holds files,
+    the ValueError names the folder and the two resume routes for a study
+    saved there: run_study(resume_from=...) and the study run CLI command.
     """
     from marl_battlegrounds.evaluation.revision import (
         _check_output_path,  # pyright: ignore[reportPrivateUsage]
@@ -907,7 +910,13 @@ def _prepare(
     ):
         raise ValueError("Hydra job paths differ from the exact study destination")
     if root.exists() and (not root.is_dir() or any(root.iterdir())):
-        raise ValueError("Study output_dir must be new or empty")
+        raise ValueError(
+            f"Study output_dir must be new or empty, but {root} already holds "
+            "files. If it holds a study, continue it with run_study(resume_from="
+            "folder) or 'python -m marl_battlegrounds study run --resume-from "
+            "folder'; running a Hydra sweep again does not resume it. Otherwise, "
+            "choose a new folder."
+        )
     root.mkdir(parents=True, exist_ok=True)
     with _launch.launch_lock(root):
         if any(path.name != ".launch.lock" for path in root.iterdir()):

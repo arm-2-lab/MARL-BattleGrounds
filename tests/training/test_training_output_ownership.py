@@ -1,4 +1,4 @@
-"""Check that a new or child training run owns its folder before it writes there.
+"""Check that a new or child training run, or a study, owns its folder first.
 
 train and extend_training check early that output_dir is new or empty. A call
 can then wait in setup while another call claims the same folder. These CPU
@@ -19,7 +19,12 @@ the first run before and after:
   and the lock file stays empty after the run. A folder with any other entry,
   or with a lock entry that is not a plain file, is refused before setup and
   left unchanged. _run_io.unused_run_folder, the one shared rule, gives the
-  same answers.
+  same answers. The refusal names the folder and the ways forward:
+  training.load_run reads a finished run there, and resume_from with no
+  output_dir continues a stopped one.
+- A new study refuses a folder that already holds files and leaves it
+  unchanged. Its message names the folder and both study resume routes:
+  run_study(resume_from=...) and the study run CLI command.
 
 Learner execution is stubbed after one step-0 checkpoint save, so a first run
 looks like a real stopped run. These tests prove folder ownership only, not
@@ -39,7 +44,13 @@ import pytest
 from tests.helpers.training_continuation_helpers import fixed_source, latest
 
 from marl_battlegrounds.baselines.ppo import PPOConfig
-from marl_battlegrounds.training import TrainConfig, extend_training, runner, train
+from marl_battlegrounds.training import (
+    TrainConfig,
+    extend_training,
+    runner,
+    study,
+    train,
+)
 from marl_battlegrounds.training._run_io import unused_run_folder
 
 CONFIG = TrainConfig(
@@ -250,8 +261,14 @@ def test_lock_only_folder_is_used_and_other_entries_are_refused(
             lock.symlink_to(outside)
         expected = _snapshot(folder)
         assert not unused_run_folder(folder)
-        with pytest.raises(ValueError, match=r"^output_dir must be new or empty$"):
+        with pytest.raises(ValueError) as refused:
             train(CONFIG, output_dir=folder)
+        message = str(refused.value)
+        assert message.startswith(
+            f"output_dir must be new or empty, but {folder.resolve()} already"
+        )
+        assert "read it with marl_battlegrounds.training.load_run" in message
+        assert "resume_from set to that folder and no output_dir" in message
         assert _snapshot(folder) == expected
     assert unused_run_folder(tmp_path / "missing")
     assert not unused_run_folder(outside)
@@ -275,3 +292,27 @@ def test_lock_only_folder_is_used_and_other_entries_are_refused(
         extend_training(latest(root), additional_env_steps=2, output_dir=child) == child
     )
     assert (child / "run_details.json").is_file()
+
+
+def test_used_study_folder_names_both_resume_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = tmp_path / "study"
+    folder.mkdir()
+    (folder / "notes.txt").write_text("Keep me")
+    expected = _snapshot(folder)
+
+    def declared(config: object) -> dict[str, Any]:
+        return {}
+
+    # Skip the declaration check's CPU subprocess; the folder check comes next.
+    monkeypatch.setattr(study, "_freeze", declared)
+    with pytest.raises(ValueError) as refused:
+        study.run_study({}, output_dir=folder)
+    message = str(refused.value)
+    assert message.startswith(
+        f"Study output_dir must be new or empty, but {folder.resolve()} already"
+    )
+    assert "run_study(resume_from=folder)" in message
+    assert "python -m marl_battlegrounds study run --resume-from folder" in message
+    assert _snapshot(folder) == expected

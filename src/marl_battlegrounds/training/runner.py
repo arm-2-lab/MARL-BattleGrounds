@@ -774,6 +774,9 @@ def _require_new_output(root: Path, *, locked: bool = False) -> None:
     ValueError
         root is not a folder, or it holds any entry other than a plain
         ``.training.lock`` file (a folder or link with that name is refused).
+        Without locked, the message names root and the two ways forward for
+        a saved run there: load_run reads a finished run, and resume_from
+        (with no output_dir) continues a stopped one.
 
     Notes
     -----
@@ -790,7 +793,11 @@ def _require_new_output(root: Path, *, locked: bool = False) -> None:
             "output_dir must be new or empty, but files appeared there while "
             "this call was setting up, for example from another training call"
             if locked
-            else "output_dir must be new or empty"
+            else f"output_dir must be new or empty, but {root} already holds "
+            "files. If it holds a finished run, read it with "
+            "marl_battlegrounds.training.load_run. If it holds a stopped run, "
+            "continue it with resume_from set to that folder and no output_dir. "
+            "Otherwise, choose a new folder."
         )
 
 
