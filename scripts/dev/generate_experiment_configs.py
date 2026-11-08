@@ -495,10 +495,12 @@ def presets() -> dict[str, dict[str, Any]]:
             }
         },
         "job": {"chdir": False},
+        # A resume has no output_dir, so its records go beside the result
+        # folder it continues, as for scenario evaluation and the stages.
         "run": {
             "dir": (
                 "${marl_launch_dir:${oc.select:evaluation.output_dir,null},"
-                "${name},null}"
+                "${name},null,${oc.select:evaluation.resume_from,null}}"
             )
         },
         "output_subdir": ".hydra",

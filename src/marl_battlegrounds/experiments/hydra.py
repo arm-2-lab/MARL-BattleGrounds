@@ -245,10 +245,12 @@ def _launch_directory(
     """Choose a unique Hydra record folder without creating it.
 
     output_dir is the exact optional trainer destination. resume_from, when
-    present, names a run or learner checkpoint whose run owns the new records.
-    fallback_output_dir supplies a second lesson destination only when
-    output_dir is None. Its records are kept
-    in a sibling <name>.launches folder. Otherwise use artifacts/experiments/name.
+    present, names a training run or learner checkpoint whose run owns the new
+    records. fallback_output_dir is used only when output_dir is None: a
+    lesson's second destination, or the result folder that a resumed
+    evaluation, scenario evaluation or stage continues. The chosen folder's
+    records go in its sibling <folder>.launches; with neither, they go under
+    artifacts/experiments/<name> in the working folder.
     name must be one nonempty path component. IDs use UTC microseconds and a
     random suffix. Fresh paths need no input reads; recovery reads and checks
     small checkpoint metadata, without loading model arrays.
@@ -1170,7 +1172,10 @@ def run_evaluation(
         The unchanged public API result, or a host-only preview mapping. A resumed
         result contains only newly played episodes; use load_results for all
         durable rows. result.run_dir names the actual saved run, or None when no
-        game output was requested. Prints both result and launch locations.
+        game output was requested. After a run, prints the same summary as
+        ``python -m marl_battlegrounds evaluate`` (status, up to 32 episode rows
+        and the head-to-head table, through the CLI's own printer), then the
+        result and launch locations.
 
     Raises
     ------
@@ -1405,6 +1410,11 @@ def run_evaluation(
             print(f"Evaluation output: {result.run_dir}", file=sys.stderr)
         print(f"Evaluation launch records: {launch}", file=sys.stderr)
         raise
+    from marl_battlegrounds import _cli
+
+    _cli._print_result(  # pyright: ignore[reportPrivateUsage]
+        result, tournament=False, save_setting="evaluation.output_dir"
+    )
     print(f"Evaluation output: {result.run_dir or 'No game results saved'}")
     print(f"Evaluation launch records: {launch}")
     return result

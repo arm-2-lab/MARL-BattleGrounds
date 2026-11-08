@@ -10,6 +10,8 @@ capacities pass through unchanged. Fresh-execution flags preserve explicit true
 and false values; omission inherits saved settings. Canonical conditions remain
 owned by its released field. The head-to-head preview prints the shared
 accessor's counts and points, with exact IDs beside possibly repeated names.
+When results were not saved, its closing hint names the caller's output
+setting: --output-dir by default, or one such as evaluation.output_dir.
 The entry commands (new, check, submit) each call their one entry function
 once with the parsed values; check returns 1 when a must-pass step failed;
 check refuses --repository without --commit, or with a folder, before the
@@ -670,6 +672,13 @@ def test_preview_reads_one_chunk_and_closes_iterator(
     assert "Unavailable" in output and "Up to 32 Rows" in output
     assert "Head to Head — Up to 32 Rows" in output
     assert "a\tSame\tb\tSame\t3\t1\t1\t1\t5.0\t2.0\t3.0" in output
+    assert "Use --output-dir or Python" in output
+    _cli._print_result(
+        cast(EvaluationResult, fake),
+        tournament=False,
+        save_setting="evaluation.output_dir",
+    )
+    assert "Use evaluation.output_dir or Python" in capsys.readouterr().out
 
 
 def test_cpu_evaluation_matches_python_and_preserves_replays(

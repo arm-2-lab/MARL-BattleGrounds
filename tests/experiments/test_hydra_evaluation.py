@@ -2,7 +2,11 @@
 
 Use real untrained actor exports, saved result/replay reads and exact recovery.
 Host checks cover sparse settings, identities, path safety, import costs and
-failure order. Tiny games prove software behavior, not learned competence.
+failure order. After a run, a launcher prints the CLI's own result summary
+(the head-to-head table included) before the result and launch locations. A
+resumed evaluation's Hydra records go beside the result folder it continues,
+in <result>.launches. Tiny games prove software behavior, not learned
+competence.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import jax
 import pytest
 
 import marl_battlegrounds as marl_bgs
+from marl_battlegrounds import _cli
 from marl_battlegrounds.baselines import ppo, pqn, qmix
 from marl_battlegrounds.evaluation.replay_io import load_replay
 from marl_battlegrounds.evaluation.results import EvaluationResult
@@ -136,7 +141,7 @@ runpy.run_path({str(script)!r}, run_name='__main__')
 
 
 def test_six_methods_evaluate_and_reload_the_same_results_as_python(
-    actor: tuple[str, Path], tmp_path: Path
+    actor: tuple[str, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     method, path = actor
     settings = _settings(
@@ -152,6 +157,11 @@ def test_six_methods_evaluate_and_reload_the_same_results_as_python(
     assert isinstance(result, EvaluationResult)
     assert result.run_dir is not None
     assert result.status == "complete" and result.completed_episode_ids == (1, 2)
+    printed = capsys.readouterr().out
+    _cli._print_result(result, tournament=False)
+    table = capsys.readouterr().out
+    assert "Head to Head — Up to 32 Rows" in table
+    assert printed.index(table) < printed.index(f"Evaluation output: {result.run_dir}")
     saved = marl_bgs.load_results(result.run_dir)
     assert saved.status == "complete"
     assert len(saved.table("episodes")["episode_id"]) == 2
@@ -423,6 +433,21 @@ def test_sparse_resume_keeps_original_inputs_and_only_plays_missing_games(
     assert "red_zone_depth" not in request["effective_evaluation"]
 
 
+def test_resume_launch_records_go_beside_the_result_folder(tmp_path: Path) -> None:
+    from hydra import compose, initialize_config_module
+
+    saved = tmp_path / "saved-result"
+    with initialize_config_module(
+        config_module="marl_battlegrounds.experiments.configs", version_base="1.3"
+    ):
+        config = compose(
+            config_name="evaluate_resume",
+            overrides=["checkpoint=c", "opponent=o", f"evaluation.resume_from={saved}"],
+            return_hydra_config=True,
+        )
+    assert Path(config.hydra.run.dir).parent == tmp_path / "saved-result.launches"
+
+
 def test_linked_cache_fails_on_the_direct_adapter_route(
     actor: tuple[str, Path], tmp_path: Path
 ) -> None:
@@ -609,6 +634,9 @@ def evaluated(*args, **kwargs):
         raise RuntimeError('Declared failure after factory')
     return SimpleNamespace(run_dir=None, status='complete', metadata={{}})
 marl_bgs.evaluate = evaluated
+# The stand-in result has no tables for the shared result printer.
+import marl_battlegrounds._cli as cli
+cli._print_result = lambda *args, **kwargs: None
 try:
     status = evaluation_main({method!r})
 except SystemExit:

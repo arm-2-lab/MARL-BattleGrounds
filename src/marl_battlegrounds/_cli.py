@@ -672,9 +672,29 @@ def _cell(value: object) -> str:
 
 
 def _print_result(
-    result: EvaluationResult | TournamentResult, *, tournament: bool
+    result: EvaluationResult | TournamentResult,
+    *,
+    tournament: bool,
+    save_setting: str = "--output-dir",
 ) -> None:
-    """Print bounded raw and head-to-head previews without fitting or saving."""
+    """Print bounded raw and head-to-head previews without fitting or saving.
+
+    The CLI and the Hydra evaluation scripts (experiments.hydra.run_evaluation)
+    both print results through this function, so they show the same table.
+
+    Parameters
+    ----------
+    result : EvaluationResult or TournamentResult
+        The finished API result. Up to 32 rows of its episodes (or tournament
+        rankings) and of its head-to-head table are read and printed.
+    tournament : bool
+        True prints tournament rankings; False prints evaluation fields and
+        episodes.
+    save_setting : str, default="--output-dir"
+        The caller's name for the output folder setting. When result.run_dir
+        is None, the closing hint tells the reader to set it, for example
+        "evaluation.output_dir" in a Hydra script.
+    """
     print(f"Status: {result.status.capitalize()}")
     if result.run_dir is None:
         print("Results Were Not Saved")
@@ -756,11 +776,11 @@ def _print_result(
     for path in result.replay_paths:
         print(f"Replay: {path}")
     if result.run_dir is None:
-        print("Use --output-dir or Python for complete later result access.")
+        print(f"Use {save_setting} or Python for complete later result access.")
         if result.replays:
             print(
                 "New replay captures were not saved; "
-                "use --output-dir to open them later."
+                f"use {save_setting} to open them later."
             )
 
 

@@ -27,5 +27,5 @@ hydra:
   job:
     chdir: false
   run:
-    dir: ${marl_launch_dir:${oc.select:evaluation.output_dir,null},${name},null}
+    dir: ${marl_launch_dir:${oc.select:evaluation.output_dir,null},${name},null,${oc.select:evaluation.resume_from,null}}
   output_subdir: .hydra
