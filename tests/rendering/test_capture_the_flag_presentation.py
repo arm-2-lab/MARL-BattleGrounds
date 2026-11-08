@@ -134,6 +134,7 @@ def _view(
     transition: EvaluationTransitionV2,
     successor: EvaluationFrameV4,
     outcome: int = 0,
+    context: EvaluationEpisodeContextV5 = _CONTEXT,
     **agent_facts: set[int],
 ) -> EvaluationTransitionViewV1:
     flags: dict[str, object] = {
@@ -152,9 +153,9 @@ def _view(
             )
         }
     )
-    events = decode_evaluation_events_v1(_CONTEXT, start, facts, successor)
+    events = decode_evaluation_events_v1(context, start, facts, successor)
     return EvaluationTransitionViewV1(
-        context=_CONTEXT,
+        context=context,
         start_frame=start,
         transition=transition.model_copy(update={"facts": facts, "events": events}),
         successor_frame=successor,
