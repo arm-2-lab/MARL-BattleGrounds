@@ -48,6 +48,9 @@ half an opponent bank of temporaries, while a control that passes the bank
 through two nested conditionals shows at least one bank. These checks prove
 software contracts, not learning or GPU cost.
 Warm starts load saved actors, match greedy inference and keep fresh learner state.
+A warm start restarts at 1 every running variance that was 0 in the imported
+actor (an input that never changed in the source run), keeping its mean and
+every other statistic exactly.
 """
 
 # pyright: reportPrivateUsage=false, reportUnknownLambdaType=false
@@ -1089,6 +1092,32 @@ def test_warm_start_copies_network_statistics_and_keeps_fresh_recent_rows(
             metrics="none",
             initial_actor=invalid,
         )
+
+    def first_variances(value: float) -> Callable[[tuple[object, ...], Array], Array]:
+        def replace_leaf(path: tuple[object, ...], leaf: Array) -> Array:
+            if getattr(path[-1], "key", None) != "var":
+                return leaf
+            return leaf.at[..., :3].set(value)
+
+        return replace_leaf
+
+    unseen = imported._replace(
+        batch_stats=jax.tree_util.tree_map_with_path(
+            first_variances(0.0), imported.batch_stats
+        )
+    )
+    _, restarted = learner.init_pqn_learner(
+        schedule=schedule,
+        pqn=_CONFIG,
+        seed=23,
+        prepared=prepared,
+        metrics="none",
+        initial_actor=unseen,
+    )
+    _equal(
+        restarted.carry.history.current_variables.network.batch_stats,
+        jax.tree_util.tree_map_with_path(first_variances(1.0), imported.batch_stats),
+    )
     from marl_battlegrounds.evaluation.policy_execution import (
         apply_systems,
         init_systems,

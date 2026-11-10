@@ -141,6 +141,14 @@ because the QMIX learner module imports Flashbax, which PQN never loads."""
 _MAX_COUNT = int(np.iinfo(np.int32).max)
 _STAGES = 17
 _SNAPSHOT_SLOTS = 20
+# A saved running variance at or below this never saw a changing value. A
+# statistic that only ever sees one value decays as 0.99**n from its start of
+# 1 (momentum 0.99): it passes 1e-12 after about 2,750 optimizer steps and
+# stops at float32's 7e-44 after 9,876, so at the defaults (64 steps a block)
+# a source of about 43 blocks or more is covered. Below that the floor does
+# nothing, which is the old behavior. Features that truly vary stay far above
+# it (the released Season 0 PQN-VDN model's smallest is about 1e-6).
+_UNSEEN_VARIANCE = 1e-12
 
 
 class PQNRow(NamedTuple):
@@ -644,6 +652,29 @@ def _state_shapes(state: PQNLearnerState, pqn: PQNConfig) -> int:
     return games
 
 
+def _fresh_unseen_variances(batch_stats: Tree) -> Tree:
+    """Restart, at 1, every running variance that never saw a changing value.
+
+    batch_stats is a network's BatchNorm statistics tree (leaves whose last
+    path key is "var" are variances, "mean" leaves are means), already checked
+    to be nonnegative. Each variance at or below _UNSEEN_VARIANCE becomes 1.0,
+    a fresh BatchNorm's value; every other variance and every mean is kept, so
+    an input that stays at its saved constant still normalizes to about 0.
+    Without this, an input that was constant in the source run (for example a
+    Capture the Flag row in a Team Deathmatch model) would be multiplied about
+    316 times (1 / sqrt(epsilon)) once it changes. Returns a new tree; the
+    input is unchanged. Pure JAX, same shapes and dtypes.
+    """
+
+    def restart(path: tuple[object, ...], leaf: Array) -> Array:
+        """Restart one variance leaf's unseen entries; keep any other leaf."""
+        if getattr(path[-1], "key", None) != "var":
+            return leaf
+        return jnp.where(leaf <= _UNSEEN_VARIANCE, jnp.ones_like(leaf), leaf)
+
+    return jax.tree_util.tree_map_with_path(restart, batch_stats)
+
+
 def init_pqn_learner(
     *,
     schedule: TrainingSchedule,
@@ -685,11 +716,13 @@ def init_pqn_learner(
     initial_actor : numerical actor tree or None, default=None
         Compatible actor weights copied into a fresh learner before history is
         initialized. PPO takes actor parameters; QMIX takes online Q parameters
-        (also used for its targets); PQN takes parameters and running statistics.
-        Critic, mixer, optimizer, memory and counters start fresh. Initial
-        exploration and collection keep this method's normal rules. Loaded arrays
-        and fresh learner arrays receive one device placement before return;
-        already resident buffers are reused.
+        (also used for its targets); PQN takes parameters and running statistics,
+        restarting at 1 each variance that never saw a changing value (see
+        Returns). Critic, mixer, optimizer, memory and counters start fresh.
+        Initial exploration and collection keep this method's normal rules.
+        Loaded arrays and fresh learner arrays receive one device placement
+        before return; already resident buffers are reused, except the
+        rebuilt variance leaves.
     prepared : PreparedTrainingContent or None, default=None
         Existing verified content, or None to verify installed content now.
     shaping : bool, default=False
@@ -736,7 +769,10 @@ def init_pqn_learner(
         numerical zero-experience boundary: exploration rate exactly 1.0 for
         initial random collection, empty kept rows and all counters zero.
         Random initialization starts with running mean 0 and variance 1;
-        a warm start keeps the imported running statistics.
+        a warm start keeps the imported running statistics, except that a
+        variance at or below 1e-12 (an input that never changed in the
+        source run, such as another mode's rows) restarts at 1 with its mean
+        kept.
 
     Raises
     ------
@@ -777,6 +813,12 @@ def init_pqn_learner(
         )
         if not _nonnegative_variances(initialized.network.batch_stats):
             raise ValueError("Initial actor running variance must be nonnegative")
+        network = initialized.network
+        initialized = initialized._replace(
+            network=network._replace(
+                batch_stats=_fresh_unseen_variances(network.batch_stats)
+            )
+        )
     variables = PQNActorVariables(initialized.network, jnp.float32(1.0))
     actor = make_pqn_system(
         initialized.network,

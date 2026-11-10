@@ -301,9 +301,14 @@ class TrainConfig:
         complete learner checkpoint folder, a portable model file, a released
         model name such as ``"MARL-BattleGrounds/tdm-season-0-qmix@final"`` or
         its exact ``hf://`` address. A relative path uses the current directory.
-        The critic, optimizer,
-        memory and counters start fresh. PQN also imports running statistics;
-        QMIX starts its target Q from the same weights and uses fresh mixers.
+        The actor may come from a run of any mode: a Team Deathmatch actor can
+        start a Capture the Flag run and the reverse, since every mode shares
+        one input layout. This is a warm start: the critic, optimizer,
+        memory and counters start fresh, and exploration starts at its usual
+        first rate. PQN also imports running statistics, restarting at 1 each
+        variance that never saw a changing value in the source run (such as
+        another mode's rows); QMIX starts its target Q from the same weights
+        and uses fresh mixers.
         Resume restores the full saved learner and never reloads this path.
         The source identity and known protected-controller exposure are kept;
         a released name is saved as its exact ``hf://`` address.
