@@ -60,6 +60,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import optimize  # pyright: ignore[reportMissingTypeStubs]
 
+from marl_battlegrounds._task_settings import DEFAULT_TDM_RED_ZONE_DEPTH, TaskName
 from marl_battlegrounds.training._run_io import atomic_json
 
 if TYPE_CHECKING:
@@ -404,6 +405,8 @@ def play_pair(
     maps: Sequence[int],
     seed: int,
     num_envs: int,
+    task: TaskName = "tdm",
+    red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH,
 ) -> tuple[int, int, int, int]:
     """Play one payoff pair and count the first method's results.
 
@@ -422,6 +425,11 @@ def play_pair(
         Lanes per batch. The batch keeps this size (``keep_batch_size``), so
         every pair of methods with the same two structures reuses one
         compiled program.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode the games play; train_psro passes its oracle's task.
+    red_zone_depth : float, default=DEFAULT_TDM_RED_ZONE_DEPTH (5.0)
+        The games' Red Zone depth in map units; train_psro passes its oracle's
+        resolved depth. Every mode but Team Deathmatch needs 0.0.
 
     Returns
     -------
@@ -445,6 +453,8 @@ def play_pair(
         num_envs=num_envs,
         keep_batch_size=True,
         metrics="none",
+        task=task,
+        red_zone_depth=red_zone_depth,
     )
     outcomes = [episode.outcome for episode in result.episodes]
     return (
@@ -463,6 +473,8 @@ def validate(
     seed_pairs: int,
     seed: int,
     num_envs: int,
+    task: TaskName = "tdm",
+    red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH,
 ) -> dict[str, Any]:
     """Play a validation panel and report the point margin with kills beside it.
 
@@ -482,6 +494,11 @@ def validate(
         meet the same games.
     num_envs : int
         Lanes per batch, kept fixed across calls.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode the games play; train_psro passes its oracle's task.
+    red_zone_depth : float, default=DEFAULT_TDM_RED_ZONE_DEPTH (5.0)
+        The games' Red Zone depth in map units; train_psro passes its oracle's
+        resolved depth. Every mode but Team Deathmatch needs 0.0.
 
     Returns
     -------
@@ -507,6 +524,8 @@ def validate(
             num_envs=num_envs,
             keep_batch_size=True,
             metrics="priority",
+            task=task,
+            red_zone_depth=red_zone_depth,
         )
         episodes = result.episodes
         sums[name] = {
@@ -583,10 +602,13 @@ def train_psro(
         the whole budget in game steps (training, payoff and validation
         games). ``validation_maps`` (all five validation maps when
         None), ``routine_seed_pairs`` and ``confirmation_seed_pairs`` set the
-        validation games. Its own opponents, history, explicit saves and
-        validation panel are replaced in every round, and its Random
-        diagnostic games and extra actor exports are turned off, so every
-        game step is counted and only each round's final actor is saved. A
+        validation games. Its ``task`` and resolved ``red_zone_depth`` are the
+        rules of every payoff, validation and confirmation game, so a Capture
+        the Flag oracle's population is judged in Capture the Flag. Its own
+        opponents, history, explicit saves and validation panel are replaced
+        in every round, and its Random diagnostic games and extra actor
+        exports are turned off, so every game step is counted and only each
+        round's final actor is saved. A
         PQN-VDN oracle needs ``pqn.lr_linear_decay=False``: a decaying rate
         would end inside round 1, and later rounds could not continue it.
     output_dir : str or Path
@@ -679,6 +701,11 @@ def train_psro(
             "so later rounds could not continue it; set pqn.lr_linear_decay=False"
         )
     validation_maps = list(config.validation_maps or VALIDATION_MAPS)
+    # Payoff, validation and confirmation games play the oracle's own rules.
+    rules: dict[str, Any] = {
+        "task": config.task,
+        "red_zone_depth": cast(float, config.red_zone_depth),
+    }
     panel_games = 2 * len(validation_maps) * len(panel)
 
     def round_size(used: int, members: int, unplayed_pairs: int = 0) -> int:
@@ -764,6 +791,7 @@ def train_psro(
                 maps=maps_[start:] + maps_[:start],
                 seed=seed,
                 num_envs=eval_num_envs,
+                **rules,
             )
             payoff.append(
                 dict(
@@ -882,6 +910,7 @@ def train_psro(
                 seed_pairs=config.routine_seed_pairs,
                 seed=validation_seed,
                 num_envs=eval_num_envs,
+                **rules,
             )
             save_rounds()
         own = {e["member"]: e["validation"]["member"] for e in rounds}
@@ -908,6 +937,7 @@ def train_psro(
         num_envs=eval_num_envs,
         shortlist=shortlist,
         save=save_rounds,
+        rules=rules,
     )
     entrant["ledger_env_steps"] = used_steps()
     entrant["budget_env_steps"] = config.total_env_steps
@@ -992,6 +1022,7 @@ def _choose_entrant(
     num_envs: int,
     shortlist: int,
     save: Callable[[], None],
+    rules: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Confirm the best candidates and return the entrant record.
 
@@ -1000,6 +1031,7 @@ def _choose_entrant(
     panel again with confirmation games, recorded in its round's
     ``validation["confirmation"]``. The highest confirmed point margin wins;
     ties go to the earlier round, as in the trainer's point-margin rule.
+    rules holds the games' task and red_zone_depth, passed to ``validate``.
     """
     ranked = sorted(
         rounds,
@@ -1015,6 +1047,7 @@ def _choose_entrant(
                 seed_pairs=seed_pairs,
                 seed=seed,
                 num_envs=num_envs,
+                **rules,
             )
             save()
     best = min(

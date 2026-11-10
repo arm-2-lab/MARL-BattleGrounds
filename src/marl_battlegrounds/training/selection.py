@@ -288,7 +288,7 @@ def _conditions(rows: Sequence[Mapping[str, Any]]) -> None:
     conditions = [validation_conditions(row) for row in rows]
     if conditions and any(row != conditions[0] for row in conditions[1:]):
         raise ValueError(
-            "Selection cannot mix panels, maps, team rosters, "
+            "Selection cannot mix modes, panels, maps, team rosters, "
             "deployed partners or scoring conditions"
         )
 
@@ -327,6 +327,7 @@ def _request(
     # A verified old task has pre-Red-Zone rules. New games must name zero,
     # because the current validation API otherwise defaults to five map units.
     depth = row.get("red_zone_depth", 0.0)
+    mode_field = {"task": row["task"]} if "task" in row else {}
     identity: Record = {
         "checkpoint_id": row["checkpoint_id"],
         "actor_digest": row["actor_digest"],
@@ -345,6 +346,7 @@ def _request(
             seed_pairs=pairs,
             root_seed=root,
             red_zone_depth=depth,
+            **mode_field,
         )
     used_roots: set[int] = set(evidence.get("used_roots", ()))
     used_roots.update(evidence.get("comparison_used_roots", ()))
@@ -362,6 +364,7 @@ def _request(
         "purpose": "confirmation",
         "seed_pairs": pairs,
         "red_zone_depth": depth,
+        **mode_field,
     }
     if root is not None:
         arguments["root_seed"] = root

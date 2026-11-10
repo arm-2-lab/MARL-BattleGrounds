@@ -19,6 +19,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+from marl_battlegrounds._task_settings import (
+    DEFAULT_SCORE_THRESHOLDS,
+    SPAWN_EXCHANGE_FIELDS,
+    TASK_MODES,
+)
 from marl_battlegrounds.training import validation
 from marl_battlegrounds.training.analysis import summarize_validation
 
@@ -291,6 +296,10 @@ def _pass_rows(
     actor is its verified frozen actor, and index selects the opponent in panel.
     snapshot tracks the manifest and raw tables. Return completed game rows from
     validation's reader, with actual kills when the task records Red Zone rules.
+    The pass must have played the task's mode (its "task"; absent means Team
+    Deathmatch) to that mode's winning score, and each exchanged game must
+    reverse every SPAWN_EXCHANGE_FIELDS field its record holds (pads, and flag
+    homes in Capture the Flag).
     Reject changed methods, conditions or generated map/seed/spawn assignments.
     Read saved JSON and tables only; do not rebuild a model or run a game.
     """
@@ -351,10 +360,11 @@ def _pass_rows(
             raise ValueError("Historical validation opponent differs from its panel")
         root = task["root"]
     games = len(task["maps"]) * task["seed_pairs"] * 2
+    mode = task.get("task", "tdm")
     options: Record = {
         "seed": root,
         "spawn_mode": "paired",
-        "score_threshold": 20,
+        "score_threshold": DEFAULT_SCORE_THRESHOLDS[mode],
         "max_steps": 300,
         "metrics": "priority",
         "save_replays": 0,
@@ -365,6 +375,8 @@ def _pass_rows(
     }
     if "red_zone_depth" in task:
         options["red_zone_depth"] = task["red_zone_depth"]
+    if "task" in task:
+        options["task"] = task["task"]
     if (
         contract.get("version") != 1
         or contract.get("schedule_kind") != "generated"
@@ -422,9 +434,11 @@ def _pass_rows(
         current = configs[episode["configuration_digest"]]
         expected = dict(source)
         if episode["spawn_locations"] == 1:
-            expected["team_spawn_pad_positions"] = source["team_spawn_pad_positions"][
-                ::-1
-            ]
+            # Records keep only their mode's fields: a Team Deathmatch record
+            # has pads and no flag homes, and both have exchanged since C1.1.
+            for name in SPAWN_EXCHANGE_FIELDS:
+                if name in source:
+                    expected[name] = source[name][::-1]
         if (
             episode.get("source_config_id") != sources[episode["map_id"]]
             or current != expected
@@ -432,9 +446,14 @@ def _pass_rows(
                 source.get("team_deathmatch_red_zone_depth", 0.0),
                 task.get("red_zone_depth", 0.0),
             )
-            or source.get("team_deathmatch_score_threshold") != 20
+            or source.get(
+                "capture_the_flag_score_threshold"
+                if mode == "ctf"
+                else "team_deathmatch_score_threshold"
+            )
+            != DEFAULT_SCORE_THRESHOLDS[mode]
             or source.get("max_steps") != 300
-            or source.get("task_mode") != 1
+            or source.get("task_mode") != TASK_MODES[mode]
             or source["agent_profile"]["class_ids"] != classes
             or source["agent_profile"]["active_mask"] != active
         ):
@@ -624,6 +643,7 @@ def _record(
             seed_pairs=pairs,
             red_zone_depth=depth,
             root_seed=confirmation_root if original is None else None,
+            task=config.get("task", "tdm"),
         )
     task = _object(snapshot.read(path.parent / "task.json"), "Validation task")
     if task != expected or any(
@@ -993,6 +1013,7 @@ def read_inherited_candidates(
                 else 1,
                 "red_zone_depth": declaration.get("red_zone_depth"),
                 "maps": list(validation.VALIDATION_MAPS),
+                **({"task": declaration["task"]} if "task" in declaration else {}),
                 **declaration.get("deployment", {}),
             }
             compatible = declaration.get(

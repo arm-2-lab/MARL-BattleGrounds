@@ -1,8 +1,10 @@
 """Check shared scientific conditions, live confirmation needs and lazy helpers.
 
 Host-only fixtures exercise comparisons without providers, model restores or
-new games. The separate System-validation test executes a real partner-trained
-request through the public validator and a linked saved selection decision.
+new games; runs that differ in mode (a Capture the Flag "task"), panel, maps,
+rosters, depth or protocol are never compared. The separate System-validation
+test executes a real partner-trained request through the public validator and a
+linked saved selection decision.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from marl_battlegrounds.training import analysis, selection, validation
 # pyright: reportPrivateUsage=false
 
 CHANGES = [
+    {"task": "ctf"},
     {"panel_digest": "other"},
     {"maps": [43]},
     {"system_roster": ["mage", "priest"]},

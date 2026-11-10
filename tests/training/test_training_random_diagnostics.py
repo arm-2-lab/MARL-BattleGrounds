@@ -7,7 +7,8 @@ New Random records retain sampling facts and unavailable public bounds through
 initialization reuse and resume; one paired draw per map is not an interval.
 A PQN-VDN run binds initialization reuse to its greedy identity over both
 parameters and BatchNorm statistics (a statistics-only change is a different
-actor), and its results name the method and optimizer count.
+actor), and its results name the method and optimizer count. Initialization
+reuse asks for a result recorded at the run's own depth and mode ("tdm").
 These are engineering fixtures, not learning or configuration-screen trials.
 The shared runs use red_zone_depth 20.0, as wide as every map, so each death is
 a Red Zone death: every saved Random record (task schema 3) carries the depth
@@ -115,10 +116,11 @@ def test_initialization_reuse_binds_the_selected_method_before_output(
         seed_pairs: int,
         red_zone_depth: float,
         deployment: object,
+        task: str,
     ) -> None:
         assert path == str(tmp_path / "initialization.json") and seed_pairs == 1
-        # The shared result must have been recorded at the run's own depth.
-        assert red_zone_depth == 5.0 and deployment is None
+        # The shared result must have been recorded at the run's own depth and mode.
+        assert red_zone_depth == 5.0 and deployment is None and task == "tdm"
         digests.append(actor_digest)
         raise ValueError("Stop at the initialization identity check")
 
@@ -163,9 +165,10 @@ def test_pqn_initialization_reuse_binds_parameters_and_statistics(
         seed_pairs: int,
         red_zone_depth: float,
         deployment: object,
+        task: str,
     ) -> None:
         del path, seed_pairs
-        assert red_zone_depth == 5.0 and deployment is None
+        assert red_zone_depth == 5.0 and deployment is None and task == "tdm"
         digests.append(actor_digest)
         raise ValueError("Stop at the initialization identity check")
 

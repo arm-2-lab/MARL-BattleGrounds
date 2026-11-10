@@ -34,6 +34,14 @@ panel and ranked actors at every valid depth, preserving the ranking depth
 version. mean_kill_difference and the selection tiebreak use
 recorded kills, not points (two points for one Red Zone kill), and selection
 refuses to mix Red Zone scoring rules.
+
+Modes: task="tdm" gives the same bytes and ID as no task, and a saved TDM
+training config adds no task to its validation declaration. task="ctf" (depth
+0.0 only) adds "task" to both descriptions, the declaration and the tasks built
+from it, with a new ID and every other field unchanged; another depth or an
+unknown mode is refused before any validation file is written. Every pass
+request carries its mode ("task"), which the pass and slot routes play. A
+panel member's Random qualification is checked in the result's own mode.
 """
 
 import itertools
@@ -68,19 +76,23 @@ from marl_battlegrounds.training.checkpoints import (
     export_system,
     load_system,
 )
+from marl_battlegrounds.training.config import TrainConfig, config_to_dict
 from marl_battlegrounds.training.validation import (
     _collection_boundary,
     _panel_digest,
     _pending,
+    _qualify_random,
     _rows,
     _run_pass,
     _saved_run,
     create_panel,
+    declared_panel_task,
     evaluation_backend,
     load_panel,
     make_slot_diagnostic_schedule,
     panel_task_description,
     resolve_validation_schedule,
+    run_validation_declaration,
     validate_checkpoint,
     validate_random,
     validation_task_description,
@@ -478,8 +490,9 @@ def test_real_cpu_tail_resume_uses_all_saved_games_and_keeps_frozen_weights(
         validation = import_module("marl_battlegrounds.training.validation")
 
         def short_schedule(
-            *, maps: list[int], seed_blocks: int, red_zone_depth: float
+            *, maps: list[int], seed_blocks: int, red_zone_depth: float, task: str
         ) -> object:
+            assert task == "tdm"
             team_a, team_b = canonical_tournament_rosters()
             return make_slot_diagnostic_schedule(
                 maps=maps,
@@ -526,6 +539,7 @@ def test_real_cpu_tail_resume_uses_all_saved_games_and_keeps_frozen_weights(
         "chunk_size": 1,
         "focal_team": 0,
         "red_zone_depth": 6.0,
+        "task": "tdm",
     }
     events: list[dict[str, Any]] = []
     before = artifact_identity(actors[0])
@@ -780,6 +794,100 @@ def test_task_descriptions_record_the_depth_and_keep_legacy_bytes(
     with pytest.raises(ValueError, match="must not exceed map_width"):
         validate_random(actors[0], output_dir=wide, seed_pairs=1, red_zone_depth=25.0)
     assert not wide.exists()
+
+
+def test_task_descriptions_record_another_mode_and_keep_team_deathmatch_bytes(
+    actors: tuple[Path, Path], tmp_path: Path
+) -> None:
+    identity = artifact_identity(actors[0])
+    actor = {
+        "checkpoint_id": identity["metadata"]["checkpoint_id"],
+        "actor_digest": identity["actor_digest"],
+        "env_steps": identity["env_steps"],
+    }
+    panel = create_panel(opponents=[str(actors[0])], output_dir=tmp_path / "panel")
+    routes: list[tuple[Any, dict[str, Any]]] = [
+        (
+            validation_task_description,
+            dict(
+                **actor,
+                panel_digest="random-diagnostic-v1",
+                purpose="random",
+                seed_pairs=10,
+                members=(("Random", "builtin-random"),),
+                red_zone_depth=0.0,
+            ),
+        ),
+        (
+            panel_task_description,
+            dict(
+                **actor,
+                panel=panel,
+                purpose="routine",
+                seed_pairs=4,
+                red_zone_depth=0.0,
+            ),
+        ),
+    ]
+    for describe, options in routes:
+        team_deathmatch = describe(**options)
+        assert describe(**options, task="tdm") == team_deathmatch
+        assert "task" not in team_deathmatch
+        capture_the_flag = describe(**options, task="ctf")
+        assert capture_the_flag["task"] == "ctf"
+        assert capture_the_flag["task_id"] != team_deathmatch["task_id"]
+        assert {
+            key: value
+            for key, value in capture_the_flag.items()
+            if key not in ("task", "task_id")
+        } == {key: value for key, value in team_deathmatch.items() if key != "task_id"}
+        with pytest.raises(ValueError, match=r"red_zone_depth must be 0\.0"):
+            describe(**{**options, "red_zone_depth": 5.0}, task="ctf")
+        with pytest.raises(ValueError, match="task must be one of"):
+            describe(**options, task="koth")
+    declarations = {
+        task: run_validation_declaration(
+            config_to_dict(TrainConfig(task=task, num_envs=4, total_env_steps=64)),
+            panel,
+        )
+        for task in ("tdm", "ctf")
+    }
+    assert "task" not in declarations["tdm"]
+    assert declarations["ctf"]["task"] == "ctf"
+    declared = declared_panel_task(
+        declarations["ctf"], panel, **actor, purpose="routine"
+    )
+    assert declared["task"] == "ctf"
+    folder = tmp_path / "ctf-at-depth-5"
+    with pytest.raises(ValueError, match=r"red_zone_depth must be 0\.0"):
+        validate_random(actors[0], output_dir=folder, seed_pairs=1, task="ctf")
+    assert not folder.exists()
+
+
+def test_random_qualification_is_checked_in_the_result_mode(
+    actors: tuple[Path, Path],
+) -> None:
+    identity = artifact_identity(actors[0])
+    member = {
+        "checkpoint_id": identity["metadata"]["checkpoint_id"],
+        "actor_digest": identity["actor_digest"],
+        "env_steps": identity["env_steps"],
+    }
+    for task in ("tdm", "ctf"):
+        description = validation_task_description(
+            **member,
+            panel_digest="random-diagnostic-v1",
+            purpose="random",
+            seed_pairs=10,
+            members=(("Random", "builtin-random"),),
+            red_zone_depth=0.0,
+            task=task,
+        )
+        result = {**_diagnostic(identity), **description}
+        assert _qualify_random(member, result)["task_id"] == description["task_id"]
+    del result["task"]
+    with pytest.raises(ValueError, match="exact complete Random task"):
+        _qualify_random(member, result)
 
 
 def test_ranked_actors_load_at_new_depth_without_relabelling_ranking(

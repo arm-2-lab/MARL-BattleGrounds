@@ -35,7 +35,13 @@ from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from marl_battlegrounds._task_settings import DEFAULT_TDM_RED_ZONE_DEPTH, AgentClassName
+from marl_battlegrounds._task_settings import (
+    DEFAULT_SCORE_THRESHOLDS,
+    DEFAULT_TDM_RED_ZONE_DEPTH,
+    TASK_NAMES,
+    AgentClassName,
+    TaskName,
+)
 from marl_battlegrounds.evaluation._recording.sampling_evidence import (
     combine_sampling_facts,
     method_sampling_fact,
@@ -142,6 +148,28 @@ def _check_depth_fits_validation_maps(depth: float) -> None:
             team_b_roster=team_b,
             red_zone_depth=depth,
         )
+
+
+def _task_field(task: object, depth: float | None) -> Record:
+    """Check a validation task's mode and return the field its records carry.
+
+    task must be a name make accepts ("tdm" or "ctf"). depth is the task's
+    already checked Red Zone depth in map units (None for the layout saved
+    before the Red Zone rule). Return {} for "tdm", so every Team Deathmatch
+    record keeps its saved bytes and IDs, and {"task": task} for another mode.
+    Raise ValueError for an unknown name, or for another mode with a depth
+    other than 0.0 (only Team Deathmatch has a Red Zone), before any file is
+    written. Host-only.
+    """
+    if task not in TASK_NAMES:
+        raise ValueError(
+            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+        )
+    if task == "tdm":
+        return {}
+    if depth != 0.0:
+        raise ValueError(f"red_zone_depth must be 0.0 for task {task!r}, not {depth!r}")
+    return {"task": task}
 
 
 def _task_depth(value: float | None) -> float | None:
@@ -320,8 +348,10 @@ def run_validation_declaration(
     changes.validation. Parent absolute targets and effective roots are kept by
     default; child final is always included. Explicit env_steps replaces future
     targets only. deployment optionally fixes partner registrations, learner
-    slots and physical conditions; None keeps historical bare-task bytes. Returned
-    JSON-ready facts belong in run and checkpoint metadata.
+    slots and physical conditions; None keeps historical bare-task bytes. A run
+    of another mode than Team Deathmatch also records its "task"; a TDM config
+    has no task key and adds none. Returned JSON-ready facts belong in run and
+    checkpoint metadata.
 
     This host-only helper runs no games and writes nothing. It rejects unknown
     changes, invalid roots/counts, old targets and incompatible historical root
@@ -475,6 +505,7 @@ def run_validation_declaration(
         "roots": roots,
         **pairs,
         "red_zone_depth": config.get("red_zone_depth"),
+        **_task_field(config.get("task", "tdm"), config.get("red_zone_depth")),
         **(
             {"deployment": _checked_deployment(deployment)}
             if deployment is not None
@@ -527,7 +558,8 @@ def declared_panel_task(
     declaration is run_validation_declaration's saved result and panel is its
     checked frozen panel. Actor fields identify the verified originating learner.
     purpose is routine, initialization or confirmation. An optional deployment
-    also fixes partners and physical conditions. Schema 1 keeps fixed
+    also fixes partners and physical conditions, and a saved "task" the mode
+    (absent means Team Deathmatch). Schema 1 keeps fixed
     roots and old task hashes. Return panel_task_description's complete task;
     mismatched panels, malformed roots or unsupported purposes raise ValueError.
     No file or model is read and no game runs.
@@ -559,6 +591,7 @@ def declared_panel_task(
         root_seed=roots[purpose] if panel.schema_version == 2 else None,
         red_zone_depth=declaration.get("red_zone_depth"),
         deployment=declaration.get("deployment"),
+        task=declaration.get("task", "tdm"),
         **{
             key: declaration["deployment"][key]
             for key in ("maps", "system_roster", "opponent_roster")
@@ -656,10 +689,11 @@ def selection_validation_results(
 def validation_conditions(row: Mapping[str, Any]) -> Record:
     """Describe comparable scientific conditions in one saved task or summary.
 
-    Keep exact frozen panel identity, ordered maps/rosters, native scoring,
-    learner slots, partner registrations/labels and selection protocol. Omitted
-    rosters mean the historical canonical roster; absent depth remains unknown,
-    distinct from explicit zero. Task roots, training seeds, candidate identity,
+    Keep the mode ("task"; absent means Team Deathmatch), exact frozen panel
+    identity, ordered maps/rosters, native scoring, learner slots, partner
+    registrations/labels and selection protocol. Omitted rosters mean the
+    historical canonical roster; absent depth remains unknown, distinct from
+    explicit zero. Task roots, training seeds, candidate identity,
     paths and pair counts stay outside this description: their own identity,
     freshness and uncertainty checks still apply. This helper reads no files,
     loads no model and does not change the row. Panel membership is already bound
@@ -669,6 +703,7 @@ def validation_conditions(row: Mapping[str, Any]) -> Record:
 
     first, second = canonical_tournament_rosters()
     return {
+        "task": row.get("task", "tdm"),
         "panel_digest": row.get("panel_digest"),
         "selection_schema_version": row.get("selection_schema_version", 1),
         "maps": list(row.get("maps", ())),
@@ -1594,6 +1629,7 @@ def panel_task_description(
     system_roster: Sequence[AgentClassName] | None = None,
     opponent_roster: Sequence[AgentClassName] | None = None,
     deployment: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Describe the saved panel's protocol without changing historical task hashes.
 
@@ -1645,6 +1681,11 @@ def panel_task_description(
         stays 2) and schema 3 for legacy panels, each recording
         "red_zone_depth". So tasks under different depths (0.0 included) have
         different IDs, and a saved task is never reused under another depth.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode every game plays. "tdm" records no task key, so Team
+        Deathmatch tasks keep their saved bytes and IDs; another mode is
+        recorded as "task", needs red_zone_depth 0.0, and checks custom
+        conditions with that mode's winning score.
 
     Returns
     -------
@@ -1659,7 +1700,8 @@ def panel_task_description(
         red_zone_depth is neither None nor a Python float.
     ValueError
         red_zone_depth breaks Core's scalar rules (not finite, negative, -0.0,
-        or a positive value that is not a normal float32 number); env_steps or
+        or a positive value that is not a normal float32 number); task is
+        unknown, or is not "tdm" with a depth other than 0.0; env_steps or
         seed_pairs is not a valid integer; purpose is unknown; a root is
         missing, reused or outside uint32; an identity is empty; or two
         opponent roots collide.
@@ -1694,8 +1736,10 @@ def panel_task_description(
             ),
             root_seed=root_seed,
             red_zone_depth=red_zone_depth,
+            task=task,
         )
     depth = _task_depth(red_zone_depth)
+    mode_field = _task_field(task, depth)
     if candidate is None:
         _integer(env_steps, "env_steps")
         if not checkpoint_id or not actor_digest:
@@ -1736,9 +1780,10 @@ def panel_task_description(
             len(map_ids),
             roster_a,
             roster_b,
-            20,
+            DEFAULT_SCORE_THRESHOLDS[task],
             300,
             red_zone_depth=DEFAULT_TDM_RED_ZONE_DEPTH if depth is None else depth,
+            task=task,
         )
         conditions = {
             "system_roster": list(roster_a),
@@ -1825,6 +1870,7 @@ def panel_task_description(
     }
     if depth is not None:
         result["red_zone_depth"] = depth
+    result.update(mode_field)
     return {**result, "task_id": _digest(result)}
 
 
@@ -1844,7 +1890,8 @@ def _verify_panel_pass(
     System-panel task: schema 2, schema 4 with depth, or schema 5 with a live
     candidate or custom conditions. member_index chooses its ordered opponent/root.
     num_envs and chunk_size are the intended execution settings. Recorded depth,
-    maps and rosters are asserted against the saved pass. The evaluation owner verifies
+    maps, rosters and mode ("task", absent for Team Deathmatch) are asserted
+    against the saved pass. The evaluation owner verifies
     generated conditions, actual registrations and saved declarations. It opens
     no writer and calls neither method. A mismatch raises ValueError.
     """
@@ -1853,16 +1900,11 @@ def _verify_panel_pass(
     )
 
     member = task["members"][member_index]
-    rules: Record = (
-        {"red_zone_depth": task["red_zone_depth"]} if "red_zone_depth" in task else {}
-    )
-    rules.update(
-        {
-            name: task[name]
-            for name in ("system_roster", "opponent_roster")
-            if name in task
-        }
-    )
+    rules: Record = {
+        name: task[name]
+        for name in ("red_zone_depth", "system_roster", "opponent_roster", "task")
+        if name in task
+    }
     _verify_evaluation(
         cast(Any, actor),
         cast(Any, opponent),
@@ -2102,6 +2144,7 @@ def prepare_validation_teams(
     system_roster: Sequence[AgentClassName] | None = None,
     opponent_roster: Sequence[AgentClassName] | None = None,
     red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH,
+    task: TaskName = "tdm",
 ) -> tuple[System | Policy, ...]:
     """Build and check every deployed team before creating any run output.
 
@@ -2109,7 +2152,9 @@ def prepare_validation_teams(
     partners contains bindings from freeze_validation_partners; learner_slots
     must be the slots that helper checked. Each partner fills their complement.
     None keeps the bare actor. Return teams in partner order, or just the actor.
-    Maps default to 42 through 46 and rosters to canonical 5v5. These checks use
+    Maps default to 42 through 46 and rosters to canonical 5v5. task ("tdm" or
+    "ctf") is the mode the games play, with its own winning score, and
+    red_zone_depth is their depth in map units. These checks use
     the shared evaluation owner and actual physical roster. An invalid member,
     empty learner assignment or unsupported roster raises ValueError before any
     policy call, environment step or file write. Import references may load once.
@@ -2133,9 +2178,10 @@ def prepare_validation_teams(
         len(map_ids),
         roster_a,
         roster_b,
-        20,
+        DEFAULT_SCORE_THRESHOLDS[task],
         300,
         red_zone_depth=red_zone_depth,
+        task=task,
     )
     actors: tuple[System | Policy, ...] = (actor,)
     if partners is not None:
@@ -2186,6 +2232,7 @@ def _validate_system_panel(
     learner_slots: Sequence[int] | None = None,
     partner_labels: Mapping[str, str] | None = None,
     expected_task: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Run retained methods in stable batches using the ordinary evaluator.
 
@@ -2194,7 +2241,8 @@ def _validate_system_panel(
     Only complete durable rows feed the shared summary and selection owner. A
     QMIX or PQN-VDN actor's summary also carries method and optimizer_steps
     from _method_fields; PPO summaries are unchanged. Every game uses
-    red_zone_depth (map units), recorded by task schema 4 or 5. Custom maps and
+    red_zone_depth (map units), recorded by task schema 4 or 5, and plays task
+    ("tdm" or "ctf"; only another mode is recorded). Custom maps and
     rosters remain fixed for the whole task. The summary reports native points
     and recorded kills; live candidates keep their ordinary System registration
     without invented learner metadata. Roster checks run before any output.
@@ -2241,7 +2289,7 @@ def _validate_system_panel(
     elif learner_slots is not None or partner_labels is not None:
         raise ValueError("learner_slots and partner_labels need partners")
     directory = Path(output_dir).resolve()
-    task = panel_task_description(
+    description = panel_task_description(
         checkpoint_id=identity.get("checkpoint_id"),
         actor_digest=identity.get("actor_digest"),
         env_steps=identity.get("env_steps"),
@@ -2255,47 +2303,49 @@ def _validate_system_panel(
         system_roster=system_roster,
         opponent_roster=opponent_roster,
         deployment=deployment,
+        task=task,
     )
-    _check_requested_task(task, expected_task)
+    _check_requested_task(description, expected_task)
     actors = prepare_validation_teams(
         actor,
         panel.methods,
         partners=bindings,
         learner_slots=learner_slots,
-        maps=task["maps"],
-        system_roster=task.get("system_roster"),
-        opponent_roster=task.get("opponent_roster"),
+        maps=description["maps"],
+        system_roster=description.get("system_roster"),
+        opponent_roster=description.get("opponent_roster"),
         red_zone_depth=red_zone_depth,
+        task=task,
     )
-    task = _task(directory, task, event_callback)
-    map_ids = task["maps"]
+    description = _task(directory, description, event_callback)
+    map_ids = description["maps"]
     rows: list[Record] = []
     paths: list[str] = []
     sampling_facts: dict[str, Record] = {}
-    for index, member in enumerate(task["members"]):
+    for index, member in enumerate(description["members"]):
         actor = actors[cast(int, member.get("partner_index", 0))]
         opponent = panel.methods[member.get("opponent_index", index)]
-        pass_id = validation_pass_id(task["task_id"], member["name"])
-        parent = _cell_directory(directory, task, index)
+        pass_id = validation_pass_id(description["task_id"], member["name"])
+        parent = _cell_directory(directory, description, index)
         run_dir = _saved_run(parent, pass_id)
         if run_dir is not None:
             _verify_panel_pass(
                 run_dir,
                 actor,
                 opponent,
-                task=task,
+                task=description,
                 member_index=index,
                 num_envs=num_envs,
                 chunk_size=chunk_size,
             )
         _record_pass_sampling(
             parent,
-            task_id=task["task_id"],
+            task_id=description["task_id"],
             pass_id=pass_id,
             first=actor,
             second=opponent,
             run_dir=run_dir,
-            deployment=_deployment_cell(task, index),
+            deployment=_deployment_cell(description, index),
         )
         pending = _pending(
             run_dir, pass_id=pass_id, total=len(map_ids) * seed_pairs * 2
@@ -2305,7 +2355,7 @@ def _validate_system_panel(
                 event_callback(
                     {
                         "event": "evaluation_segment",
-                        "task_id": task["task_id"],
+                        "task_id": description["task_id"],
                         "pass_id": pass_id,
                         "backend": jax.default_backend(),
                         "pending_games": pending,
@@ -2321,10 +2371,10 @@ def _validate_system_panel(
                 opponent,
                 num_episodes=len(map_ids) * seed_pairs * 2,
                 maps=map_ids,
-                system_roster=task.get("system_roster"),
-                opponent_roster=task.get("opponent_roster"),
+                system_roster=description.get("system_roster"),
+                opponent_roster=description.get("opponent_roster"),
                 spawn_mode="paired",
-                seed=task["members"][index]["root"],
+                seed=description["members"][index]["root"],
                 num_envs=num_envs,
                 keep_batch_size=True,
                 metrics="priority",
@@ -2332,6 +2382,7 @@ def _validate_system_panel(
                 pass_id=pass_id,
                 chunk_size=chunk_size,
                 red_zone_depth=red_zone_depth,
+                task=task,
                 **options,
             )
             run_dir = result.run_dir
@@ -2339,7 +2390,7 @@ def _validate_system_panel(
                 event_callback(
                     {
                         "event": "evaluation_segment_complete",
-                        "task_id": task["task_id"],
+                        "task_id": description["task_id"],
                         "pass_id": pass_id,
                         "backend": jax.default_backend(),
                         "seconds": time.monotonic() - started,
@@ -2349,17 +2400,17 @@ def _validate_system_panel(
         paths.append(str(run_dir))
         sampling_facts[member["name"]] = _read_pass_sampling(
             run_dir,
-            task_id=task["task_id"],
+            task_id=description["task_id"],
             pass_id=pass_id,
         )
         rows.extend(
             _rows(run_dir, pass_id=pass_id, opponent=member["name"], kills=True)
         )
     result = {
-        **task,
+        **description,
         **_summarize_panel_rows(
             rows,
-            task=task,
+            task=description,
             facts=sampling_facts,
             sampling=_preserve_summary_sampling(
                 directory,
@@ -2367,7 +2418,7 @@ def _validate_system_panel(
                     rows,
                     facts=sampling_facts,
                     scheduled_games=len(map_ids)
-                    * len(task["members"])
+                    * len(description["members"])
                     * seed_pairs
                     * 2,
                     independent_opponents=deployment is None,
@@ -2384,7 +2435,7 @@ def _validate_system_panel(
         event_callback(
             {
                 "event": "validation_complete",
-                "task_id": task["task_id"],
+                "task_id": description["task_id"],
                 "result": deepcopy(result),
             }
         )
@@ -2402,6 +2453,7 @@ def validation_task_description(
     members: Sequence[tuple[str, str]],
     root_seed: int | None = None,
     red_zone_depth: float | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Describe one exact fixed-map validation task without files or numerical work.
 
@@ -2434,6 +2486,10 @@ def validation_task_description(
         exactly the same task ID. A float builds schema 3, which records
         "red_zone_depth"; tasks under different depths, 0.0 included, have
         different IDs.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode every game plays. "tdm" records no task key, so Team
+        Deathmatch tasks keep their saved bytes and IDs; another mode is
+        recorded as "task" and needs red_zone_depth 0.0.
 
     Returns
     -------
@@ -2447,7 +2503,8 @@ def validation_task_description(
         red_zone_depth is neither None nor a Python float.
     ValueError
         red_zone_depth breaks Core's scalar rules (not finite, negative, -0.0,
-        or a positive value that is not a normal float32 number); a count is
+        or a positive value that is not a normal float32 number); task is
+        unknown, or is not "tdm" with a depth other than 0.0; a count is
         invalid; purpose is unknown; root_seed is given for a purpose other
         than "random" or is outside uint32; an identity is not a nonempty
         string; or members is empty or repeats a name.
@@ -2459,6 +2516,7 @@ def validation_task_description(
     width later, when a game's config is built.
     """
     depth = _task_depth(red_zone_depth)
+    mode_field = _task_field(task, depth)
     _integer(env_steps, "env_steps")
     _integer(seed_pairs, "seed_pairs", minimum=1)
     if purpose not in ("routine", "initialization", "confirmation", "random"):
@@ -2497,6 +2555,7 @@ def validation_task_description(
     }
     if depth is not None:
         result["red_zone_depth"] = depth
+    result.update(mode_field)
     return {**result, "task_id": _digest(result)}
 
 
@@ -2507,9 +2566,10 @@ def _qualify_random(identity: Mapping[str, Any], result: Mapping[str, Any]) -> R
     the summary returned by validate_random for exactly 100 games. Verify finite
     W/D/L totals, all five cells, declared seed roots and the immutable task hash.
     The task layout follows the result's own red_zone_depth (none for evidence
-    saved before the Red Zone rule). Return its JSON-ready scientific fields
-    without pass storage paths. Missing, conflicting, nonfinite or unsuccessful
-    evidence raises ValueError.
+    saved before the Red Zone rule) and its own mode ("task"; absent means Team
+    Deathmatch), so a member trained in another mode qualifies there. Return
+    its JSON-ready scientific fields without pass storage paths. Missing,
+    conflicting, nonfinite or unsuccessful evidence raises ValueError.
     """
     depth = result.get("red_zone_depth")
     if depth is not None and type(depth) is not float:
@@ -2523,6 +2583,7 @@ def _qualify_random(identity: Mapping[str, Any], result: Mapping[str, Any]) -> R
         seed_pairs=10,
         members=(("Random", "builtin-random"),),
         red_zone_depth=depth,
+        task=result.get("task", "tdm"),
     )
     if (
         any(result.get(key) != value for key, value in expected.items())
@@ -2838,13 +2899,14 @@ def _execute_request(request: Mapping[str, Any]) -> Path:
     """Load checked frozen actors and execute one exact evaluation pass in this process.
 
     request comes from a persisted task or its CPU worker file. It contains actor
-    paths/digests, pass/schedule fields, the task's red_zone_depth (map units)
-    and a task-owned output parent. A slot opponent path may name a portable
-    model file, which loads through portable_models. Panel and Random passes
-    give the depth to evaluate; slot passes build their explicit schedule at
-    that depth. No learner state is accepted. Evaluation owns scientific
-    resume validation and all writer
-    recovery, including refusing a saved pass recorded under another depth.
+    paths/digests, pass/schedule fields, the task's red_zone_depth (map units),
+    its mode ("task": "tdm" or "ctf") and a task-owned output parent. A slot
+    opponent path may name a portable model file, which loads through
+    portable_models. Panel and Random passes give the depth and mode to
+    evaluate; slot passes build their explicit schedule in that mode at that
+    depth. No learner state is accepted. Evaluation owns scientific resume
+    validation and all writer recovery, including refusing a saved pass
+    recorded under another depth or in another mode.
     """
     from marl_battlegrounds.evaluation.evaluate import evaluate, evaluate_episodes
     from marl_battlegrounds.training.checkpoints import load_system
@@ -2892,6 +2954,7 @@ def _execute_request(request: Mapping[str, Any]) -> Path:
             maps=request["maps"],
             seed_blocks=request["seed_pairs"],
             red_zone_depth=request["red_zone_depth"],
+            task=request["task"],
         )
         team = int(request["focal_team"])
         episodes = schedule[team]
@@ -2909,6 +2972,7 @@ def _execute_request(request: Mapping[str, Any]) -> Path:
             maps=request["maps"],
             spawn_mode="paired",
             red_zone_depth=request["red_zone_depth"],
+            task=request["task"],
             **options,
         )
     assert result.run_dir is not None
@@ -3068,13 +3132,15 @@ def _validate(
     red_zone_depth: float,
     root_seed: int | None = None,
     expected_task: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Own one exact checkpoint/panel task; reduce its complete saved evaluation rows.
 
     A QMIX or PQN-VDN actor's summary also carries method and optimizer_steps
     from _method_fields; PPO summaries are unchanged. Every game uses
-    red_zone_depth (map units), which the schema 3 task records; the summary
-    reports points and recorded kills.
+    red_zone_depth (map units), which the schema 3 task records, and plays task
+    ("tdm" or "ctf"; only another mode is recorded); the summary reports
+    points and recorded kills.
     """
     _integer(seed_pairs, "seed_pairs", minimum=1)
     _integer(num_envs, "num_envs", minimum=1)
@@ -3083,7 +3149,7 @@ def _validate(
         _root_seed(root_seed)
     identity = _artifact(checkpoint)
     directory = Path(output_dir).resolve()
-    task = validation_task_description(
+    description = validation_task_description(
         checkpoint_id=identity["checkpoint_id"],
         actor_digest=identity["actor_digest"],
         env_steps=identity["env_steps"],
@@ -3093,17 +3159,18 @@ def _validate(
         members=tuple((name, digest) for name, _, digest in members),
         root_seed=root_seed,
         red_zone_depth=red_zone_depth,
+        task=task,
     )
-    _check_requested_task(task, expected_task)
-    task = _task(directory, task, event_callback)
+    _check_requested_task(description, expected_task)
+    description = _task(directory, description, event_callback)
     rows: list[Record] = []
     paths: list[str] = []
     sampling_facts: dict[str, Record] = {}
     for index, (name, opponent, digest) in enumerate(members):
-        pass_id = validation_pass_id(task["task_id"], name)
+        pass_id = validation_pass_id(description["task_id"], name)
         request: Record = {
             "kind": "panel",
-            "task_id": task["task_id"],
+            "task_id": description["task_id"],
             "actor": str(Path(checkpoint).resolve()),
             "actor_digest": identity["actor_digest"],
             "opponent": opponent,
@@ -3113,21 +3180,22 @@ def _validate(
             "maps": list(VALIDATION_MAPS),
             "seed_pairs": seed_pairs,
             "total_games": len(VALIDATION_MAPS) * seed_pairs * 2,
-            "root": task["root"],
+            "root": description["root"],
             "num_envs": num_envs,
             "chunk_size": chunk_size,
-            "red_zone_depth": task["red_zone_depth"],
+            "red_zone_depth": description["red_zone_depth"],
+            "task": task,
         }
         path = _run_pass(request, event_callback=event_callback)
         paths.append(str(path))
         sampling_facts[name] = _read_pass_sampling(
             path,
-            task_id=task["task_id"],
+            task_id=description["task_id"],
             pass_id=pass_id,
         )
         rows.extend(_rows(path, pass_id=pass_id, opponent=name, kills=True))
     result = {
-        **task,
+        **description,
         **summarize_validation(
             rows,
             maps=VALIDATION_MAPS,
@@ -3157,7 +3225,7 @@ def _validate(
         event_callback(
             {
                 "event": "validation_complete",
-                "task_id": task["task_id"],
+                "task_id": description["task_id"],
                 "result": result,
             }
         )
@@ -3183,6 +3251,7 @@ def validate_checkpoint(
     learner_slots: Sequence[int] | None = None,
     partner_labels: Mapping[str, str] | None = None,
     expected_task: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Validate a saved actor or any live System through the shared evaluator.
 
@@ -3248,7 +3317,14 @@ def validate_checkpoint(
         historical panels), so an output_dir saved under another depth, or
         before the rule, is refused before any game. A panel chosen from a
         ranking keeps its original depth; its actors may play at this task depth.
-
+        Every mode but Team Deathmatch needs 0.0.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode every validation game plays, on that mode's own maps 42-46
+        and with its own winning score (20 points or 3 captures). Pass the
+        mode the actor trained in; the trainer passes TrainConfig.task. Only
+        another mode is recorded in the task ("task"), so Team Deathmatch
+        tasks keep their saved IDs and a folder saved in another mode is
+        refused before any game.
     expected_task : mapping or None, default=None
         Optional complete task from a saved confirmation request. Its partner
         order and existing shared-policy wrapper are restored before comparison.
@@ -3277,7 +3353,8 @@ def validate_checkpoint(
     ValueError
         red_zone_depth breaks Core's scalar rules (not finite, negative, -0.0,
         or a positive value that is not a normal float32 number) or is wider
-        than a validation map; other
+        than a validation map; task is unknown, or is not "tdm" with a depth
+        other than 0.0; other
         invalid settings; or identities that conflict with the saved task.
         File and method failures keep their own cause.
 
@@ -3325,6 +3402,7 @@ def validate_checkpoint(
             learner_slots=learner_slots,
             partner_labels=partner_labels,
             expected_task=expected_task,
+            task=task,
         )
     if any(
         value is not None
@@ -3357,6 +3435,7 @@ def validate_checkpoint(
         event_callback=event_callback,
         red_zone_depth=depth,
         expected_task=expected_task,
+        task=task,
     )
 
 
@@ -3396,6 +3475,7 @@ def validate_random(
     maps: Sequence[int] | None = None,
     system_roster: Sequence[AgentClassName] | None = None,
     opponent_roster: Sequence[AgentClassName] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Evaluate a frozen actor against Random on the five validation maps.
 
@@ -3426,7 +3506,11 @@ def validate_random(
         Team Deathmatch Red Zone depth in map units for every game; 0.0 keeps
         one point per death. The schema 3 task records it, so a folder saved
         under another depth, or before the rule, is refused before any game.
-
+        Every mode but Team Deathmatch needs 0.0.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode every game plays, as in validate_checkpoint. Only another
+        mode is recorded ("task"), so Team Deathmatch tasks keep their saved
+        IDs and games.
     partners, learner_slots, partner_labels : optional
         Same team assignments and declared labels as validate_checkpoint. Each
         deployed team faces Random under the same paired game keys. None keeps
@@ -3452,11 +3536,14 @@ def validate_random(
     TypeError
         red_zone_depth is not a Python float.
     ValueError, OSError
-        Settings, actor files, saved identity, or output files are invalid.
+        Settings (task and depth included), actor files, saved identity, or
+        output files are invalid.
 
     Notes
     -----
-    Defaults to canonical 5v5, K20/H300, equal map weights, and native task scores.
+    Defaults to canonical 5v5, the mode's winning score (K20 in Team
+    Deathmatch, 3 captures in Capture the Flag), H300, equal map weights, and
+    native task scores.
     Random is diagnostic only and does not become a learned panel member.
     No learner state or training key is accepted or changed. Every installed
     map is 20.0 map units wide. A wider depth raises ValueError before any
@@ -3484,6 +3571,7 @@ def validate_random(
             maps=maps,
             system_roster=system_roster,
             opponent_roster=opponent_roster,
+            task=task,
         )
     if any(value is not None for value in (learner_slots, partner_labels)):
         raise ValueError("Custom Random deployment settings need partners")
@@ -3499,6 +3587,7 @@ def validate_random(
         chunk_size=chunk_size,
         event_callback=event_callback,
         red_zone_depth=_checked_depth(red_zone_depth),
+        task=task,
     )
 
 
@@ -3523,6 +3612,7 @@ def read_random_initialization(
     root_seed: int = _ROOTS["random"],
     red_zone_depth: float | None = DEFAULT_TDM_RED_ZONE_DEPTH,
     deployment: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Read one original shared initialization result without changing any file.
 
@@ -3548,6 +3638,11 @@ def read_random_initialization(
         Frozen validation_deployment from the owning run. It binds partner
         registrations, learner slots and custom conditions to saved evaluation evidence.
         None preserves the historical bare-actor checks. No weights are rebuilt.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode the reusing run plays; the record must have played it.
+        Another mode is expected as the task's and the pass options' "task",
+        with that mode's winning score; "tdm" expects neither key, as every
+        saved Team Deathmatch record has.
 
     Returns
     -------
@@ -3585,6 +3680,7 @@ def read_random_initialization(
         env_steps=0,
         red_zone_depth=red_zone_depth,
         deployment=deployment,
+        task=task,
     )
     return record
 
@@ -3601,6 +3697,7 @@ def verify_random_result(
     seed: int | None = None,
     red_zone_depth: float | None = DEFAULT_TDM_RED_ZONE_DEPTH,
     deployment: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> Record:
     """Verify one saved Random capture and return its original scientific summary.
 
@@ -3637,6 +3734,10 @@ def verify_random_result(
         Frozen validation_deployment from the owning run. It binds partner
         registrations, learner slots and custom conditions to saved evaluation evidence.
         None preserves the historical bare-actor checks. No weights are rebuilt.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode the games must have played. Another mode is expected as the
+        task's and the pass options' "task", with that mode's winning score;
+        "tdm" expects neither key, as every saved Team Deathmatch record has.
 
     Returns
     -------
@@ -3649,8 +3750,8 @@ def verify_random_result(
         red_zone_depth is neither None nor a Python float.
     ValueError, OSError
         Missing or changed evidence: actor files, task, native evaluation options,
-        games or summary, including a record saved under another depth or
-        before the rule.
+        games or summary, including a record saved under another depth, in
+        another mode, or before the rule.
 
     Notes
     -----
@@ -3668,6 +3769,7 @@ def verify_random_result(
         seed=seed,
         red_zone_depth=red_zone_depth,
         deployment=deployment,
+        task=task,
     )
     return summary
 
@@ -3684,6 +3786,7 @@ def _verified_random_result(
     seed: int | None = None,
     red_zone_depth: float | None = DEFAULT_TDM_RED_ZONE_DEPTH,
     deployment: Mapping[str, Any] | None = None,
+    task: TaskName = "tdm",
 ) -> tuple[Record, list[Record]]:
     """Verify a runner's Random result against its original evaluation evidence.
 
@@ -3721,6 +3824,10 @@ def _verified_random_result(
         Frozen validation_deployment from the owning run. It binds partner
         registrations, learner slots and custom conditions to saved evaluation evidence.
         None preserves the historical bare-actor checks. No weights are rebuilt.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode the games must have played. Another mode is expected as the
+        task's and the pass options' "task", with that mode's winning score;
+        "tdm" expects neither key, as every saved Team Deathmatch record has.
 
     Returns
     -------
@@ -3736,8 +3843,9 @@ def _verified_random_result(
         red_zone_depth is neither None nor a Python float.
     ValueError, OSError
         Identity, paths, task, native game settings, completed rows or summary
-        differ, including a record saved under another depth or before the
-        rule. Paths must be absolute and must not traverse symbolic links.
+        differ, including a record saved under another depth, in another
+        mode, or before the rule. Paths must be absolute and must not traverse
+        symbolic links.
 
     Notes
     -----
@@ -3760,6 +3868,7 @@ def _verified_random_result(
     _integer(seed_pairs, "seed_pairs", minimum=1)
     root_seed = _root_seed(root_seed)
     depth = _task_depth(red_zone_depth)
+    mode_field = _task_field(task, depth)
     if not result.keys() >= _RANDOM_CAPTURE_FIELDS:
         raise ValueError("Random result is missing its capture evidence")
     _digest(result)
@@ -3829,6 +3938,7 @@ def _verified_random_result(
             seed=seed,
             red_zone_depth=depth,
             deployment=deployment,
+            task=task,
         )
     actor = _artifact(path(result["actor_path"], "actor_path"))
     if (
@@ -3857,6 +3967,7 @@ def _verified_random_result(
             root_seed=root_seed,
             red_zone_depth=depth,
             deployment=declared,
+            task=task,
             **{
                 key: declared[key]
                 for key in ("maps", "system_roster", "opponent_roster")
@@ -3887,6 +3998,7 @@ def _verified_random_result(
         members=(("Random", "builtin-random"),),
         root_seed=root_seed,
         red_zone_depth=depth,
+        task=task,
     )
     summary_path = path(result["summary_path"], "summary_path")
     directory = summary_path.parent
@@ -3929,7 +4041,7 @@ def _verified_random_result(
     options: Record = {
         "seed": root_seed,
         "spawn_mode": "paired",
-        "score_threshold": 20,
+        "score_threshold": DEFAULT_SCORE_THRESHOLDS[task],
         "max_steps": 300,
         "metrics": "priority",
         "save_replays": 0,
@@ -3941,6 +4053,7 @@ def _verified_random_result(
     if depth is not None:
         # Passes saved with the Red Zone rule record the depth they used.
         options["red_zone_depth"] = depth
+    options.update(mode_field)
     if (
         focal["checkpoint"] != actor_digest
         or focal["variables_digest"] != expected_variables
@@ -4000,6 +4113,7 @@ def make_slot_diagnostic_schedule(
     seed_blocks: int = 160,
     configs: Sequence[EnvConfig] | None = None,
     red_zone_depth: float | None = None,
+    task: TaskName = "tdm",
 ) -> tuple[tuple[EpisodeSpec, ...], tuple[EpisodeSpec, ...]]:
     """Build four physical-side/assignment conditions per independent seed block.
 
@@ -4010,12 +4124,16 @@ def make_slot_diagnostic_schedule(
     seed_blocks : int, default=160
         Positive number of independent seed blocks per map.
     configs : sequence of EnvConfig or None, default=None
-        None builds canonical 5v5 K20/H300 for each map. Explicit scalar
-        configs are a test and custom route: one per map, in map order, each
-        with identical ordered team profiles. They keep their own rules.
+        None builds the task's canonical 5v5 game (its own map, its winning
+        score, H300) for each map. Explicit scalar configs are a test and
+        custom route: one per map, in map order, each with identical ordered
+        team profiles. They keep their own rules and mode.
     red_zone_depth : float or None, default=None
-        Red Zone depth in map units for the built configs; None uses
-        DEFAULT_TDM_RED_ZONE_DEPTH (5.0). It cannot be given with configs.
+        Red Zone depth in map units for the built configs; None uses the
+        task's default (5.0 for "tdm", 0.0 for "ctf"). It cannot be given with
+        configs.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode of the built configs, through tasks.make_standard_config.
 
     Returns
     -------
@@ -4036,10 +4154,10 @@ def make_slot_diagnostic_schedule(
         seed_blocks is not a positive integer; maps is empty or repeats an ID;
         configs does not match maps; configs and red_zone_depth are given
         together; the two teams' ordered profiles differ; a map ID is not
-        installed; or red_zone_depth breaks Core's rules (not finite,
-        negative, -0.0, a positive value that is not a normal float32 number,
-        or wider than the map, which is 20.0 map units for every installed
-        map).
+        installed; task is unknown; or red_zone_depth breaks Core's rules (not
+        finite, negative, -0.0, a positive value that is not a normal float32
+        number, wider than the map, which is 20.0 map units for every installed
+        map, or not 0.0 outside Team Deathmatch).
 
     Notes
     -----
@@ -4051,7 +4169,7 @@ def make_slot_diagnostic_schedule(
     from marl_battlegrounds.tasks import (
         _swap_spawn_banks,  # pyright: ignore[reportPrivateUsage]
         canonical_tournament_rosters,
-        make_standard_team_deathmatch_config,
+        make_standard_config,
     )
 
     count = _integer(seed_blocks, "seed_blocks", minimum=1)
@@ -4065,17 +4183,17 @@ def make_slot_diagnostic_schedule(
             "red_zone_depth cannot be combined with explicit slot configs; "
             "each config owns its rules"
         )
-    depth = DEFAULT_TDM_RED_ZONE_DEPTH if red_zone_depth is None else red_zone_depth
     roster_a, roster_b = canonical_tournament_rosters()
     sources = (
         tuple(configs)
         if configs is not None
         else tuple(
-            make_standard_team_deathmatch_config(
+            make_standard_config(
+                task,
                 map_id=map_id,
                 team_a_roster=roster_a,
                 team_b_roster=roster_b,
-                red_zone_depth=depth,
+                red_zone_depth=red_zone_depth,
             )
             for map_id in identifiers
         )
@@ -4128,6 +4246,7 @@ def run_slot_diagnostic(
     chunk_size: int = 128,
     event_callback: EventCallback | None = None,
     red_zone_depth: float = DEFAULT_TDM_RED_ZONE_DEPTH,
+    task: TaskName = "tdm",
 ) -> Record:
     """Run the predeclared frozen two-model slot comparison through evaluation.
 
@@ -4155,7 +4274,11 @@ def run_slot_diagnostic(
         Red Zone depth in map units for every game; 0.0 keeps one point per
         death. To compare actors under the rule they trained with, pass that
         depth. The slot task (schema 2) records it, so a folder saved under
-        another depth, or before the rule, is refused.
+        another depth, or before the rule, is refused. Every mode but Team
+        Deathmatch needs 0.0.
+    task : {"tdm", "ctf"}, default="tdm"
+        The mode every game plays. Only another mode is recorded in the slot
+        task ("task"), so Team Deathmatch tasks keep their saved IDs.
 
     Returns
     -------
@@ -4170,8 +4293,9 @@ def run_slot_diagnostic(
     ValueError
         red_zone_depth breaks Core's scalar rules (not finite, negative, -0.0,
         or a positive value that is not a normal float32 number) or is wider
-        than a validation map; a count is invalid; an actor identity is
-        invalid; or output_dir holds a different task. File and method
+        than a validation map; task is unknown, or is not "tdm" with a depth
+        other than 0.0; a count is invalid; an actor identity is invalid; or
+        output_dir holds a different task. File and method
         failures keep their own cause.
 
     Notes
@@ -4187,9 +4311,10 @@ def run_slot_diagnostic(
     _integer(num_envs, "num_envs", minimum=1)
     _integer(chunk_size, "chunk_size", minimum=1)
     depth = _checked_depth(red_zone_depth)
+    mode_field = _task_field(task, depth)
     focal, other = _artifact(checkpoint), _artifact(opponent)
     directory = Path(output_dir).resolve()
-    task = _task(
+    description = _task(
         directory,
         {
             "schema_version": 2,
@@ -4202,16 +4327,17 @@ def run_slot_diagnostic(
             "seed_blocks": seed_blocks,
             "root": _ROOTS["slot"],
             "red_zone_depth": depth,
+            **mode_field,
         },
         event_callback,
     )
     rows: list[Record] = []
     paths: list[str] = []
     for team in (0, 1):
-        pass_id = _digest({"task_id": task["task_id"], "focal_team": team})
+        pass_id = _digest({"task_id": description["task_id"], "focal_team": team})
         request: Record = {
             "kind": "slot",
-            "task_id": task["task_id"],
+            "task_id": description["task_id"],
             "actor": str(Path(checkpoint).resolve()),
             "actor_digest": focal["actor_digest"],
             "opponent": str(Path(opponent).resolve()),
@@ -4226,6 +4352,7 @@ def run_slot_diagnostic(
             "num_envs": num_envs,
             "chunk_size": chunk_size,
             "red_zone_depth": depth,
+            "task": task,
         }
         path = _run_pass(request, event_callback=event_callback)
         paths.append(str(path))
@@ -4235,7 +4362,7 @@ def run_slot_diagnostic(
             )
         )
     result = {
-        **task,
+        **description,
         **summarize_slot_diagnostic(
             rows, maps=VALIDATION_MAPS, seed_blocks=seed_blocks
         ),
@@ -4246,7 +4373,7 @@ def run_slot_diagnostic(
         event_callback(
             {
                 "event": "slot_diagnostic_complete",
-                "task_id": task["task_id"],
+                "task_id": description["task_id"],
                 "result": result,
             }
         )

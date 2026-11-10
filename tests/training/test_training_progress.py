@@ -16,9 +16,11 @@ also beyond int32; routine validation at 4,224 and 8,320 transitions is
 accepted while a result at 8,192 (the old rule's point) is rejected; and the
 initial-collection phase is labelled "Initial Random Collection". A training
 score threshold is shown in points ("Need 3 Points to Win"), never kills,
-because a Red Zone death gives 2 points. Saved validation tasks are rebuilt at
-the saved config's red_zone_depth (none for a config saved before the rule), so
-a task saved at another depth, or without one, is rejected.
+because a Red Zone death gives 2 points; a Capture the Flag status shows
+captures and its own validation score, and a status without one shows 20.
+Saved validation tasks are rebuilt at the saved config's red_zone_depth (none
+for a config saved before the rule), so a task saved at another depth, or
+without one, is rejected.
 """
 
 from __future__ import annotations
@@ -91,6 +93,10 @@ def test_progress_separates_training_threshold_from_validation() -> None:
     assert "Kills to Win" not in text
     assert "Validation Still Needs 20" in text
     assert "New Training Games" not in io_helpers.progress_text({})
+    capture_the_flag = io_helpers.progress_text(
+        {"score_threshold": 3, "task": "ctf", "validation_score_threshold": 3}
+    )
+    assert "Need 3 Captures to Win | Validation Still Needs 3" in capture_the_flag
 
 
 def test_eta_window_uses_recent_real_transitions_and_rejects_invalid_costs() -> None:

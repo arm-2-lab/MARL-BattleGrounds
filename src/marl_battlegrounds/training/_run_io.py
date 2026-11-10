@@ -461,9 +461,11 @@ def progress_text(status: dict[str, Any]) -> str:
         and estimated_transitions_per_second (transitions per second);
         pending_work_seconds (seconds of known later work); phase;
         completed_updates; learning_blocks; elapsed_seconds; score_threshold;
-        random_validation (a saved Random check; when it has games it must also
-        have wins, draws and losses); validation_wins, validation_draws and
-        validation_losses, or validation_score; latest_checkpoint; and error.
+        task ("ctf" shows captures; absent or another mode shows points);
+        validation_score_threshold (absent reads as 20); random_validation (a
+        saved Random check; when it has games it must also have wins, draws
+        and losses); validation_wins, validation_draws and validation_losses,
+        or validation_score; latest_checkpoint; and error.
 
     Returns
     -------
@@ -487,10 +489,11 @@ def progress_text(status: dict[str, Any]) -> str:
     (QMIX or PQN-VDN) reports optimizer steps and learning blocks where PPO
     reports learning updates. Raw losses and signed reward averages remain in
     training_updates.jsonl; they cannot diagnose learning by their size. A
-    score-threshold curriculum line says how many points (not kills) new
-    training games need to win, since a Red Zone death gives 2 points;
-    validation still needs 20. Saved Random results describe combat per game as
-    kills and deaths and are never treated as proof of general competence.
+    score-threshold line says what new training games need to win (points, not
+    kills, since a Red Zone death gives 2 points; captures in Capture the Flag)
+    and the mode's winning score that validation still needs. Saved Random
+    results describe combat per game as kills and deaths and are never treated
+    as proof of general competence.
     Host-only and standard library only.
     """
     steps = int(status.get("env_steps", 0))
@@ -538,9 +541,10 @@ def progress_text(status: dict[str, Any]) -> str:
         f"Whole Run Time Left (Estimate): {duration(eta)}",
     ]
     if status.get("score_threshold") is not None:
+        unit = "Captures" if status.get("task") == "ctf" else "Points"
         lines.append(
-            f"New Training Games Need {status['score_threshold']} Points to Win "
-            "| Validation Still Needs 20"
+            f"New Training Games Need {status['score_threshold']} {unit} to Win "
+            f"| Validation Still Needs {status.get('validation_score_threshold', 20)}"
         )
     if rate or recent:
         speeds: list[str] = []
@@ -1284,9 +1288,11 @@ def validate_host_state(
     qmix_run = method == "qmix"
     pqn_run = method == "pqn_vdn"
     settings = config[method_settings_field(method)]
-    # The run's Red Zone depth sets the layout of its saved validation tasks.
+    # The run's Red Zone depth sets the layout of its saved validation tasks,
+    # and its mode (absent means Team Deathmatch) the games they played.
     depth = checkpoints._config_red_zone_depth(config)  # pyright: ignore[reportPrivateUsage]
-    schemas = checkpoints.checkpoint_schemas(method, config.get("task", "tdm"))
+    task = config.get("task", "tdm")
+    schemas = checkpoints.checkpoint_schemas(method, task)
     if checkpoint_details["schemas"] != schemas:
         raise ValueError("Saved model schema differs from the training method")
     value: object = metadata.get("host_state")
@@ -1775,6 +1781,7 @@ def validate_host_state(
             seed_pairs=random_pairs,
             red_zone_depth=depth,
             deployment=metadata.get("validation_deployment"),
+            task=task,
         )
     if initial_reference is not None and continuation is not None:
         parent_context = continuation
@@ -1816,6 +1823,7 @@ def validate_host_state(
                     seed_pairs=random_pairs,
                     red_zone_depth=depth,
                     deployment=parent_details["metadata"].get("validation_deployment"),
+                    task=task,
                 )
                 break
             parent_context = parent_details["metadata"].get("continuation")
@@ -1899,6 +1907,7 @@ def validate_host_state(
                 purpose=purpose,
                 seed_pairs=pairs,
                 red_zone_depth=depth,
+                task=task,
             )
             if declaration is not None:
                 expected_task = validation.declared_panel_task(
@@ -1964,6 +1973,7 @@ def validate_host_state(
                     system_roster=expected_task["system_roster"],
                     opponent_roster=expected_task["opponent_roster"],
                     red_zone_depth=0.0 if depth is None else depth,
+                    task=task,
                 )
             for index, (path, member) in enumerate(
                 zip(cast(list[Any], paths), members, strict=True)
@@ -2066,6 +2076,7 @@ def validate_host_state(
             env_steps=point,
             red_zone_depth=depth,
             deployment=metadata.get("validation_deployment"),
+            task=task,
         )
         if result["task_id"] in seen:
             raise ValueError("Saved Random task is duplicated")

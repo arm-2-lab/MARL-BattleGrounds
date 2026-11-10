@@ -16,7 +16,9 @@ its summary line (optimizer steps, learning blocks, used and kept-row pairs,
 initial transitions never learned, capped by the transitions generated so far)
 and draws pqn_curves from scalar columns only, keeping the used_exposure
 dictionary out of the CSV. Progress checks give each validation opponent its
-own points, margin and kills per game, averaging its map cells equally.
+own points, margin and kills per game, averaging its map cells equally; their
+Red Zone columns are None for a Capture the Flag check, whose points are
+captures.
 """
 
 import json
@@ -837,3 +839,11 @@ def test_progress_checks_give_each_opponent_its_own_points_and_kills(
     assert (alpha["kills_for"], alpha["kills_against"]) == (16.0, 11.0)
     assert (model["margin"], model["kills_for"]) == (-13.0, 6.0)
     assert check["margin"] == (alpha["margin"] + model["margin"]) / 2
+    assert (check["red_zone_kills"], check["home_deaths"]) == (1.0, 0.0)
+    path.write_text(json.dumps([{**result, "task": "ctf"}]), encoding="utf-8")
+    (capture_the_flag,) = _progress_checks(path)
+    assert (capture_the_flag["red_zone_kills"], capture_the_flag["home_deaths"]) == (
+        None,
+        None,
+    )
+    assert capture_the_flag["margin"] == check["margin"]

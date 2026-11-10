@@ -30,6 +30,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from marl_battlegrounds._task_settings import DEFAULT_SCORE_THRESHOLDS
 from marl_battlegrounds.baselines.config import (
     QMIXConfig,
     pqn_planned_learning_blocks,
@@ -1841,6 +1842,7 @@ def _train(
                 seed_pairs=cast(int, config.random_diagnostic_seed_pairs),
                 red_zone_depth=config.red_zone_depth,
                 deployment=deployment,
+                task=config.task,
             )
         # PPO keeps the argument-free call; QMIX also records Flashbax, PQN-VDN
         # records the same set as PPO.
@@ -1998,6 +2000,7 @@ def _train(
                 collection.learner_actor or collection.actor,
                 methods,
                 red_zone_depth=cast(float, config.red_zone_depth),
+                task=config.task,
                 **preflight_options,
             )
         prepared_recording = None
@@ -3774,6 +3777,10 @@ class _Run:
                 "total_env_steps": self.config.total_env_steps,
                 "env_steps": self.host["env_steps"],
                 "score_threshold": requested_threshold,
+                "task": self.config.task,
+                "validation_score_threshold": DEFAULT_SCORE_THRESHOLDS[
+                    self.config.task
+                ],
                 "completed_updates": self.host["completed_updates"],
                 "final_actor": self.host["final_actor"],
                 "selected_actor": self.host["selected_actor"],
@@ -4471,7 +4478,7 @@ class _Run:
         )
 
     def validate(self, actor: Path, purpose: str) -> dict[str, Any]:
-        """Run or recover one frozen validation task and record its exact result."""
+        """Run or recover one validation task in the run's mode; record its result."""
         import jax
 
         from marl_battlegrounds.training.checkpoints import (
@@ -4525,6 +4532,7 @@ class _Run:
             chunk_size=128,
             event_callback=lambda record: self.event("validation_segment", **record),
             red_zone_depth=cast(float, self.config.red_zone_depth),
+            task=self.config.task,
             **validation_options,
         )
         key = "routine_results" if purpose == "routine" else "confirmation_results"
@@ -4583,8 +4591,8 @@ class _Run:
         Publish the accumulated records and existing host game and combat means.
         Combat changes compare equal-map mean kills minus deaths with the
         verified initialization. They are early learning clues, not native wins.
-        Games use the run's red_zone_depth; a reused initialization must have
-        been recorded at that same depth.
+        Games use the run's task and red_zone_depth; a reused initialization
+        must have been recorded in that same mode at that same depth.
         """
         import jax
 
@@ -4628,6 +4636,7 @@ class _Run:
                     "random_validation_segment", **record
                 ),
                 red_zone_depth=cast(float, self.config.red_zone_depth),
+                task=self.config.task,
                 **self.validation_options,
             )
             record = {
@@ -4647,6 +4656,7 @@ class _Run:
                     seed_pairs=pairs,
                     red_zone_depth=self.config.red_zone_depth,
                     deployment=self.metadata.get("validation_deployment"),
+                    task=self.config.task,
                 ),
                 "reference_path": str(Path(reference).absolute()),
                 "reused_initialization": True,
@@ -5663,7 +5673,8 @@ class _Run:
     def run_slot_check(self) -> None:
         """Run the declared trained comparison only after the final actor exists.
 
-        The games use the run's red_zone_depth, which the slot task records.
+        The games use the run's task and red_zone_depth, which the slot task
+        records (the task only outside Team Deathmatch).
         """
         from marl_battlegrounds.training.validation import run_slot_diagnostic
 
@@ -5684,6 +5695,7 @@ class _Run:
             / Path(self.host["final_actor"]).name,
             event_callback=lambda record: self.event("slot_segment", **record),
             red_zone_depth=cast(float, self.config.red_zone_depth),
+            task=self.config.task,
         )
         atomic_json(self.root / "slot_diagnostic.json", result)
         self.host["slot_complete"] = True

@@ -321,8 +321,10 @@ def _progress_checks(path: Path) -> list[Record]:
         ``kills_against`` (kills per game), ``red_zone_kills`` (our points
         minus our kills: each Red Zone kill gives one extra point) and
         ``home_deaths`` (their points minus their kills: our deaths inside
-        our own Red Zone). Every per-game value averages map/opponent cells
-        with equal weight. A value the saved cells cannot give is None.
+        our own Red Zone); both are None for a check of another mode (a
+        record with a "task"), whose points are not kills. Every per-game
+        value averages map/opponent cells with equal weight. A value the
+        saved cells cannot give is None.
 
     Raises
     ------
@@ -381,6 +383,7 @@ def _progress_checks(path: Path) -> list[Record]:
         points_against = _mean_cell(cells, "mean_team_b_score")
         kills_for = _mean_cell(cells, "mean_team_a_kills")
         kills_against = _mean_cell(cells, "mean_team_b_kills")
+        red_zone = "task" not in result
         checks.append(
             {
                 "env_steps": result.get("env_steps"),
@@ -392,10 +395,10 @@ def _progress_checks(path: Path) -> list[Record]:
                 "kills_for": kills_for,
                 "kills_against": kills_against,
                 "red_zone_kills": None
-                if points_for is None or kills_for is None
+                if not red_zone or points_for is None or kills_for is None
                 else points_for - kills_for,
                 "home_deaths": None
-                if points_against is None or kills_against is None
+                if not red_zone or points_against is None or kills_against is None
                 else points_against - kills_against,
             }
         )
@@ -1070,7 +1073,7 @@ def _candidates(
     conditions = [validation_conditions(row) for row in selected.values()]
     if any(row != conditions[0] for row in conditions[1:]):
         raise ValueError(
-            "Selection cannot mix panels, maps, team rosters, "
+            "Selection cannot mix modes, panels, maps, team rosters, "
             "deployed partners or scoring conditions"
         )
     for row in selected.values():
@@ -5743,7 +5746,8 @@ def _screen_evidence(
     deployment is the owning run's fixed partner and roster declaration, or None
     for the historical bare actor. It is checked against the saved task.
     The result's own red_zone_depth (None when it was saved before the Red Zone
-    rule) selects the task layout and whether rows carry recorded kills.
+    rule) selects the task layout and whether rows carry recorded kills, and its
+    own "task" (absent means Team Deathmatch) the mode its games must have played.
     Existing validation owns task and score verification;
     Evaluation owns CSV loading. No actor is applied and no game or file is changed.
     """
@@ -5761,6 +5765,7 @@ def _screen_evidence(
         seed=seed,
         red_zone_depth=result.get("red_zone_depth"),
         deployment=deployment,
+        task=result.get("task", "tdm"),
     )
 
 
