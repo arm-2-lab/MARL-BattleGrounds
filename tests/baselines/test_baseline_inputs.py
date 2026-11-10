@@ -20,8 +20,8 @@ refusing inputs without a team axis; mirrored twin rollouts without combat agree
 twenty pre-contact steps; and twins with one authored death per team agree
 through the respawn wave for a full and a padded roster, in both teams. Unused
 observer rows are never flagged, and "world", the removed "right" and any other
-name are refused by the flag helper. Actor input schemas 2 and 3 share the
-current layout (ACTOR_INPUT_SCHEMA_VERSION, the default, is 2): 5,165
+name are refused by the flag helper. Actor input schema 2 is the current
+layout, recorded in every mode (ACTOR_INPUT_SCHEMA_VERSION, the default): 5,165
 features with the Red Zone depth as context column 19 (flat feature 1128),
 and the training state is 920 features with the depth right after the score
 threshold (slice 391 to 392). That schema (TRAINING_STATE_SCHEMA_VERSION, the
@@ -42,7 +42,11 @@ flag helper pick the schema from the static context width and refuse any
 width other than 20 and 19. The flag's side rule follows the schema: on a
 bank centered exactly at widths 17.3 and 20.3, a schema-2 view reads left
 (Core's exact rule) while a schema-1 view keeps the old float32 mean formula
-and reads right. Contact and combat under the
+and reads right. historical_actor_input leaves a schema-2 view unchanged in
+Team Deathmatch and, in another mode, gives the Team Deathmatch view (the mode
+columns reset, the given winning score and depth, every objective row zeroed
+in the observation and the source bank), eager and under jit; schema 1 then
+drops column 19, and schema 3 or 4 is refused. Contact and combat under the
 mirror are not compared here: Core reproduces a mirrored game only approximately
 after contact, so trained models are checked in a separate post-hoc replay.
 """
@@ -271,7 +275,7 @@ def test_actor_schema_covers_every_field_with_distinct_values(
         offset += width
     assert ACTOR_INPUT_SCHEMA_VERSION == 2
     assert offset == ACTOR_FEATURE_SIZE == 5165
-    assert dict(ACTOR_FEATURE_SIZES) == {1: 5164, 2: 5165, 3: 5165}
+    assert dict(ACTOR_FEATURE_SIZES) == {1: 5164, 2: 5165}
     assert CONTEXT_FEATURES == 20
     assert ACTOR_FEATURE_OFFSETS["observation.context_features"] == slice(1109, 1129)
     assert 1109 + CONTEXT_FEATURE_TDM_RED_ZONE_DEPTH == 1128
@@ -1260,9 +1264,7 @@ def test_old_schema_actors_see_their_team_deathmatch_layout_in_other_modes(
             view, schema, score_threshold=7, red_zone_depth=2.5
         )
 
-    for schema in (2, 3):
-        same = convert(actors, schema)
-        jax.tree.map(np.testing.assert_array_equal, same, actors)
+    jax.tree.map(np.testing.assert_array_equal, convert(actors, 2), actors)
     jax.tree.map(
         np.testing.assert_array_equal,
         convert(actors, 1),
@@ -1301,8 +1303,8 @@ def test_old_schema_actors_see_their_team_deathmatch_layout_in_other_modes(
         convert(ctf, 1).observation.context_features,
         held.observation.context_features[..., :19],
     )
-    jax.tree.map(np.testing.assert_array_equal, convert(ctf, 3), ctf)
     compiled = cast(ActorInput, jax.jit(convert, static_argnums=1)(ctf, 2))
     jax.tree.map(np.testing.assert_array_equal, compiled, held)
-    with pytest.raises(ValueError, match="schema must be 1, 2 or 3"):
-        convert(actors, 4)
+    for schema in (3, 4):
+        with pytest.raises(ValueError, match="schema must be 1 or 2"):
+            convert(actors, schema)

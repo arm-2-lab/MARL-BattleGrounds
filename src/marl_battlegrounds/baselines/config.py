@@ -830,10 +830,10 @@ DEFAULT_PQN_CONFIG = PQNConfig()
 # Host-readable format versions shared by model code and saved descriptions.
 ACTION_SCHEMA_VERSION = 1
 
-# The actor input schema of the default mode, Team Deathmatch, and the default
-# of every System factory. Other modes' runs record 3 (actor_input_schema),
-# which has schema 2's layout, so a converted old actor can tell a Team
-# Deathmatch-only view from one that saw objectives.
+# The actor input schema every new run records, in every mode, and the default
+# of every System factory. A schema number names an input layout, and every
+# mode shares schema 2's 5,165 features, so every mode records 2; a run's mode
+# is in its own task record. Schema 1 is the layout from before the Red Zone.
 ACTOR_INPUT_SCHEMA_VERSION = 2
 # The training-state schema of the default mode, Team Deathmatch, and the
 # default of the encoder and the learner initializers. Other modes' runs record
@@ -862,30 +862,6 @@ def training_state_schema(task: str) -> int:
     Host-only and static. It checks nothing, so the caller validates the name.
     """
     return TRAINING_STATE_SCHEMA_VERSION if task == "tdm" else 3
-
-
-def actor_input_schema(task: str) -> int:
-    """Return the actor input schema that a new run of one mode records.
-
-    Parameters
-    ----------
-    task : str
-        The run's mode name, as ``TrainConfig.task`` accepts it, such as "tdm".
-
-    Returns
-    -------
-    int
-        ACTOR_INPUT_SCHEMA_VERSION (2) for "tdm", so Team Deathmatch records
-        stay as they were; 3 for every other mode. Schemas 2 and 3 share one
-        layout (5,165 features); the version records which games the actor
-        learned from.
-
-    Notes
-    -----
-    Host-only and static. It checks nothing, so the caller validates the name.
-    The mirror of training_state_schema.
-    """
-    return ACTOR_INPUT_SCHEMA_VERSION if task == "tdm" else 3
 
 
 QMIX_TIE_RULE = "first_legal_maximum"

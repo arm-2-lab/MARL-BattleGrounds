@@ -273,15 +273,14 @@ def _update_value_norm(
 def _actor_input_schema(value: object) -> int:
     """Check an actor input schema version and return it as a Python int.
 
-    This host check accepts exactly the int keys of ACTOR_FEATURE_SIZES: 3
-    and 2, which share the current layout (Team Deathmatch runs record 2,
-    other modes' runs 3), and 1, the historical schema of actors trained
-    before Red Zone. Booleans, floats, strings, arrays and other versions
-    raise ValueError. It performs no device work. The System factories use
-    it; they do not compare weight widths with the schema.
+    This host check accepts exactly the int keys of ACTOR_FEATURE_SIZES: 2,
+    the current layout that every mode records, and 1, the historical schema
+    of actors trained before Red Zone. Booleans, floats, strings, arrays and
+    other versions raise ValueError. It performs no device work. The System
+    factories use it; they do not compare weight widths with the schema.
     """
     if type(value) is not int or value not in ACTOR_FEATURE_SIZES:
-        raise ValueError("actor_input_schema must be 1, 2 or 3.")
+        raise ValueError("actor_input_schema must be 1 or 2.")
     return value
 
 
@@ -1522,9 +1521,8 @@ def make_recurrent_mappo_system(
         loaded, and this text alone does not verify an artifact's contents.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         Actor input schema the weights were trained on: 2, the 5,165-feature
-        schema of Team Deathmatch actors (the default); 3, the same layout for
-        actors trained in other modes; or 1, the historical 5,164-feature
-        schema of actors trained before Red Zone. Schema 1 uses the cached
+        schema that every mode records (the default); or 1, the historical
+        5,164-feature schema of actors trained before Red Zone. Schema 1 uses the cached
         _schema_1_actor_apply hook, which removes the Red Zone depth column
         and keeps the old spawn-side formula, so the actor plays as before.
         The hook is chosen once here. This factory does not compare the
@@ -1542,8 +1540,8 @@ def make_recurrent_mappo_system(
     ------
     ValueError
         The scale is not a positive finite real number, is Boolean, the spawn
-        frame is not "world" or "left", actor_input_schema is not the int 1,
-        2 or 3, or the System rejects an empty or invalid display name.
+        frame is not "world" or "left", actor_input_schema is not the int 1
+        or 2, or the System rejects an empty or invalid display name.
 
     Notes
     -----
@@ -1755,9 +1753,8 @@ def make_ppo_system(
         Optional identity label. This function opens no checkpoint files.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         Actor input schema the weights were trained on: 2, the 5,165-feature
-        schema of Team Deathmatch actors (the default); 3, the same layout for
-        actors trained in other modes; or 1 for actors trained before Red Zone
-        (5,164 features). Schema 1 picks the cached legacy hook
+        schema that every mode records (the default); or 1 for actors trained
+        before Red Zone (5,164 features). Schema 1 picks the cached legacy hook
         (_schema_1_actor_apply or _schema_1_feedforward_actor_apply) once
         here, so the actor sees and acts exactly as before. The factory does
         not compare the weights' width with the schema.

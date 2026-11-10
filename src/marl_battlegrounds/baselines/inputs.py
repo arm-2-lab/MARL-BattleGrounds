@@ -12,10 +12,9 @@ category meanings. This module needs only the ordinary JAX environment install.
 Changing feature order, category meaning, masking or numeric representation
 requires a new version of the affected schema.
 
-Actor input schema 2 (5,165 features) adds context column 19, the Team
-Deathmatch Red Zone depth. Schema 3, the newest, has the same layout: Team
-Deathmatch runs record 2 and other modes' runs record 3 (actor_input_schema),
-so a converted old actor can tell which games it learned from. Historical
+Actor input schema 2 (5,165 features), the current one, adds context column
+19, the Team Deathmatch Red Zone depth. Every mode records it, because every
+mode shares this layout; a run's mode is in its own task record. Historical
 schema 1 (5,164 features) is kept only so actors trained before Red Zone still
 play exactly as before.
 schema_1_actor_input turns a current view into the old 19-column view; the
@@ -48,9 +47,6 @@ from marl_battlegrounds.baselines.config import (
 )
 from marl_battlegrounds.baselines.config import (
     TRAINING_STATE_SCHEMA_VERSION as TRAINING_STATE_SCHEMA_VERSION,
-)
-from marl_battlegrounds.baselines.config import (
-    actor_input_schema as actor_input_schema,
 )
 from marl_battlegrounds.baselines.config import (
     training_state_schema as training_state_schema,
@@ -183,14 +179,19 @@ _OTHER_MODE_CONTEXT = (
 def historical_actor_input(
     actors: ActorInput, schema: int, *, score_threshold: int, red_zone_depth: float
 ) -> ActorInput:
-    """Give an actor of an older input schema the view it learned on, in any mode.
+    """Give an actor trained only on Team Deathmatch its own view, in any mode.
+
+    Call it only for an actor you know trained only on Team Deathmatch: the
+    library never calls it, and no saved number says which modes an actor
+    learned from (an actor that trained on another mode records schema 2 too).
 
     Parameters
     ----------
     actors : ActorInput
         Permitted current inputs (20 context columns) with any leading shape L.
-    schema : {1, 2, 3}
-        The actor's recorded actor input schema, a static Python int.
+    schema : {1, 2}
+        The actor's recorded actor input schema, a static Python int: 1 for an
+        actor trained before Red Zone, 2 for a later one.
     score_threshold : int
         The Team Deathmatch winning score the actor trained with, from its
         record (its curriculum's final value if it used one; 20 for a record
@@ -203,9 +204,9 @@ def historical_actor_input(
     Returns
     -------
     ActorInput
-        Schema 3: ``actors`` itself. Schema 2: in a Team Deathmatch game, the
-        same values; in a Capture the Flag or King of the Hills game (context
-        column 7 or 8 is 1), the view a Team Deathmatch game would have shown:
+        Schema 2: in a Team Deathmatch game, the same values; in a Capture
+        the Flag or King of the Hills game (context column 7 or 8 is 1), the
+        view a Team Deathmatch game would have shown:
         column 6 (Team Deathmatch) 1; columns 7-9, 12-15, 17 and 18 0; column
         16 ``score_threshold``; column 19 ``red_zone_depth``; every objective
         row zero, in the observation and in the source bank. Schema 1: the
@@ -214,22 +215,19 @@ def historical_actor_input(
     Raises
     ------
     ValueError
-        schema is not 1, 2 or 3, or context_features does not end in 20
-        columns.
+        schema is not 1 or 2, or context_features does not end in 20 columns.
 
     Notes
     -----
-    Actors trained only on Team Deathmatch (schemas 1 and 2) never saw the
-    objective rows or another mode's columns change, so they play other modes
-    on exactly the layout they learned. Unused observer rows, which are all
+    Actors trained only on Team Deathmatch never saw the objective rows or
+    another mode's columns change, so they play other modes on exactly the
+    layout they learned. Unused observer rows, which are all
     zero, stay unchanged. The conversion only removes or fixes information,
     so it widens no information right. Pure JAX on static shapes; works under
     jit and vmap; inputs are unchanged.
     """
-    if schema == 3:
-        return actors
     if schema not in (1, 2):
-        raise ValueError(f"Actor input schema must be 1, 2 or 3; received {schema!r}")
+        raise ValueError(f"Actor input schema must be 1 or 2; received {schema!r}")
     context = actors.observation.context_features
     if jnp.shape(context)[-1:] != (_CONTEXT_WIDTHS[2],):
         raise ValueError(
@@ -439,7 +437,7 @@ _ACTOR_LAYOUT: _Layout = tuple(
     for name, shape, width in _ACTOR_LAYOUT_1
 )
 _ACTOR_LAYOUTS: Mapping[int, _Layout] = MappingProxyType(
-    {1: _ACTOR_LAYOUT_1, 2: _ACTOR_LAYOUT, 3: _ACTOR_LAYOUT}
+    {1: _ACTOR_LAYOUT_1, 2: _ACTOR_LAYOUT}
 )
 
 _TRAINING_STATE_LAYOUT: _Layout = (
@@ -537,7 +535,7 @@ def _offsets(layout: _Layout) -> Mapping[str, slice]:
 ACTOR_FEATURE_OFFSETS = _offsets(_ACTOR_LAYOUT)
 TRAINING_STATE_FEATURE_OFFSETS = _offsets(_TRAINING_STATE_LAYOUT_3)
 ACTOR_FEATURE_SIZE = sum(width for _, _, width in _ACTOR_LAYOUT)
-# Encoded actor width per actor input schema: {1: 5164, 2: 5165, 3: 5165}. Read-only.
+# Encoded actor width per actor input schema: {1: 5164, 2: 5165}. Read-only.
 ACTOR_FEATURE_SIZES: Mapping[int, int] = MappingProxyType(
     {
         version: sum(width for _, _, width in layout)

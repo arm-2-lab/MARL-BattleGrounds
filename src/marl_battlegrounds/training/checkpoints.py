@@ -1788,9 +1788,8 @@ def _actor_template(
         Training method: "mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix" or
         "pqn_vdn".
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
-        2 for 5,165-feature Team Deathmatch actors (the default), 3 for the
-        same layout trained in other modes, or 1 for actors saved before Red
-        Zone (5,164 features).
+        2 for 5,165-feature actors, which every mode records (the default), or
+        1 for actors saved before Red Zone (5,164 features).
     parameter_sharing : {"all", "class", "none"}, default="all"
         Actor weight ownership; grouped modes add a leading axis of five.
     normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
@@ -1815,7 +1814,7 @@ def _actor_template(
     Raises
     ------
     ValueError
-        The method is unknown, actor_input_schema is not the int 1, 2 or 3, the
+        The method is unknown, actor_input_schema is not the int 1 or 2, the
         sharing or normalization value is unknown, or a non-PQN method names
         "layer_norm". Raised before tracing.
 
@@ -1831,7 +1830,7 @@ def _actor_template(
         type(actor_input_schema) is not int
         or actor_input_schema not in ACTOR_FEATURE_SIZES
     ):
-        raise ValueError("actor_input_schema must be 1, 2 or 3.")
+        raise ValueError("actor_input_schema must be 1 or 2.")
     if _pqn_normalization(normalization) != "batch_norm" and method != "pqn_vdn":
         raise ValueError("Only PQN-VDN models have a normalization choice")
     if method == "qmix":

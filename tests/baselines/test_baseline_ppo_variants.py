@@ -8,10 +8,10 @@ permitted inputs exercise both spawn frames, action legality and same-call
 probabilities. Feedforward actors keep no recurrent parameters,
 state or network loop. Masked updates preserve unused optimizers and ignore
 excluded rows while keeping the existing shared ValueNorm rules. The System
-factories of all six methods take actor_input_schema: the default 3 and 2,
-which share one layout, keep the existing hooks (and so the recorded
-registrations above), 1 picks the cached schema-1 hook once per scale and
-frame, and any other value (0, 4, a Boolean, a float or a string) is refused.
+factories of all six methods take actor_input_schema: the default 2 keeps
+the existing hooks (and so the recorded registrations above), 1 picks the
+cached schema-1 hook once per scale and frame, and any other value (0, 3, 4, a
+Boolean, a float or a string) is refused.
 These CPU checks prove software contracts, not learned skill or GPU cost.
 """
 
@@ -352,7 +352,7 @@ def test_system_factories_pick_the_schema_1_hook_and_refuse_other_schemas() -> N
             assert legacy.apply is again.apply is hook(scale, frame)
             assert current.apply is not legacy.apply
             assert legacy.init is current.init
-        for schema in cast(tuple[Any, ...], (0, 4, True, 2.0, "2")):
+        for schema in cast(tuple[Any, ...], (0, 3, 4, True, 2.0, "2")):
             with pytest.raises(ValueError, match="actor_input_schema"):
                 factory((), actor_input_schema=schema)
     world = make_recurrent_mappo_system((), spawn_frame="world", actor_input_schema=2)

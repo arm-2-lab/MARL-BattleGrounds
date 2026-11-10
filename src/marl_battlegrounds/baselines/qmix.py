@@ -1202,9 +1202,8 @@ def make_qmix_system(
         Optional identity label. No file is opened.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         Actor input schema the weights were trained on: 2, the 5,165-feature
-        schema of Team Deathmatch Q-networks (the default); 3, the same layout
-        for Q-networks trained in other modes; or 1 for Q-networks trained
-        before Red Zone (5,164 features). Schema 1 picks the cached
+        schema that every mode records (the default); or 1 for Q-networks
+        trained before Red Zone (5,164 features). Schema 1 picks the cached
         _schema_1_q_actor_apply hook once here, so the actor sees and acts
         exactly as before. The factory does not compare the weights' width
         with the schema.

@@ -20,6 +20,7 @@ from typing import Any, cast
 from marl_battlegrounds._task_settings import TASK_NAMES, TaskName
 from marl_battlegrounds.baselines.config import (
     ACTION_SCHEMA_VERSION,
+    ACTOR_INPUT_SCHEMA_VERSION,
     PQN_KEY_SCHEMA_VERSION,
     PQN_NORMALIZATION_SCHEMA_VERSION,
     PQN_RECENT_WINDOW_SCHEMA_VERSION,
@@ -30,7 +31,6 @@ from marl_battlegrounds.baselines.config import (
     PPOConfig,
     _parameter_sharing,
     _pqn_normalization,
-    actor_input_schema,
     training_state_schema,
     validate_ppo_method,
 )
@@ -51,7 +51,7 @@ _ACTOR_DESCRIPTION = "actor_details.json"
 _SCHEMAS = {
     "checkpoint": 1,
     "model": "recurrent_mappo_128",
-    "actor_input": actor_input_schema("tdm"),
+    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
     "training_state": training_state_schema("tdm"),
     "action": ACTION_SCHEMA_VERSION,
     "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
@@ -71,7 +71,7 @@ _MODELS = {
 _QMIX_SCHEMAS = {
     "checkpoint": 1,
     "model": _MODELS["qmix"],
-    "actor_input": actor_input_schema("tdm"),
+    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
     "training_state": training_state_schema("tdm"),
     "action": ACTION_SCHEMA_VERSION,
     "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
@@ -84,7 +84,7 @@ _QMIX_COUNTERS = {"updates", "env_steps", "completed_blocks", "learning_blocks"}
 _PQN_SCHEMAS = {
     "checkpoint": 1,
     "model": _MODELS["pqn_vdn"],
-    "actor_input": actor_input_schema("tdm"),
+    "actor_input": ACTOR_INPUT_SCHEMA_VERSION,
     "action": ACTION_SCHEMA_VERSION,
     "collection_keys": TRAINING_KEY_SCHEMA_VERSION,
     "pqn_keys": PQN_KEY_SCHEMA_VERSION,
@@ -617,16 +617,17 @@ default="mappo"
         Static method. Unknown values raise ValueError through the shared
         method check. MAPPO keeps its historical keys, including learner_keys.
     task : str, default="tdm"
-        The run's mode name, as TrainConfig.task holds it. It sets the actor
-        input and training-state versions (baselines.config.actor_input_schema
-        and training_state_schema): 2 for "tdm", 3 for other modes. The caller
-        validates the name.
+        The run's mode name, as TrainConfig.task holds it. It sets the
+        training-state version (baselines.config.training_state_schema): 2 for
+        "tdm", 3 for other modes. The actor input version is 2 in every mode,
+        because every mode shares one input layout. The caller validates the
+        name.
 
     Returns
     -------
     dict[str, int or str]
-        A fresh JSON-ready copy of the checkpoint version, model name, the task's actor
-        input and training-state versions, the action version, and the
+        A fresh JSON-ready copy of the checkpoint version, model name, the actor
+        input version and the task's training-state version, the action version, and the
         collection/learner key versions. QMIX replaces learner_keys with qmix_keys and
         adds its replay row version. PQN-VDN has no training-state entry (it keeps no
         physical state) and adds pqn_keys, recent_window and normalization versions.
@@ -640,7 +641,7 @@ default="mappo"
     -----
     Reads only fixed metadata; no file access or device initialization occurs.
     """
-    inputs = {"actor_input": actor_input_schema(task)}
+    inputs = {"actor_input": ACTOR_INPUT_SCHEMA_VERSION}
     if validate_training_method(method) == "qmix":
         return {
             **_QMIX_SCHEMAS,

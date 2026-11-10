@@ -3,12 +3,14 @@
 Tiny CPU runs of 4 games play Capture the Flag's own maps. Recurrent MAPPO,
 QMIX and PQN-VDN each stop after an early checkpoint and resume to the end.
 Every checkpoint records content binding version 4 with task "ctf", winning
-score 3 and Red Zone depth 0.0, actor input schema 3 and, for the methods
-that keep one, training-state schema 3 (973 features). Training continues
-across modes both ways for all three methods: each resumed Capture the Flag
-run's final actor starts a Team Deathmatch run, which records actor input
-schema 2, and that run's final actor starts a new Capture the Flag run, which
-records schema 3 again. For MAPPO the second start goes through a portable
+score 3 and Red Zone depth 0.0, actor input schema 2 (one number for the one
+layout every mode shares) and, for the methods that keep one, training-state
+schema 3 (973 features). Training continues across modes both ways for all
+three methods: each resumed Capture the Flag run's final actor starts a Team
+Deathmatch run, whose checkpoints record task "tdm" and training-state schema
+2, and that run's final actor starts a new Capture the Flag run, which records
+task "ctf" and training-state schema 3 again; every run records actor input
+schema 2. For MAPPO the second start goes through a portable
 model file, so the portable-file route is covered too. The resumed runs are
 made once per method and shared by both tests.
 """
@@ -83,6 +85,19 @@ def _details(root: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _modes(root: Path) -> set[tuple[str, int, int]]:
+    # A Team Deathmatch binding names no task, as before other modes existed;
+    # PQN-VDN keeps no training state, so count it as its run's mode would.
+    return {
+        (
+            task := d["collection"]["content_binding"].get("task", "tdm"),
+            d["schemas"]["actor_input"],
+            d["schemas"].get("training_state", 2 if task == "tdm" else 3),
+        )
+        for d in _details(root)
+    }
+
+
 @pytest.fixture(scope="module")
 def resumed_run(
     tmp_path_factory: pytest.TempPathFactory,
@@ -112,7 +127,7 @@ def test_capture_the_flag_runs_record_their_mode_and_resume(
         binding = details["collection"]["content_binding"]
         assert (binding["schema_version"], binding["task"]) == (4, "ctf")
         assert (binding["score_thresholds"], binding["red_zone_depth"]) == ([3], 0.0)
-        assert details["schemas"]["actor_input"] == 3
+        assert details["schemas"]["actor_input"] == 2
         assert details["schemas"].get("training_state", 3) == 3
 
 
@@ -127,10 +142,10 @@ def test_an_actor_continues_training_in_the_other_mode_both_ways(
         _config(method, "tdm"), initial_actor=str(capture_the_flag.final_actor)
     )
     team_deathmatch = runner.train(back, output_dir=tmp_path / "tdm")
-    assert {d["schemas"]["actor_input"] for d in _details(tmp_path / "tdm")} == {2}
+    assert _modes(tmp_path / "tdm") == {("tdm", 2, 2)}
     source = str(team_deathmatch.final_actor)
     if method == "mappo":
         source = str(export_model(source, tmp_path / "tdm-actor.zip"))
     forward = replace(_config(method), initial_actor=source)
     runner.train(forward, output_dir=tmp_path / "ctf")
-    assert {d["schemas"]["actor_input"] for d in _details(tmp_path / "ctf")} == {3}
+    assert _modes(tmp_path / "ctf") == {("ctf", 2, 3)}

@@ -1420,7 +1420,7 @@ def make_pqn_system(
         Hidden-layer normalization used to train these weights
         (``PQNConfig.normalization``). It must match the network's layout;
         the network fails when called otherwise. "layer_norm" needs actor
-        input schema 2 or 3. It is part of the System identity;
+        input schema 2. It is part of the System identity;
         "batch_norm" keeps the identity actors had before this option.
     name : str, default="PQN-VDN"
         Nonempty display name; it proves nothing about training.
@@ -1428,9 +1428,8 @@ def make_pqn_system(
         Optional identity label. No file is opened.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         Actor input schema the network was trained on: 2, the 5,165-feature
-        schema of Team Deathmatch networks (the default); 3, the same layout
-        for networks trained in other modes; or 1 for networks trained before
-        Red Zone (5,164 features). Schema 1 picks the cached
+        schema that every mode records (the default); or 1 for networks
+        trained before Red Zone (5,164 features). Schema 1 picks the cached
         _schema_1_pqn_actor_apply hook once here, so the actor sees and acts
         exactly as before. The factory does not compare the network's width
         with the schema.
@@ -1450,7 +1449,7 @@ def make_pqn_system(
     ------
     ValueError
         epsilon, input_scale, spawn_frame, normalization or name is invalid,
-        actor_input_schema is not the int 1, 2 or 3, or a grouped or LayerNorm
+        actor_input_schema is not the int 1 or 2, or a grouped or LayerNorm
         actor names historical actor input schema 1.
 
     Notes
