@@ -518,8 +518,8 @@ def _same_setting(cases: Sequence[Mapping[str, Any]], name: str, default: Any) -
 
     cases are declared training cases; name is a TrainConfig field; default
     is used where a case omits it (the API default). Grouping and checkpoint
-    selection compare runs on one panel, map list, depth and game count, so
-    the values must agree. Raise ValueError when they differ.
+    selection compare runs on one mode, panel, map list, depth and game count,
+    so the values must agree. Raise ValueError when they differ.
     """
     values = {
         json.dumps(case["config"].get(name, default), sort_keys=True) for case in cases
@@ -550,8 +550,9 @@ def prepare_declared_study(
       runtime.validation_opponents). Scripted names stay names. Nothing else
       changes.
     - grouping.yaml: schema 2, point margin, the shared validation maps, the
-      panel's opponent labels and digest, one group per case with one unit per
-      seed, and run folders ../study/cases/<case>--seed-<seed>/run. A
+      panel's opponent labels and digest, the shared resolved Red Zone depth,
+      the task when it is not Team Deathmatch, one group per case with one
+      unit per seed, and run folders ../study/cases/<case>--seed-<seed>/run. A
       recipe_selection file adds its declared recipe picks.
     - checkpoint-selection.yaml: rule point_margin with the shared
       confirmation_seed_pairs.
@@ -569,8 +570,10 @@ def prepare_declared_study(
         config.validation_panel. Its config.opponents names must be exactly the
         expected members with the "training" role; its
         runtime.validation_opponents must list exactly the "validation"
-        members in the expected order. Every case must share validation_maps,
-        red_zone_depth and confirmation_seed_pairs.
+        members in the expected order. Every case must share task,
+        validation_maps, red_zone_depth and confirmation_seed_pairs; an omitted
+        or null red_zone_depth means the task's default (5.0 for "tdm", 0.0
+        for "ctf"), so a study never mixes modes or depths.
     opponent_bundle : str or Path
         Local bundle folder with pool.json and the actor folders it names. Its
         members must match the expected opponents one for one, in order.
@@ -623,6 +626,7 @@ def prepare_declared_study(
 
     bundle, root = _preparation_paths(opponent_bundle, output_dir)
     from marl_battlegrounds import training
+    from marl_battlegrounds._task_settings import DEFAULT_RED_ZONE_DEPTHS
     from marl_battlegrounds.training._launch import read_declaration
     from marl_battlegrounds.training.checkpoints import runtime_identity
     from marl_battlegrounds.training.validation import VALIDATION_MAPS
@@ -715,7 +719,15 @@ def prepare_declared_study(
     # only parses paths; the bound paths were checked above.
     training.preview_study(study, output_dir=root / "study")
     maps = _same_setting(cases, "validation_maps", list(VALIDATION_MAPS))
-    depth = _same_setting(cases, "red_zone_depth", 5.0)
+    task = _same_setting(cases, "task", "tdm")
+    # An omitted or null depth means the task's own default, as in TrainConfig.
+    depths = {
+        float(DEFAULT_RED_ZONE_DEPTHS[task] if value is None else value)
+        for value in (case["config"].get("red_zone_depth") for case in cases)
+    }
+    if len(depths) != 1:
+        raise ValueError("Every case must declare the same red_zone_depth")
+    (depth,) = depths
     pairs = _same_setting(cases, "confirmation_seed_pairs", 50)
     # The shared panel owner determines labels and identity. Its path is not part
     # of the digest; each run independently creates the same declared panel.
@@ -752,7 +764,8 @@ def prepare_declared_study(
         "maps": maps,
         "opponents": [member.name for member in panel.members],
         "panel_digest": panel.digest,
-        "red_zone_depth": float(depth),
+        "red_zone_depth": depth,
+        **({} if task == "tdm" else {"task": task}),
         "runs": run_rows,
         "comparisons": [],
     }

@@ -33,6 +33,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from marl_battlegrounds._task_settings import TASK_NAMES
 from marl_battlegrounds.training._launch import read_declaration
 from marl_battlegrounds.training.config import (
     _integer as _integer,  # pyright: ignore[reportPrivateUsage]
@@ -2089,8 +2090,11 @@ def _training_grouping(
     need no YAML dependency; YAML files require the optional hydra extra.
     File-relative run paths resolve
     from that file; mapping paths resolve from the current directory. Require
-    explicit cells, panel, depth, groups and independent-run units. Available
-    run_dirs must match the declaration exactly; None uses all declared paths.
+    explicit cells, panel, depth, groups and independent-run units. A schema-2
+    grouping may also name its "task" ("tdm" or "ctf"; absent means Team
+    Deathmatch); a run's selected and routine results count only in that
+    mode. Available run_dirs must match the declaration exactly; None uses all
+    declared paths.
     Missing declared runs remain
     reportable. Return a copied declaration with absolute paths. Invalid fields,
     duplicate paths, unknown groups or undeclared inputs raise ValueError.
@@ -2112,7 +2116,7 @@ def _training_grouping(
     }
     allowed = required | {"comparisons", "bootstrap_draws", "bootstrap_seed"}
     if raw.get("schema_version") == 2:
-        allowed |= {"measure", "cell_weights", "recipe_selection"}
+        allowed |= {"measure", "cell_weights", "recipe_selection", "task"}
     if not required <= raw.keys() or raw.keys() - allowed:
         raise ValueError("Grouping needs the declared fields for schema 1 or 2 only")
     if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2):
@@ -2136,6 +2140,10 @@ def _training_grouping(
     if not isinstance(raw["panel_digest"], str) or not raw["panel_digest"]:
         raise ValueError("Grouping needs the saved panel_digest")
     _red_zone_label(raw["red_zone_depth"])
+    if raw.get("task", "tdm") not in TASK_NAMES:
+        raise ValueError(
+            f"Grouping task must be one of {', '.join(map(repr, TASK_NAMES))}"
+        )
     draws = _integer(raw.get("bootstrap_draws", 2000), "bootstrap_draws", minimum=1)
     seed = _integer(raw.get("bootstrap_seed", 19_044_003), "bootstrap_seed")
     if not isinstance(raw["runs"], list) or not raw["runs"]:
@@ -2404,8 +2412,10 @@ def _training_run_vector(
 ) -> Record:
     """Keep one declared run and every selected map/opponent cell in the report.
 
-    Missing or failed runs, unknown lineage and incomplete selected evidence get
-    explicit reasons and cannot support a group interval. No final checkpoint is
+    Missing or failed runs, unknown lineage, incomplete selected evidence and
+    selected evidence from another panel, depth, map list or mode (the
+    declaration's "task", absent meaning Team Deathmatch) get explicit reasons
+    and cannot support a group interval. No final checkpoint is
     substituted. Cell scores remain descriptive evidence even when unavailable
     for aggregation; invalid or absent cell values stay None. No files change.
     """
@@ -2430,6 +2440,8 @@ def _training_run_vector(
         reasons.append("Selected panel does not match the declaration")
     if selected.get("red_zone_depth") != declaration["red_zone_depth"]:
         reasons.append("Selected Red Zone depth does not match the declaration")
+    if selected.get("task", "tdm") != declaration.get("task", "tdm"):
+        reasons.append("Selected mode does not match the declaration")
     if selected.get("maps", declaration["maps"]) != declaration["maps"]:
         reasons.append("Selected maps do not match the declaration")
     expected = [
@@ -3225,8 +3237,9 @@ def _recipe_curve_rows(
     ----------
     declaration : mapping
         A grouping checked by _training_grouping. Its maps, opponents,
-        panel_digest, red_zone_depth, runs and optional normalized cell weights
-        decide which results and cells count.
+        panel_digest, red_zone_depth, task (absent meaning Team Deathmatch),
+        runs and optional normalized cell weights decide which results and
+        cells count.
     inputs : mapping of str to (object, sequence of dict)
         Run directory to (saved config method, validation result list). A
         declared run that is missing here, such as one that never started, adds
@@ -3276,6 +3289,7 @@ def _recipe_curve_rows(
                 or result.get("complete") is not True
                 or result.get("panel_digest") != declaration["panel_digest"]
                 or result.get("red_zone_depth") != declaration["red_zone_depth"]
+                or result.get("task", "tdm") != declaration.get("task", "tdm")
             ):
                 continue
             indexed: dict[tuple[object, object], Record] = {}
@@ -3706,9 +3720,14 @@ def analyze(
         config = details.get("config", {})
         treatment = _treatment(config)
         depth = config.get("red_zone_depth")
+        # Team Deathmatch runs name their Red Zone; other modes have none.
+        rules = (
+            f"Training Red Zone: {_red_zone_label(depth)}"
+            if config.get("task", "tdm") == "tdm"
+            else f"Task: {config['task']}"
+        )
         run_label = (
-            f"{run_id[:8]} / Seed {config.get('seed', '?')} / {treatment} / "
-            f"\nTraining Red Zone: {_red_zone_label(depth)}"
+            f"{run_id[:8]} / Seed {config.get('seed', '?')} / {treatment} / \n{rules}"
         )
         summary = _summary(directory)
         exposure_history.extend(_exposure_history(directory))

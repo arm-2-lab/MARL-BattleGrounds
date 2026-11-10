@@ -10,8 +10,10 @@ shares validation maps 42, 43, 44 and 46; the validation panel binds the 250M
 model's checked folder first, then Alpha, Beta and Gamma; the grouping file
 passes the analysis owner with its ten recipe picks; and a changed expected
 identity or a reordered validation panel is refused before protocol/ is
-written. The bundle lives in ignored artifacts/, so these checks skip where
-it is absent. No game, learning update or GPU work runs here.
+written. A declaration whose depth is null groups at the task's default (5.0
+for Team Deathmatch) and names no task. The bundle lives in ignored
+artifacts/, so these checks skip where it is absent. No game, learning update
+or GPU work runs here.
 """
 
 from pathlib import Path
@@ -91,3 +93,17 @@ def test_changed_identity_or_panel_order_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="in order"):
         _prepare(tmp_path, declaration=other, expected=SEARCH / "opponents.yaml")
     assert not (tmp_path / "out/protocol").exists()
+
+
+def test_a_null_depth_groups_at_the_task_default(tmp_path: Path) -> None:
+    declaration = (SEARCH / "shapes_and_ppo.yaml").read_text()
+    line = "        red_zone_depth: 5.0\n"
+    assert declaration.count(line) == 1
+    other = tmp_path / "null-depth" / "shapes_and_ppo.yaml"
+    other.parent.mkdir()
+    other.write_text(declaration.replace(line, "        red_zone_depth: null\n"))
+    study_file = _prepare(
+        tmp_path, declaration=other, expected=SEARCH / "opponents.yaml"
+    )
+    grouping = yaml.safe_load((study_file.parent / "grouping.yaml").read_text())
+    assert grouping["red_zone_depth"] == 5.0 and "task" not in grouping

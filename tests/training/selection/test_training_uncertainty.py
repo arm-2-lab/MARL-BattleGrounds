@@ -2,7 +2,9 @@
 
 Whole run vectors preserve cross-cell dependence. Paired comparisons preserve
 run matching, and missing runs/cells or related continuations never create extra
-independent seeds. Public reports keep selected identities and original files.
+independent seeds. A selected result of another mode (a "task" the grouping
+does not declare) leaves its run out, and a grouping naming an unknown mode
+fails. Public reports keep selected identities and original files.
 New fixed-System sampling evidence cannot disguise an unsupported interval;
 legacy records retain their original conditional numerical interpretation.
 """
@@ -174,7 +176,17 @@ def test_declared_pairs_preserve_matching_and_unpaired_groups_resample_separatel
 
 @pytest.mark.parametrize(
     "failure",
-    ("missing", "failed", "running", "cell", "selection", "depth", "panel", "purpose"),
+    (
+        "missing",
+        "failed",
+        "running",
+        "cell",
+        "selection",
+        "depth",
+        "panel",
+        "purpose",
+        "mode",
+    ),
 )
 def test_incomplete_declared_runs_never_become_a_smaller_comparison(
     tmp_path: Path, failure: str
@@ -199,6 +211,9 @@ def test_incomplete_declared_runs_never_become_a_smaller_comparison(
         elif failure == "purpose":
             selected["purpose"] = "routine"
             selection_path.write_text(json.dumps(selected))
+        elif failure == "mode":
+            selected["task"] = "ctf"
+            selection_path.write_text(json.dumps(selected))
         elif failure in ("depth", "panel"):
             selected["red_zone_depth" if failure == "depth" else "panel_digest"] = (
                 0 if failure == "depth" else "other"
@@ -215,6 +230,23 @@ def test_incomplete_declared_runs_never_become_a_smaller_comparison(
     assert group["score"] is group["ci_low"] is group["ci_high"] is None
     assert len(group["cells"]) == 4
     assert group["unavailable_reasons"]
+
+
+def test_a_mode_grouping_keeps_only_runs_selected_in_that_mode(
+    tmp_path: Path,
+) -> None:
+    team_deathmatch = _run(tmp_path / "tdm", (0.5,) * 4)
+    capture_the_flag = _run(tmp_path / "ctf", (1.0,) * 4)
+    selection_path = capture_the_flag / "selection.json"
+    selected = {**json.loads(selection_path.read_text()), "task": "ctf"}
+    selection_path.write_text(json.dumps(selected))
+    grouping = {
+        **_grouping([(team_deathmatch, "M", "a"), (capture_the_flag, "M", "b")]),
+        "schema_version": 2,
+        "task": "ctf",
+    }
+    report = _reduce(grouping)
+    assert [run["available"] for run in report["runs"]] == [False, True]
 
 
 def test_missing_run_is_visible_in_public_report_and_is_not_complete(
@@ -382,7 +414,8 @@ def test_path_grouping_resolves_relative_paths_and_rejects_undeclared_inputs(
 
 
 @pytest.mark.parametrize(
-    "change", ("unknown", "schema", "map", "opponent", "unit", "paired", "draws")
+    "change",
+    ("unknown", "schema", "map", "opponent", "unit", "paired", "draws", "mode"),
 )
 def test_invalid_grouping_declarations_fail_before_reporting(
     tmp_path: Path, change: str
@@ -401,6 +434,8 @@ def test_invalid_grouping_declarations_fail_before_reporting(
         declaration["runs"][0]["unit"] = ""
     elif change == "paired":
         declaration["comparisons"] = [{"left": "M", "right": "absent", "paired": "yes"}]
+    elif change == "mode":
+        declaration.update(schema_version=2, task="koth")
     else:
         declaration["bootstrap_draws"] = 0
     with pytest.raises(ValueError):
