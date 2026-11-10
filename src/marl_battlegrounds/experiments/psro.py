@@ -5,7 +5,8 @@ after installing marl-battlegrounds[training,hydra]. The oracle is a training
 method with its tournament recipe (``method=ippo`` by default) and accepts
 every training field override the train stage accepts; ``psro.*`` settings
 name the seeded members and the panel and size the population. Run the same
-command again to continue a stopped run.
+command again to continue a stopped run; a stop (Ctrl-C or a stop signal)
+prints one line saying so and exits with code 130, without a traceback.
 
 This entry owns only the command: it reads the settings, finds the seeded
 members and the panel in an opponent bundle by name (by default the released
@@ -16,6 +17,7 @@ files and its resume.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -56,6 +58,11 @@ def run(settings: dict[str, Any], *, base_dir: str | Path) -> dict[str, Any]:
     ValueError
         A training field fails the shared parser, a bundle member is unknown,
         or ``train_psro`` refuses the settings.
+    SystemExit
+        With code 130 when the run is stopped (KeyboardInterrupt), after one
+        line on stderr names the run folder and says to run the same command
+        again. Completed rounds and games stay saved there; train_psro
+        continues from them.
     """
     from marl_battlegrounds import training
     from marl_battlegrounds.experiments.hydra import resolve_training_config
@@ -75,13 +82,23 @@ def run(settings: dict[str, Any], *, base_dir: str | Path) -> dict[str, Any]:
 
         address, bundle = _released_training_opponents(output_dir / "opponents")
         print(f"Released Opponents: {address}")
-    return training.train_psro(
-        config,
-        output_dir=output_dir,
-        seed_members=bundle_references(bundle, psro.pop("seed_members")),
-        panel=bundle_references(bundle, psro.pop("panel")),
-        **psro,
-    )
+    seed_members = bundle_references(bundle, psro.pop("seed_members"))
+    panel = bundle_references(bundle, psro.pop("panel"))
+    try:
+        return training.train_psro(
+            config,
+            output_dir=output_dir,
+            seed_members=seed_members,
+            panel=panel,
+            **psro,
+        )
+    except KeyboardInterrupt:
+        print(
+            f"Stopped. Completed rounds and games are saved in {output_dir} "
+            "(rounds.json lists them); run the same command again to continue.",
+            file=sys.stderr,
+        )
+        raise SystemExit(130) from None
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="psro")

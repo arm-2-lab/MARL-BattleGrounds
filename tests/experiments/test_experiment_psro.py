@@ -8,7 +8,9 @@ and train_psro's own defaults for every other population setting. run
 resolves the oracle through the shared training parser, reads output_dir and
 opponent_bundle from the launch folder, finds the seeded members and the
 panel in the bundle by name, and passes every population setting to
-train_psro unchanged, leaving its input settings as they were. A stand-in
+train_psro unchanged, leaving its input settings as they were. A stopped run
+(KeyboardInterrupt) ends with one stderr line naming the run folder and the
+command to continue, and exit code 130, never a traceback. A stand-in
 replaces train_psro, so no game is played.
 """
 
@@ -55,10 +57,8 @@ def test_settings_compose() -> None:
     }
 
 
-def test_run_resolves_and_calls_train_psro(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    bundle = tmp_path / "bundle"
+def _settings(root: Path) -> dict[str, Any]:
+    bundle = root / "bundle"
     (bundle / "models" / "fixed").mkdir(parents=True)
     members = [
         {"name": "fixed", "kind": "actor", "path": "models/fixed"},
@@ -68,7 +68,7 @@ def test_run_resolves_and_calls_train_psro(
     (bundle / "pool.json").write_text(
         json.dumps({"schema_version": 1, "members": members}), encoding="utf-8"
     )
-    settings = _composed(
+    return _composed(
         "recipe=software_check",
         "output_dir=run",
         "psro.opponent_bundle=bundle",
@@ -76,6 +76,13 @@ def test_run_resolves_and_calls_train_psro(
         "psro.panel=[tdm-beta]",
         "psro.payoff_games=6",
     )
+
+
+def test_run_resolves_and_calls_train_psro(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = tmp_path / "bundle"
+    settings = _settings(tmp_path)
     before = copy.deepcopy(settings)
     calls: list[tuple[training.TrainConfig, dict[str, object]]] = []
 
@@ -100,3 +107,19 @@ def test_run_resolves_and_calls_train_psro(
         if key not in {"seed_members", "panel", "opponent_bundle"}
     }
     assert kwargs["payoff_games"] == 6
+
+
+def test_a_stopped_run_prints_one_line_and_exits_130(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def stopped(config: training.TrainConfig, **kwargs: object) -> dict[str, Any]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(training, "train_psro", stopped)
+    with pytest.raises(SystemExit) as stop:
+        psro.run(_settings(tmp_path), base_dir=tmp_path)
+    assert stop.value.code == 130
+    assert stop.value.__cause__ is None and stop.value.__suppress_context__
+    error = capsys.readouterr().err
+    assert error.count("\n") == 1 and str(tmp_path / "run") in error
+    assert "run the same command again to continue" in error
