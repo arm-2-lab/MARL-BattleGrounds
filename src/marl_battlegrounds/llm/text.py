@@ -6,7 +6,10 @@ and transforms the coordinate frame before calling it. Every unit is named by
 its roster slot (ally_0 ... ally_4, enemy_0 ... enemy_4), the same names the
 combat choices use, and the actor is marked "(you)". Each unit's facts appear
 once; its own sight and each teammate source keep separate visibility and
-permission.
+permission. In a Capture the Flag game the rules name its scoring instead of
+Team Deathmatch's, and a Flags line says in words whether each flag is home,
+carried (and by whom, when seen) or dropped; every other game's text is
+unchanged.
 """
 
 from typing import Literal, cast
@@ -23,6 +26,8 @@ from marl_battlegrounds.policies.input import ActorInput
 
 # actor-text-v2 (Oct 2026) names units by roster slot instead of v1's per-view
 # unit_N IDs, which models misread as slot numbers. Saved runs record it.
+# Capture the Flag's scoring paragraph and Flags lines (Nov 2026) leave every
+# Team Deathmatch text byte for byte as it was, so the version stays.
 TEXT_VERSION = "actor-text-v2"
 _DEFAULT_REPLY_INSTRUCTION = (
     'Reply with exactly {"move":"<legal move>","combat":"<legal combat>"}.'
@@ -45,6 +50,28 @@ def _column_names(prefix: str, size: int) -> tuple[str, ...]:
 _UNIT_FIELDS = _column_names("AGENT_FEATURE_", core_types.UNIT_FEATURES)
 _CONTEXT_FIELDS = _column_names("CONTEXT_FEATURE_", core_types.CONTEXT_FEATURES)
 _OBSTACLE_FIELDS = _column_names("OBSTACLE_FEATURE_", core_types.OBSTACLE_FEATURES)
+_TEAM_DEATHMATCH_SCORING = (
+    "Scoring: In Team Deathmatch a death gives the opponent "
+    f"{core_types.TEAM_DEATHMATCH_POINTS_PER_DEATH} point, or "
+    f"{core_types.TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH} in the victim's own "
+    "Red Zone, using its starting position. The zone is the full-height strip "
+    "beside that team's spawn edge, including its boundary. Depth is in context; "
+    "zero disables it. "
+    "A team wins only when it reaches the threshold with more points than the "
+    "opponent. A simultaneous threshold tie, or the horizon without a threshold "
+    "winner, is a draw.\n"
+)
+_CAPTURE_THE_FLAG_SCORING = (
+    "Scoring: In Capture the Flag a team scores one capture when its carrier "
+    "ends a tick within the capture distance of its own flag home while its own "
+    "flag is home. An agent picks up the enemy flag, or returns its own dropped "
+    "flag, by ending a tick within that flag's reach; on a dropped flag the "
+    "nearest toucher decides, and an exact tie goes to the enemy. Spawn-shielded "
+    "agents never touch a flag. A carrier that dies drops the flag where its body "
+    "ends, and a dropped flag goes home by itself when its countdown runs out. "
+    "The first team to the threshold wins; the horizon without a winner is a "
+    "draw, whatever the captures.\n"
+)
 _RULES = (
     "Rules: Choose one move and one complete combat pair from the legal lists. "
     "All actors commit both choices from the same decision. Damage and healing "
@@ -99,16 +126,8 @@ _RULES = (
     "Public alive flags reveal no hidden position. Source permission does not "
     "mean the source currently sees a unit. Respawn clock zero means a wave is "
     "due at transition end; a dead actor cannot act before it respawns.\n"
-    "Scoring: In Team Deathmatch a death gives the opponent "
-    f"{core_types.TEAM_DEATHMATCH_POINTS_PER_DEATH} point, or "
-    f"{core_types.TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH} in the victim's own "
-    "Red Zone, using its starting position. The zone is the full-height strip "
-    "beside that team's spawn edge, including its boundary. Depth is in context; "
-    "zero disables it. "
-    "A team wins only when it reaches the threshold with more points than the "
-    "opponent. A simultaneous threshold tie, or the horizon without a threshold "
-    "winner, is a draw.\n"
-    "Encoding: Unlisted numeric fields and padded rows are positive zero. "
+    + _TEAM_DEATHMATCH_SCORING
+    + "Encoding: Unlisted numeric fields and padded rows are positive zero. "
     "Zero means a whole positive-zero row. Each unit's facts appear once, under "
     "its roster name; visibility and source assignments remain separate. Current "
     "objectives have "
@@ -235,6 +254,55 @@ def _previous(row: _HostArray, names: tuple[str, ...]) -> str:
     if len(indices) == 1 and row[indices[0]] == 1 and not np.any(np.signbit(row)):
         return names[int(indices[0])]
     return "Values" + _array_text(row)
+
+
+_CAPTURE_THE_FLAG_RULES = _RULES.replace(
+    _TEAM_DEATHMATCH_SCORING, _CAPTURE_THE_FLAG_SCORING
+)
+
+
+def _flag_words(rows: _HostArray) -> str | None:
+    """Name both flags' states in words from an actor's objective rows.
+
+    rows is one actor's (8, 12) objective block. Return None unless both flag
+    rows (2, your flag; 3, their flag) are active. Columns 4 and 5 say which
+    team controls a flag (decision 139): its own team means home, the other
+    team means carried, neither means dropped, with column 6's ticks until it
+    goes home. Columns 7-11 name a seen carrier's roster row: an enemy row for
+    your flag, an ally row for theirs.
+    """
+    ally, enemy = (
+        core_types.OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM,
+        core_types.OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM,
+    )
+    first = core_types.OBJECTIVE_FEATURE_UNIT_ROW_0_IS_FLAG_CARRIER
+    active = core_types.OBJECTIVE_FEATURE_IS_ACTIVE
+    if not (rows[2, active] > 0 and rows[3, active] > 0):
+        return None
+    words: list[str] = []
+    for row, name, owner, other, relation in (
+        (2, "your flag", ally, enemy, "enemy"),
+        (3, "their flag", enemy, ally, "ally"),
+    ):
+        values = rows[row]
+        if values[owner] > 0:
+            state = "home"
+        elif values[other] > 0:
+            carrier = np.flatnonzero(values[first : first + 5] > 0)
+            state = (
+                f"carried by {relation}_{int(carrier[0])}"
+                if carrier.size
+                else "carried, carrier not seen"
+            )
+        else:
+            ticks = int(
+                values[
+                    core_types.OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_AUTO_RETURNS
+                ]
+            )
+            state = f"dropped, home in {ticks} ticks"
+        words.append(f"{name} {state}")
+    return "; ".join(words)
 
 
 def _objectives(value: _HostArray) -> str:
@@ -436,8 +504,11 @@ def _unit_lines(host: ActorInput) -> list[str]:
             if len(parts) == 1:
                 parts.append("No visible rows")
             text = "; ".join(parts)
-        objectives = _objectives(np.asarray(bank.objective_features_by_source[source]))
-        lines.extend([f"{label}: {text}", f"{label} objectives: {objectives}"])
+        rows = np.asarray(bank.objective_features_by_source[source])
+        lines.extend([f"{label}: {text}", f"{label} objectives: {_objectives(rows)}"])
+        flags = _flag_words(rows)
+        if flags is not None:
+            lines.append(f"{label} flags: {flags}")
     lines.append("Unlisted source candidates: Hidden, no data")
     return lines
 
@@ -498,17 +569,23 @@ def format_actor_view(
         ally_k, the <class>." (the class is left out when that slot is inactive
         or its class ID unknown); a Teams line naming every slot's class, with
         "(you)", "dead" and "unused" marks from the public roster arrays; own
-        objectives; one line per unit under its roster name (ally_0 ...
-        ally_4, enemy_0 ... enemy_4, the actor marked "(you)"), followed, only
-        when they apply, by a sentence explaining "_via_" lines and "Your own
-        row is all zero."; the actor's own sight for all ten slots; one line
-        for each of the five own-team sources, the actor's own included, with
-        its permission, the units it sees and its objectives; "Unlisted source
+        objectives, then, when both flag rows are active, a "Flags:" line
+        naming each flag home, carried (by its roster name when seen) or
+        dropped with its ticks until it goes home; one line per unit under its
+        roster name (ally_0 ... ally_4, enemy_0 ... enemy_4, the actor marked
+        "(you)"), followed, only when they apply, by a sentence explaining
+        "_via_" lines and "Your own row is all zero."; the actor's own sight
+        for all ten slots; one line for each of the five own-team sources, the
+        actor's own included, with
+        its permission, the units it sees and its objectives, and its own
+        "flags:" line when its flag rows are active; "Unlisted source
         candidates: Hidden, no data"; the public spawn lifecycle; previous
         actions; legal moves and combat pairs; a fixed note on combat names;
         and the reply instruction. Short decimals round-trip to the original
         float32 including signed zero. Source permission and visibility are
-        never combined. Inputs are unchanged.
+        never combined. Inputs are unchanged. The rules name Capture the Flag's
+        scoring instead of Team Deathmatch's when the context marks Capture the
+        Flag (CONTEXT_FEATURE_IS_CTF); every other text is unchanged.
 
     Raises
     ------
@@ -543,7 +620,10 @@ def format_actor_view(
     obs = host.observation
     lines = [f"MARL-BGs {TEXT_VERSION}; Frame: {frame}"]
     if include_static:
-        lines.extend([_RULES, "Map:"])
+        capture_the_flag = (
+            np.asarray(obs.context_features)[core_types.CONTEXT_FEATURE_IS_CTF] > 0
+        )
+        lines.extend([_CAPTURE_THE_FLAG_RULES if capture_the_flag else _RULES, "Map:"])
         obstacles = np.asarray(obs.map_obstacle_features)
         lines.extend(
             f"Obstacle {index}: {_fields(row, _OBSTACLE_FIELDS)}"
@@ -560,6 +640,11 @@ def format_actor_view(
             f"You are ally_{you}" + (f", the {role}." if role else "."),
             _teams_line(obs.spawn_lifecycle, you),
             f"Objectives: {_objectives(np.asarray(obs.objective_features))}",
+            *(
+                [f"Flags: {flags}"]
+                if (flags := _flag_words(np.asarray(obs.objective_features)))
+                else []
+            ),
             *_unit_lines(host),
         ]
     )
