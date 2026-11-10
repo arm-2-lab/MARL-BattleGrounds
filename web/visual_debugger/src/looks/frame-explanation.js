@@ -9,7 +9,10 @@
  *   `semantic-vocabulary.js`: the source named by class only, in both views),
  *   broken ice, falls with their score change (x2 only from the event's
  *   home_fall flag), the score after the falls, returns and Ultimates ready
- *   again.
+ *   again. In Capture the Flag: falls with no points, each flag picked up,
+ *   dropped (inside its carrier's fall line), returned, gone home or
+ *   captured, Oracle View naming whose flag and Agent POV saying "your flag"
+ *   or "their flag", and the captures after the capture.
  * - The look contract (records, build, update, tooltip, FOOTPRINT, BUDGET,
  *   PAINT_PARTS): numbered discs beside the champions the items name.
  * - createFrameExplanation(options): the controller the page mounts. It
@@ -31,10 +34,17 @@
  * an event line a recipient reads "a champion out of sight" and a source
  * reads "a hidden source", with no class, ID, life or position, and gets no
  * callout. A status item names its source by class only ("From a Warrior."),
- * which the status itself already tells. Nothing is
+ * which the status itself already tells. A flag line names a champion only when
+ * it is in that scene (Agent POV: "Your flag was picked up." otherwise). Nothing is
  * cached, so Oracle -> Agent POV -> Oracle gives exactly a fresh answer.
  */
-import { canonicalAgentIdentity, teamLabelFromId } from "../agent-identity.js";
+import {
+  canonicalAgentIdentity,
+  fallPoints,
+  scoreLabel,
+  teamLabelFromId,
+  tickCountText,
+} from "../agent-identity.js";
 import { classAbilityNameV1 } from "../class-documentation.js";
 import { registerLocalCommandHandler } from "../command-set.js";
 import { formatDisplayNumber } from "../display.js";
@@ -55,8 +65,9 @@ import { EMPTY_BUDGET, finiteNumber, isRecord, svgNode } from "./look-support.js
  * - n: its number, 1 upward, in tick order.
  * - kind: "blow" (damage, or damage and healing), "heal", "touch" (a Basic or
  *   Ultimate reached a champion and changed no life), "ability" (an ability used
- *   with no recipient this tick), "status", "broken_ice", "fall", "score",
- *   "return" or "ultimate_ready".
+ *   with no recipient this tick), "status", "broken_ice", "fall", "flag" (a
+ *   Capture the Flag flag picked up, captured, returned or gone home; a drop
+ *   rides in its carrier's fall line), "score", "return" or "ultimate_ready".
  * - text: the plain sentence shown in the list.
  * - anchorKey: the presentation key of the champion the item is about, when that
  *   champion is in the audience's scene (it gets a callout), else null.
@@ -92,6 +103,17 @@ import { EMPTY_BUDGET, finiteNumber, isRecord, svgNode } from "./look-support.js
  *   Agent POV: visual_events), in any order (sorted here by ordinal).
  * - score: the public scoreboard {changed, after: [Team A, Team B]}, or null.
  * - tick: the simulator step the tick ends on, or null.
+ * - flags: Capture the Flag only, the shown scene's capture_the_flag (its
+ *   `flags` give each flag's ticks left after the tick); null or absent in
+ *   every other mode, where falls score points.
+ * - teamId: Agent POV only, the viewing team (1 or 2), so a line can say
+ *   "your flag" or "their flag"; null or absent in Oracle View.
+ * - returnTicks: Capture the Flag's public return ticks (the match summary's
+ *   flag_return_steps, the same in every view), or null or absent.
+ * - taskMode: the game's task mode (public: 1 Team Deathmatch, 3 Capture the
+ *   Flag, 0 a combat diagnostic), or null or absent. It decides what a fall
+ *   gives (fallPoints) and the score line's word (scoreLabel); absent reads
+ *   as Team Deathmatch's rules.
  *
  * @typedef {Readonly<{
  *   audience: "researcher" | "agent_pov",
@@ -99,6 +121,10 @@ import { EMPTY_BUDGET, finiteNumber, isRecord, svgNode } from "./look-support.js
  *   events: ReadonlyArray<unknown>,
  *   score: Readonly<{changed: boolean, after: ReadonlyArray<number>}> | null,
  *   tick: number | null,
+ *   flags?: Readonly<Record<string, any>> | null,
+ *   teamId?: 1 | 2 | null,
+ *   returnTicks?: number | null,
+ *   taskMode?: number | null,
  * }>} FrameExplanationInput
  */
 
@@ -143,9 +169,19 @@ const HIDDEN_SOURCE = "a hidden source";
  * Oracle View uses total_effective_damage and total_effective_healing; Agent POV
  * has only the life change the team saw (realized_net_health_change). Life is
  * "start → end of full" from the event and the scene. No per-blow damage is
- * worked out in the browser. A fall gives 2 points when its home_fall flag is
- * true, else 1, to the other team. The score line (when score.changed) follows
- * the last fall listed, or ends the list when no fall was seen. Pure: no DOM,
+ * worked out in the browser. A fall's points come from fallPoints
+ * (agent-identity.js) for input.taskMode: in Team Deathmatch 2 when its
+ * home_fall flag is true, else 1, to the other team. The score line (when
+ * score.changed) follows the last fall listed, or ends the list when no fall
+ * was seen.
+ *
+ * Capture the Flag (input.taskMode 3, input.flags set): a fall scores nothing,
+ * so its line has no points ("Rogue ID 7 fell."), and a carrier's drop rides in it ("Rogue ID 7
+ * fell; Team A's flag dropped (30 ticks)."). Each other flag event gives a
+ * "flag" item in flagView's words; a champion that picked up a flag and fell on
+ * the same tick (decision 169) has its fall listed right after its pickup. The
+ * score line reads "Captures: Team A 1, Team B 0." (scoreLabel) and follows the
+ * capture. Pure: no DOM,
  * storage or timers.
  *
  * @param {FrameExplanationInput | null | undefined} input
@@ -188,9 +224,44 @@ export function explainTick(input) {
     }
   }
 
+  // Capture the Flag: a carrier's drop rides in its fall line, and a champion
+  // that picked up a flag and fell on the same tick has its fall listed after
+  // its pickup (decision 169). Whether falls score is the mode's rule.
+  const taskMode = input.taskMode ?? null;
+  const fallsScore = fallPoints(taskMode, false) !== null;
+  const view = flagView(input, agents);
+  /** @type {Map<string, Record<string, any>>} */
+  const dropsByCarrier = new Map();
+  /** @type {Set<string>} */
+  const pickups = new Set();
+  /** @type {Set<string>} */
+  const fallen = new Set();
+  for (const { kind, payload } of rows) {
+    const key = anchorKey(payload.agent_anchor ?? payload.recipient_anchor);
+    if (key === null) continue;
+    if (kind === "agent_died") fallen.add(key);
+    if (
+      kind === "flag_dropped" ||
+      (kind === "flag_changed" &&
+        payload.state_before === "carried" &&
+        payload.state_after === "dropped")
+    ) {
+      dropsByCarrier.set(key, payload);
+    }
+    if (
+      kind === "flag_picked_up" ||
+      (kind === "flag_changed" && payload.state_after === "carried")
+    ) {
+      pickups.add(key);
+    }
+  }
+  /** @type {Map<string, {kind: string, text: string, anchorKey: string | null}>} */
+  const heldFalls = new Map();
+
   /** @type {Array<{kind: string, text: string, anchorKey: string | null}>} */
   const drafts = [];
   let fallSeen = false;
+  let lastCapture = -1;
   for (const { kind, payload } of rows) {
     if (kind === "ability_activated") {
       const key = anchorKey(payload.recipient_anchor);
@@ -226,7 +297,45 @@ export function explainTick(input) {
       });
     } else if (kind === "agent_died") {
       fallSeen = true;
-      drafts.push(fallDraft(payload, agents));
+      const key = anchorKey(payload.recipient_anchor);
+      const drop = key === null ? undefined : dropsByCarrier.get(key);
+      const draft = fallDraft(
+        payload,
+        agents,
+        fallPoints(taskMode, payload.home_fall === true),
+        drop ? view.dropped(drop) : null,
+      );
+      if (key !== null && pickups.has(key)) heldFalls.set(key, draft);
+      else drafts.push(draft);
+    } else if (FLAG_LINE_KINDS.has(kind)) {
+      const key = anchorKey(payload.agent_anchor);
+      const isDrop =
+        kind === "flag_dropped" ||
+        (kind === "flag_changed" &&
+          payload.state_before === "carried" &&
+          payload.state_after === "dropped");
+      if (isDrop && key !== null && fallen.has(key)) continue;
+      const text = view.line(kind, payload);
+      if (text !== null) {
+        drafts.push({
+          kind: "flag",
+          text,
+          anchorKey: seenKey(payload.agent_anchor, agents),
+        });
+        if (
+          kind === "flag_captured" ||
+          (kind === "flag_changed" &&
+            payload.state_before === "carried" &&
+            payload.state_after === "home")
+        ) {
+          lastCapture = drafts.length - 1;
+        }
+      }
+      const held = key === null ? undefined : heldFalls.get(key);
+      if (held !== undefined && !isDrop) {
+        drafts.push(held);
+        heldFalls.delete(/** @type {string} */ (key));
+      }
     } else if (kind === "agent_respawned") {
       drafts.push({
         kind: "return",
@@ -247,20 +356,22 @@ export function explainTick(input) {
     }
   }
 
+  drafts.push(...heldFalls.values());
   if (input.score?.changed) {
     const scoreDraft = {
       kind: "score",
-      text: `Score: Team A ${input.score.after[0]}, Team B ${input.score.after[1]}.`,
+      text: `${scoreLabel(taskMode)}: Team A ${input.score.after[0]}, Team B ${input.score.after[1]}.`,
       anchorKey: null,
     };
-    // The score line follows the last fall; with no seen fall it comes last.
-    let lastFall = -1;
-    if (fallSeen) {
+    // The score line follows what scored: the last fall in Team Deathmatch,
+    // the capture line in Capture the Flag; with neither seen it comes last.
+    let last = fallsScore ? -1 : lastCapture;
+    if (fallsScore && fallSeen) {
       drafts.forEach((draft, index) => {
-        if (draft.kind === "fall") lastFall = index;
+        if (draft.kind === "fall") last = index;
       });
     }
-    drafts.splice(lastFall === -1 ? drafts.length : lastFall + 1, 0, scoreDraft);
+    drafts.splice(last === -1 ? drafts.length : last + 1, 0, scoreDraft);
   }
 
   return Object.freeze({
@@ -963,16 +1074,29 @@ function statusDraft(payload, agents) {
 }
 
 /**
- * Build the item of one fall, with its points: 2 when the event's home_fall
- * flag says it scored double, else 1, to the other team.
+ * Build the item of one fall. points (from fallPoints) are the other team's:
+ * 1, or 2 when the event's home_fall flag says it scored double ("Rogue ID 7
+ * fell. Team B scores 2 points (x2: it fell in its own Red Zone)."); null when
+ * a fall scores nothing (Capture the Flag), which gives "Rogue ID 7 fell."
+ * with the carrier's drop words after a semicolon when dropped is not null
+ * ("Rogue ID 7 fell; Team A's flag dropped (30 ticks).").
  *
  * @param {Readonly<Record<string, any>>} payload
  * @param {Map<string, Record<string, any>>} agents
+ * @param {1 | 2 | null} points
+ * @param {string | null} dropped
  * @returns {{kind: string, text: string, anchorKey: string | null}}
  */
-function fallDraft(payload, agents) {
+function fallDraft(payload, agents, points, dropped) {
+  const name = capitalize(nameOf(payload.recipient_anchor, agents, UNSEEN_RECIPIENT));
+  if (points === null) {
+    return {
+      kind: "fall",
+      text: `${name} fell${dropped === null ? "" : `; ${dropped}`}.`,
+      anchorKey: seenKey(payload.recipient_anchor, agents),
+    };
+  }
   const fallen = agents.get(anchorKey(payload.recipient_anchor) ?? "");
-  const points = payload.home_fall === true ? 2 : 1;
   const scorer =
     fallen?.team_id === 1
       ? teamLabelFromId(2)
@@ -984,11 +1108,137 @@ function fallDraft(payload, agents) {
     scorer === null
       ? `The other team scores ${pointsText}`
       : `${scorer} scores ${pointsText}`;
-  const double = payload.home_fall === true ? " (x2: it fell in its own Red Zone)" : "";
+  const double = points === 2 ? " (x2: it fell in its own Red Zone)" : "";
   return {
     kind: "fall",
-    text: `${capitalize(nameOf(payload.recipient_anchor, agents, UNSEEN_RECIPIENT))} fell. ${scoreText}${double}.`,
+    text: `${name} fell. ${scoreText}${double}.`,
     anchorKey: seenKey(payload.recipient_anchor, agents),
+  };
+}
+
+/** The event kinds that give a flag line (Oracle's five and Agent POV's one). */
+const FLAG_LINE_KINDS = new Set([
+  "flag_picked_up",
+  "flag_dropped",
+  "flag_returned",
+  "flag_automatically_returned",
+  "flag_captured",
+  "flag_changed",
+]);
+
+/**
+ * Return the words of Capture the Flag's lines for one tick. Pure.
+ *
+ * line(kind, payload) gives the sentence of one flag event, or null for a row
+ * that has none. Oracle View names whose flag ("Team A's flag") and the champion
+ * that acted, as the event row anchors it: "Rogue ID 7 picked up Team A's
+ * flag.", "Mage ID 2 returned Team A's flag.", "Team A's flag went home." (its
+ * timer ran out), "Rogue ID 7 captured Team A's flag.", and a drop with no fall
+ * line "Team A's flag dropped (30 ticks)." Agent POV says "your flag" or "their
+ * flag" from the viewing team and names a champion only when the row's anchor
+ * is in the POV scene: "Mage ID 5 picked up your flag." or "Your flag was picked
+ * up." ("Your team picked up their flag." for theirs), "... captured your flag."
+ * or "Your flag was captured.", "Your flag went home." (a return by touch or by
+ * the timer, which this view cannot tell apart), "Your flag was dropped.", and
+ * for a grab and fall (decision 169), whose grabber the row never names: "Your
+ * flag was picked up and dropped." from home, "Your flag was picked up and
+ * dropped again. Its 30 ticks start over." from the ground (the 30 is the
+ * public input.returnTicks). dropped(payload) gives a drop's words inside a
+ * fall line ("Team A's flag dropped (30 ticks)" in Oracle View, "your flag
+ * dropped" in Agent POV, which gives no ticks in a drop line, as approved). The
+ * ticks are the flag's ticks left after the tick, from the shown scene.
+ *
+ * @param {FrameExplanationInput} input
+ * @param {Map<string, Record<string, any>>} agents
+ */
+function flagView(input, agents) {
+  const pov = input.audience === "agent_pov";
+  const flags = Array.isArray(input.flags?.flags) ? input.flags.flags : [];
+  /** @param {unknown} teamId */
+  const whose = (teamId) =>
+    pov
+      ? teamId === input.teamId
+        ? "your flag"
+        : "their flag"
+      : `${teamLabelFromId(teamId) ?? "A team"}'s flag`;
+  // Oracle View's drop lines give the ticks left; Agent POV's, as approved,
+  // give none.
+  /** @param {unknown} teamId */
+  const ticks = (teamId) => {
+    const left = flags.find((flag) => flag?.team_id === teamId)?.countdown_steps;
+    return !pov && Number.isInteger(left) && left > 0
+      ? ` (${tickCountText(left)})`
+      : "";
+  };
+  const restart = Number.isInteger(input.returnTicks)
+    ? `Its ${tickCountText(input.returnTicks)} start over.`
+    : "Its countdown starts over.";
+  /** @param {Record<string, any>} payload */
+  const named = (payload) => {
+    const agent = agents.get(anchorKey(payload.agent_anchor) ?? "");
+    return agent === undefined ? null : canonicalAgentIdentity(agent).sourceName;
+  };
+  /** @param {Record<string, any>} payload */
+  const dropped = (payload) =>
+    `${whose(payload.flag_team_id)} dropped${ticks(payload.flag_team_id)}`;
+  return {
+    dropped,
+    /**
+     * @param {string} kind
+     * @param {Record<string, any>} payload
+     * @returns {string | null}
+     */
+    line(kind, payload) {
+      const flag = whose(payload.flag_team_id);
+      const ours = pov && payload.flag_team_id === input.teamId;
+      const who = named(payload);
+      let change = kind;
+      if (kind === "flag_changed") {
+        const { state_before: before, state_after: after } = payload;
+        change =
+          after === "carried"
+            ? "flag_picked_up"
+            : after === "home"
+              ? before === "carried"
+                ? "flag_captured"
+                : "flag_automatically_returned"
+              : before === "carried"
+                ? "flag_dropped"
+                : "grab_and_fall";
+      }
+      if (change === "flag_picked_up") {
+        return who !== null
+          ? `${who} picked up ${flag}.`
+          : ours
+            ? "Your flag was picked up."
+            : pov
+              ? "Your team picked up their flag."
+              : `${capitalize(flag)} was picked up.`;
+      }
+      if (change === "flag_captured") {
+        return who !== null
+          ? `${who} captured ${flag}.`
+          : `${capitalize(flag)} was captured.`;
+      }
+      if (change === "flag_returned") {
+        return who !== null
+          ? `${who} returned ${flag}.`
+          : `${capitalize(flag)} went home.`;
+      }
+      if (change === "flag_automatically_returned")
+        return `${capitalize(flag)} went home.`;
+      if (change === "flag_dropped") {
+        return pov
+          ? `${capitalize(flag)} was dropped${ticks(payload.flag_team_id)}.`
+          : `${capitalize(dropped(payload))}.`;
+      }
+      if (change === "grab_and_fall") {
+        return payload.state_before === "dropped"
+          ? `${capitalize(flag)} was picked up and dropped again. ${restart}`
+          : `${capitalize(flag)} was picked up and dropped.`;
+      }
+      return null;
+    },
   };
 }
 

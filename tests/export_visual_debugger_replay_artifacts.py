@@ -10,7 +10,9 @@ version-4 DevClient capture at Red Zone depth 5.0 on the 20 x 12 fixture map:
 in one 5v5 all-Mage tick Team A kills agents 5 and 6 inside Team B's Red Zone
 (2 points each) and Team B kills agent 3 outside Team A's Red Zone (1 point).
 It fails unless the deaths are (3, 5, 6) and the scores are (4, 1). Both
-DevClient captures share one one-tick capture helper.
+DevClient captures share one one-tick capture helper. The --capture-the-flag
+export writes the hand-built Capture the Flag story as replay V5, once per
+observation mode, so the browser specs see every flag state.
 """
 
 from __future__ import annotations
@@ -504,18 +506,45 @@ def export_red_zone_artifacts(output_directory: Path) -> dict[str, str]:
     return {"red_zone": str(path.resolve())}
 
 
+def export_capture_the_flag_artifacts(output_directory: Path) -> dict[str, str]:
+    """Write the hand-built Capture the Flag story replays and return their paths.
+
+    The story (tests/viewer/test_capture_the_flag_viewer.py) is a map-42 game of
+    Team A's Mage and Warrior against Team B's Rogue with a 2-tick return, where
+    every flag state happens once: a grab and fall from home, a pickup, a return
+    by touch, a drop, a timed return and the winning capture at frame 6. Its
+    frames and flag rows are hand-set until Core scores Capture the Flag. Writes
+    one replay V5 per observation mode and returns {"no_shared_obs": path,
+    "shared_obs": path}.
+    """
+    from tests.viewer.test_capture_the_flag_viewer import build_capture_the_flag_story
+
+    from marl_battlegrounds.evaluation.replay_io import save_replay
+
+    output_directory.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, str] = {}
+    for mode, (_, replay) in build_capture_the_flag_story().items():
+        path = output_directory / f"capture-the-flag-{mode}{REPLAY_FILE_SUFFIX_V1}"
+        save_replay(replay, path)
+        paths[mode] = str(path.resolve())
+    return paths
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-directory", type=Path, required=True)
     choice = parser.add_mutually_exclusive_group()
     choice.add_argument("--c7-acceptance", action="store_true")
     choice.add_argument("--red-zone", action="store_true")
+    choice.add_argument("--capture-the-flag", action="store_true")
     args = parser.parse_args()
     exporter = (
         export_acceptance_artifacts
         if args.c7_acceptance
         else export_red_zone_artifacts
         if args.red_zone
+        else export_capture_the_flag_artifacts
+        if args.capture_the_flag
         else export_artifacts
     )
     print(json.dumps(exporter(args.output_directory), sort_keys=True))

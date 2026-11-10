@@ -2093,10 +2093,12 @@ def _pov_capture_the_flag(
     only for a body that source sees or is (decision 155); it is resolved
     through that source's own observation rows to a public ID, then to its POV
     key in agent_by_public_id. The return ticks have no actor source, so
-    return_steps is None. Raise ValueError when rows are missing or break
-    decision 139 (decode_capture_the_flag_objective_rows_v1), when sources
-    disagree about a flag or name different carriers, or when a named carrier's
-    body is not in this view. Nothing is read from Oracle data.
+    return_steps is None; every view reads that public rule setting from its
+    match summary (``MatchSummaryV1.flag_return_steps``). Raise ValueError
+    when rows are missing or break decision 139
+    (decode_capture_the_flag_objective_rows_v1), when sources disagree about a
+    flag or name different carriers, or when a named carrier's body is not in
+    this view. Nothing is read from Oracle data.
     """
     if type(sources[0][1]) is not ActorPovAxisMappingV4:
         return None

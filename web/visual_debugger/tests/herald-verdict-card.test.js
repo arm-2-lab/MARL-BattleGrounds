@@ -7,7 +7,7 @@
  * policy keeps its own name), the lead line only on a horizon draw with a
  * lead, an Honors cell per honor with every tied leader's medallion, and the
  * Match Summary and Show Arena buttons, centred over the arena and scaled to
- * fit; verdictButtons gives the buttons' boxes in arena px and
+ * fit (Show Arena alone, centred, for a game with no Match Summary sheet); verdictButtons gives the buttons' boxes in arena px and
  * buildVerdictActions makes them real buttons that report their id. Tucked
  * (Show Arena) or with full cards off it is the band plate in the top band.
  * A herald plate lives only in the top band, keeps the spot it was first given
@@ -114,6 +114,22 @@ const DRAW = {
     },
   ],
 };
+
+test("a game with no Match Summary sheet shows Show Arena alone, centred", () => {
+  const [card] = heralds.records({
+    part: "verdict",
+    product: "replay_viewer",
+    verdict: { ...DRAW, summary: false },
+    bounds,
+  });
+  const boxes = heralds.verdictButtons(card);
+  assert.deepEqual(
+    boxes.map((box) => box.label),
+    ["Show Arena"],
+  );
+  const middle = card.x + (card.width * card.scale) / 2;
+  assert.ok(Math.abs(boxes[0].left + boxes[0].width / 2 - middle) < 0.01);
+});
 
 test("the full verdict follows the home ends, names controllers, honors ties and has two buttons", () => {
   const [card] = heralds.records({

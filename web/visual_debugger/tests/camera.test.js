@@ -12,6 +12,9 @@
  * play. Camera switches: framing off gives Whole Map; B does nothing outside
  * the Replay Viewer. Tip texts are quoted exactly. The remembered camera maps
  * the old "director" value to Battle Cam, and every storage failure is safe.
+ * Capture the Flag: Everyone in View keeps a dropped flag and one whose
+ * carrier the view cannot see, never a flag at home; no frame cuts a pennant;
+ * Battle Cam frames a "flag" fight like a blow.
  * There is no Camera Inset any more (4 Oct 2026): records never give
  * a "camera-inset" record and the switch draws no picture.
  * Agent POV: over the browser fixture's POV frames, changing hidden champions'
@@ -54,6 +57,7 @@ import {
   FIRST_OPEN_TIP,
   FIRST_OPEN_TIP_MS,
   FIRST_OPEN_TIP_SEEN_KEY,
+  FLAG_REACH,
   FOOTPRINT,
   firstOpenTipDue,
   killCamKeyframes,
@@ -314,6 +318,47 @@ test("Everyone in View keeps every spot, zooms in 0.25 steps and never cuts a bo
 function clampAny(value, low, high) {
   return Math.min(high, Math.max(low, value));
 }
+
+test("Capture the Flag: Everyone in View keeps flags in play, and no frame cuts a pennant", () => {
+  const camera = campCamera([[9, 5]], [[11, 5]]);
+  /** @param {ReadonlyArray<Record<string, any>>} flags */
+  const frameWith = (flags) =>
+    everyoneInViewFrame({
+      camera,
+      worldWidth: W,
+      worldHeight: H,
+      scene: { agents: [], capture_the_flag: { flags } },
+    });
+  const home = { state: "home", position: [0.5, 5], carrier_presentation_key: null };
+  // Flags at home stay out of the must-keep spots, so V still zooms in.
+  assert.equal(frameWith([home, { ...home, position: [19.5, 5] }]).zoom, 2);
+  // A dropped flag, and one carried by a champion this view cannot see, stay in view.
+  for (const flag of [
+    { state: "dropped", position: [15, 7], carrier_presentation_key: null },
+    { state: "carried", position: [15, 7], carrier_presentation_key: null },
+  ]) {
+    const { frame } = frameWith([home, flag]);
+    assert.ok(wholeInside(frame, [15, 7]), flag.state);
+    assert.ok(
+      notCut(frame, [15 + FLAG_REACH[0], 7 + FLAG_REACH[1]]),
+      "the pennant is whole",
+    );
+  }
+  // A seen carrier's flag rides a body the frame keeps already.
+  const seen = {
+    state: "carried",
+    position: [15, 7],
+    carrier_presentation_key: "key-1",
+  };
+  assert.equal(frameWith([home, seen]).zoom, 2);
+  // Battle Cam frames a flag change like a blow.
+  const flagged = {
+    ...campCamera([], [[14, 7]]),
+    fights: [{ kind: "flag", points: [[15, 7]] }],
+  };
+  const fight = battleCamFrame({ camera: flagged, worldWidth: W, worldHeight: H });
+  assert.ok(fight.zoom > 1 && wholeInside(fight.frame, [15, 7]));
+});
 
 test("Everyone in View sits near the map centre, and is the Whole Map with no bodies", () => {
   const empty = everyoneInViewFrame({

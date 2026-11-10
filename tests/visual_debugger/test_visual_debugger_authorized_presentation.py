@@ -10,8 +10,9 @@ properties and requires every field except named historical additions, the
 scene's optional ``team_sight`` (the Agent POV merged sight, live and
 replayed, whose ``turn_shapes`` are required; an Oracle scene carries it as
 null), the scene's optional ``capture_the_flag`` and the incoming summary's
-optional ``flag_trajectories`` (both null outside Capture the Flag), and the
-frame's optional host facts
+optional ``flag_trajectories`` (both null outside Capture the Flag), the match
+summary's optional ``flag_return_steps`` (null outside Capture the Flag), and
+the frame's optional host facts
 ``champion_streaks`` (Champion Streaks), ``match_honors`` (the game-over
 Honors), ``match_moments`` (the Herald Cards history), ``next_end_spots``
 (the Next Step Ghost) and ``recent_falls`` (the Fallen panel history). The
@@ -1129,6 +1130,7 @@ def test_every_nested_wire_object_forbids_additional_properties() -> None:
                 "episode_seed",
                 "slot_controller_names",
                 "scores_ten_ticks_ago",
+                "flag_return_steps",
             }
             if name == "MatchSummaryV1"
             else {"killing_team_id", "contributors", "home_fall"}

@@ -8,6 +8,11 @@
  *   (its spawn end), "Tick 91 of 300" and "First to 20"; the Scorebug switch
  *   off gives the plain "Score: 2/20" with no goal and no bar; a scoring tick
  *   keeps the old score and bar for the Fall beat; no summary gives nothing.
+ * - Capture the Flag: captures out of "First to 3", the plain "Captures: 2/3",
+ *   and one flag chip per team for its own flag: "Home", "Carried" with the
+ *   carrier's class seal in its team color only when the view's scene names
+ *   the carrier, "Dropped · 28"; each with its accessible name; a capture tick
+ *   keeps the earlier chip for the score beat. Team Deathmatch has no chip.
  * - Respawn wave: "Respawn Wave in N Ticks" with N = the soonest countdown + 1
  *   (Core brings champions back on the transition that starts at countdown
  *   0), and "1 Tick" for one.
@@ -200,6 +205,110 @@ test("no summary gives an empty scorebug", () => {
   assert.equal(view.available, false);
   assert.deepEqual(view.teams, []);
   assert.equal(`${view.tickText}${view.firstToText}${view.waveText}`, "");
+});
+
+test("Capture the Flag: captures out of First to 3, and one flag chip per team", () => {
+  const home = (/** @type {1 | 2} */ team) => ({
+    team_id: team,
+    state: "home",
+    position: team === 1 ? [0.5, 5] : [19.5, 5],
+    home_position: team === 1 ? [0.5, 5] : [19.5, 5],
+    carrier_presentation_key: null,
+    carrier_public_agent_id: null,
+    countdown_steps: 0,
+  });
+  const carried = {
+    ...home(2),
+    state: "carried",
+    position: [4.7, 6],
+    carrier_presentation_key: "key-hunter",
+    carrier_public_agent_id: "agent-2",
+  };
+  const hunter = { presentation_key: "key-hunter", class_id: 3, team_id: 1 };
+  const ctf = summary({
+    taskMode: 3,
+    threshold: 3,
+    teams: [
+      { teamId: 1, side: "right", scoreValue: 2 },
+      { teamId: 2, side: "left", scoreValue: 1 },
+    ],
+  });
+  const chips = (/** @type {Record<string, any>} */ options) =>
+    liveScorebugView(ctf, options).teams.map((team) => team.flag);
+  const view = liveScorebugView(ctf, {
+    flags: { flags: [home(1), carried], agents: [hunter], trajectories: null },
+  });
+  assert.deepEqual(
+    [view.firstToText, view.teams[0].goalText, view.teams[0].segments],
+    ["First to 3", "/ 3", 3],
+  );
+  const [chipA, chipB] = view.teams.map((team) => team.flag);
+  assert.deepEqual(
+    [chipA?.text, chipA?.seal, chipA?.label, chipA?.before],
+    ["Home", null, "Team A's Flag: Home", null],
+  );
+  assert.deepEqual(
+    [chipB?.text, chipB?.seal, chipB?.label],
+    [
+      "Carried",
+      { glyph: "class-hunter", teamId: 1 },
+      "Team B's Flag: Carried by a Hunter",
+    ],
+  );
+  // Agent POV: a carrier the team cannot see is not in its scene, so no seal.
+  const unseen = chips({
+    flags: {
+      flags: [
+        home(1),
+        { ...carried, carrier_presentation_key: null, carrier_public_agent_id: null },
+      ],
+      agents: [],
+      trajectories: null,
+    },
+  })[1];
+  assert.deepEqual(
+    [unseen?.text, unseen?.seal, unseen?.label],
+    ["Carried", null, "Team B's Flag: Carried"],
+  );
+  const dropped = chips({
+    flags: {
+      flags: [
+        home(1),
+        {
+          ...carried,
+          state: "dropped",
+          carrier_presentation_key: null,
+          carrier_public_agent_id: null,
+          countdown_steps: 28,
+        },
+      ],
+      agents: [],
+      trajectories: null,
+    },
+  })[1];
+  assert.deepEqual(
+    [dropped?.text, dropped?.label],
+    ["Dropped · 28", "Team B's Flag: Dropped, 28 ticks left"],
+  );
+  // A capture: the chip waits for the score beat with the capture count.
+  const captured = chips({
+    flags: {
+      flags: [home(1), home(2)],
+      agents: [hunter],
+      trajectories: [{ team_id: 2, transition_start: carried, successor: home(2) }],
+    },
+  })[1];
+  assert.deepEqual(
+    [captured?.text, captured?.before?.text, captured?.hold],
+    ["Home", "Carried", { kind: "score", key: null }],
+  );
+  // The plain score names captures; Team Deathmatch has no chip.
+  const plain = liveScorebugView(ctf, { filters: { scorebug: false } });
+  assert.equal(plain.teams[0].scoreText, "Captures: 2/3");
+  assert.deepEqual(
+    liveScorebugView(summary()).teams.map((team) => team.flag),
+    [null, null],
+  );
 });
 
 test("controller lines, the Yours tag and malformed configurations", () => {

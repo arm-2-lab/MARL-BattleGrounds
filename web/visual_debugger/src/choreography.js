@@ -41,7 +41,8 @@
  *   this plan (for example a death the Agent POV team did not see) gets no hold.
  * - Glide riders: elements with data-glide-follow (a champion's presentation
  *   key: its selection marks and reach rings, the live Command Ring, Order
- *   Studs and Reach Marks) take that body's glide too, in a played tick and a
+ *   Studs and Reach Marks, and a carried Capture the Flag pennant) take that
+ *   body's glide too, in a played tick and a
  *   rewind, so they never wait at its landing spot; one that a repaint
  *   replaced mid-glide joins the glide at its moment (#reattachRiders).
  * - Landing waits: elements with data-landing-wait (presentation keys: the
@@ -56,7 +57,8 @@
  *   data-beat-shiver-at="impact" shake sideways once at Impact plus data-beat-delay
  *   over data-beat-fade ms (normal motion, playback below 1.5x).
  * - The look-owned overrides of a played tick: the Start Spot, afterimage and trail
- *   marks (looks/movement.js), the Agent POV sight veil and Spotted Glints
+ *   marks (looks/movement.js), the slide of a carried pennant with no carrier
+ *   to ride (looks/flags.js), the Agent POV sight veil and Spotted Glints
  *   (looks/fog.js) and the Death Dimming path (`path.death-dim` with
  *   data-dim-start and data-dim-end, looks/atmosphere.js).
  * - The camera wrapper, through easeCamera and leanCamera (Kill Cam).
@@ -73,10 +75,11 @@ import {
   PLAN_RESOURCE_CAPS,
 } from "./choreography-plan.js";
 import { dimAnimation } from "./looks/atmosphere.js";
+import { animationSpecs as flagAnimationSpecs } from "./looks/flags.js";
 import { sightAnimationSpecs } from "./looks/fog.js";
 import {
-  animationSpecs as movementAnimationSpecs,
   dimShiftSpecs,
+  animationSpecs as movementAnimationSpecs,
 } from "./looks/movement.js";
 
 const DEFAULT_LEDGER_KEY = "marl-battlegrounds.visual-debugger.consumed-transitions.v1";
@@ -2844,7 +2847,8 @@ function deathDimSpecs(plan, surface, motionMode) {
  *
  * plan, surface and renderPolicy describe the tick; motionMode and playbackRate are
  * the controller's. Return {motion, accents}: motion holds the movement marks
- * (Start Spots, afterimages, the Focus Trail's dots) and the Agent POV sight
+ * (Start Spots, afterimages, the Focus Trail's dots), the slide of a Capture the
+ * Flag pennant whose carrier the view cannot see, and the Agent POV sight
  * veil's beats, which keep a mark or the light from showing ahead of a
  * champion, so #install bounds them by the animation limit only; accents holds
  * the hit shivers and Death Dimming, which share the plan's override allowance.
@@ -2870,6 +2874,13 @@ function playedLookSpecs(plan, surface, motionMode, playbackRate, renderPolicy) 
         beats: plan.beats,
       }),
       ...sightAnimationSpecs(root, plan, { motionMode, renderPolicy }),
+      // A carried flag whose carrier this view cannot see slides with the bodies.
+      ...flagAnimationSpecs(root, {
+        epochKey: String(plan.epochKey),
+        mode: "played",
+        motionMode,
+        beats: plan.beats,
+      }),
     ],
     accents: [
       ...shiverSpecs(plan, surface, motionMode, playbackRate),

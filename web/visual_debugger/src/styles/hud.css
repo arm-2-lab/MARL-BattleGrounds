@@ -751,6 +751,42 @@
   white-space: nowrap;
 }
 
+/* Capture the Flag: the carrier chip, the carried flag's outlined pennant
+   (the arena's carrier mark), in the carried flag's team colors. */
+.arena-frame__flag {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.arena-frame__flag svg {
+  width: 14px;
+  height: 14px;
+}
+
+.arena-frame__flag-pole {
+  fill: none;
+  stroke: var(--moon-silver);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.arena-frame__flag-shape {
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.arena-frame__flag[data-team="a"] .arena-frame__flag-shape {
+  fill: var(--team-a);
+  stroke: var(--team-a-light);
+}
+
+.arena-frame__flag[data-team="b"] .arena-frame__flag-shape {
+  fill: var(--team-b);
+  stroke: var(--team-b-light);
+}
+
 .arena-frame__returns-in,
 .arena-frame__unseen {
   color: var(--ui-muted);

@@ -48,6 +48,7 @@ import {
   isAuthorizedPresentationFrame,
 } from "./authorized-presentation-adapter.js";
 import { explainTechnicalFact } from "./explanations.js";
+import { hasMatchSummarySheet } from "./match-summary.js";
 import {
   createMetricSubjectChips,
   metricValueText,
@@ -150,6 +151,7 @@ export const TECHNICAL_FRAME_GROUPS = Object.freeze([
       "map",
       "observation_mode",
       "episode_limit",
+      "flag_return",
       "seeds",
     ]),
   }),
@@ -415,7 +417,7 @@ const MATCH_SUMMARY_STEMS = Object.freeze(["score", "kills", "deaths", "return"]
 export function ledgerMatchSummary(presentation, metricSummary) {
   if (!isAuthorizedPresentationFrame(presentation)) return null;
   const match = /** @type {Record<string, any>} */ (presentation).match_summary;
-  if (match?.task_mode !== 1) return null;
+  if (!hasMatchSummarySheet(match?.task_mode)) return null;
   const tickFact = authorizedPresentationTechnicalFacts(presentation).find(
     (fact) => fact.id === "simulator_step",
   );

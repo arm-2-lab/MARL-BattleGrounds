@@ -132,6 +132,10 @@ const TECHNICAL_FACT_HELP = Object.freeze({
     title: "Episode Limit",
     summary: "The maximum number of transitions planned for this episode.",
   }),
+  flag_return: Object.freeze({
+    title: "Flag Return",
+    summary: "The number of ticks a dropped flag waits before it goes home by itself.",
+  }),
   seeds: Object.freeze({
     title: "Seeds",
     summary:
@@ -660,8 +664,12 @@ function descriptor(kind, id, title, summary, rows, sections = [], options = {})
  * must supply the correct audience; this helper is not a privacy filter for
  * arbitrary researcher records.
  *
+ * selection.carrying, when given (a Capture the Flag carrier's words from
+ * flags.js carryingWords, which the caller takes from the same audience's
+ * scene), adds a "Carrying" row ("Team B's flag").
+ *
  * @param {unknown} rawAgent
- * @param {{controlled?: boolean, selected?: boolean, reference?: boolean, inspected?: boolean, audience?: string}} [selection]
+ * @param {{controlled?: boolean, selected?: boolean, reference?: boolean, inspected?: boolean, audience?: string, carrying?: string | null}} [selection]
  * @returns {SemanticDescriptor}
  */
 export function explainAgent(rawAgent, selection = {}) {
@@ -709,6 +717,11 @@ export function explainAgent(rawAgent, selection = {}) {
   if (combatCountdown !== null && combatCountdown > 0) {
     currentRows.push(row("Steps Until Out of Combat", tickCount(combatCountdown)));
   }
+  // Capture the Flag: the flag a carrier holds ("Carrying Team B's flag" from
+  // flags.js carryingWords), passed in by the caller from its own scene.
+  if (typeof selection.carrying === "string" && selection.carrying !== "") {
+    currentRows.push(row("Carrying", selection.carrying.replace(/^Carrying /u, "")));
+  }
   return descriptor(
     "agent",
     `agent:${semanticIdentity(agent)}`,
@@ -725,15 +738,17 @@ export function explainAgent(rawAgent, selection = {}) {
 
 /**
  * Build an agent card from the permitted identity/current-state fields.
- * Ignore _selection (default {}) and unrelated fields. Delegate formatting
- * to explainAgent using a reduced record. Return a descriptor; this field
- * projection does not itself prove the input was authorized for a recipient.
+ * Ignore unrelated fields and every selection flag except carrying (default
+ * {}), which passes the caller's Capture the Flag carrier words through. Delegate
+ * formatting to explainAgent using a reduced record. Return a descriptor; this
+ * field projection does not itself prove the input was authorized for a
+ * recipient.
  *
  * @param {unknown} rawAgent
- * @param {Record<string, unknown>} [_selection]
+ * @param {{carrying?: string | null, [flag: string]: unknown}} [selection]
  * @returns {SemanticDescriptor}
  */
-export function explainPovAgent(rawAgent, _selection = {}) {
+export function explainPovAgent(rawAgent, selection = {}) {
   const input = isRecord(rawAgent) ? rawAgent : {};
   const reduced = {
     presentation_key: input.presentation_key,
@@ -747,7 +762,10 @@ export function explainPovAgent(rawAgent, _selection = {}) {
     ultimate_cooldown_remaining: input.ultimate_cooldown_remaining,
     steps_until_out_of_combat: input.steps_until_out_of_combat,
   };
-  return explainAgent(reduced, { audience: "reduced_agent_pov" });
+  return explainAgent(reduced, {
+    audience: "reduced_agent_pov",
+    carrying: typeof selection.carrying === "string" ? selection.carrying : null,
+  });
 }
 
 const SPAWN_SHIELD_V1_KEYS = Object.freeze([

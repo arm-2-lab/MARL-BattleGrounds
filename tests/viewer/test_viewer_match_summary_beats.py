@@ -9,7 +9,9 @@ the score check itself: two ordinary falls in one tick, one home fall plus one
 ordinary fall, a Team B home fall and the swapped spawn ends all agree with the
 recorded score edges. Without the start frame, previous scores come from the
 score-change events and home_fall stays False. Old payloads without the new
-fields still validate; impossible values are refused. In replay presentations
+fields still validate (flag_return_steps None); impossible values are refused,
+and only a Capture the Flag summary carries flag_return_steps, which it must.
+In replay presentations
 every audience gets the same global match facts; the Oracle agent_died rows
 carry home_fall; an Agent POV agent_died row, and so its flag, exists only for
 a fall that audience saw, and Agent POV visual events hold only the returns
@@ -221,6 +223,7 @@ def test_old_payloads_validate_and_impossible_values_are_refused() -> None:
         strict=False,
     )
     assert old.previous_scores is None
+    assert old.flag_return_steps is None
     assert old.returned_agent_ids == ()
     assert old.deaths[0].home_fall is False
     assert MatchDeathV1(public_agent_id="x", team_id=1, class_id=2).home_fall is False
@@ -250,6 +253,13 @@ def test_old_payloads_validate_and_impossible_values_are_refused() -> None:
                 ),
             },
             strict=False,
+        )
+    # Only Capture the Flag records its public flag return ticks, and it must.
+    with pytest.raises(ValidationError, match="flag return ticks"):
+        old.model_validate({**old.model_dump(), "flag_return_steps": 30}, strict=False)
+    with pytest.raises(ValidationError, match="flag return ticks"):
+        old.model_validate(
+            {**old.model_dump(), "task_mode": 3, "score_threshold": 3}, strict=False
         )
     anchor = ReplayIncomingAgentAnchorV1(
         presentation_key="oracle_" + "0" * 64,

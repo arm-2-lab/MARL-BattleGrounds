@@ -623,7 +623,12 @@ test("main.js wires the top bar's save button and the arena's Match Summary key"
     /window\.open\(elements\.recordingReplayLink\.href, "_blank", "noopener"\)/u,
   );
   assert.match(click, /command_type: "retry_save"/u);
-  assert.match(MAIN, /elements\.arenaMatchSummaryButton\.hidden = !verdictFolded;/u);
+  // The key shows only while the Verdict is folded, in a game with a Match
+  // Summary sheet (Capture the Flag has none until its own summary exists).
+  assert.match(
+    MAIN,
+    /elements\.arenaMatchSummaryButton\.hidden =\s*!verdictFolded \|\|\s*!hasMatchSummarySheet\(/u,
+  );
   assert.match(
     MAIN,
     /const verdictFolded = records\.some\(\(row\) => row\.kind === "herald-verdict-plate"\);/u,

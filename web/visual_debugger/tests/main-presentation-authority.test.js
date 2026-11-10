@@ -1333,7 +1333,7 @@ test("main renders ranges and inspector chrome only from installed presentation 
   assert.doesNotMatch(source, /visualFilterProductDefaultsApplied/u);
   assert.match(
     filterControls,
-    /const visibleControlCount = switches\.length \+ 1;[\s\S]*enabledControlCount/u,
+    /const visibleControlCount = listed\.length \+ 1;[\s\S]*enabledControlCount/u,
   );
   assert.match(
     filterControls,

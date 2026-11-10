@@ -7,6 +7,7 @@
         "authorized-presentation-renderer.spec.js",
         "battle-client-controls.spec.js",
         "battle-client-play.spec.js",
+        "capture-the-flag.spec.js",
         "control-parity.spec.js",
         "recording-handoff.spec.js",
         "red-zone-metrics.spec.js",

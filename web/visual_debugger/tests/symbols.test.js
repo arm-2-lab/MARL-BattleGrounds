@@ -1,5 +1,5 @@
 /**
- * @file Check the one symbol list in symbols.js: 58 frozen symbols in the nine
+ * @file Check the one symbol list in symbols.js: 59 frozen symbols in the nine
  * symbol groups with unique IDs and aliases; the subtitle rule
  * (subtitles only for status effects, class callings and ability labels; every
  * other symbol shows its plain name); the fifteen approved status names in
@@ -116,7 +116,7 @@ function assertRecursivelyFrozen(value) {
   for (const child of Object.values(value)) assertRecursivelyFrozen(child);
 }
 
-test("the list holds 58 frozen symbols in the nine symbol groups", () => {
+test("the list holds 59 frozen symbols in the nine symbol groups", () => {
   assert.deepEqual(SYMBOL_GROUPS, [
     "Bodies and Rings",
     "Classes",
@@ -128,7 +128,7 @@ test("the list holds 58 frozen symbols in the nine symbol groups", () => {
     "HUD Marks",
     "Camera and Keys",
   ]);
-  assert.equal(SYMBOLS.length, 58);
+  assert.equal(SYMBOLS.length, 59);
   assertRecursivelyFrozen(SYMBOLS);
   assertRecursivelyFrozen(SYMBOL_GROUPS);
   const groupOrder = SYMBOLS.map((entry) => SYMBOL_GROUPS.indexOf(entry.group));

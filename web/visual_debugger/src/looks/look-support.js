@@ -3,9 +3,9 @@
  *
  * Each look module (one per Runefield part, for example `champions.js` or
  * `basics.js`) owns how its part is drawn. This file owns the small pieces they
- * all need: SVG node creation, attribute writing, identity attributes, allocator
- * metadata and leader lines, the shared event explanation, paint-part checks and
- * animation descriptions. `scene.js`, `choreography-painter.js` and the look
+ * all need: SVG node creation, attribute writing, path text for circles and arcs,
+ * identity attributes, allocator metadata and leader lines, the shared event
+ * explanation, paint-part checks and animation descriptions. `scene.js`, `choreography-painter.js` and the look
  * modules import it; it imports only shared label and tooltip owners.
  *
  * Two attribute writers exist on purpose, because the durable renderer and the
@@ -184,6 +184,67 @@ export function finiteNumber(value, fallback = 0) {
 export function screenPoint(point, transform) {
   const values = Array.isArray(point) ? point : [0, 0];
   return transform.worldToScreen([finiteNumber(values[0]), finiteNumber(values[1])]);
+}
+
+/**
+ * Round a screen number to 0.001 px, so path text is short and stable. Pure.
+ *
+ * @param {number} value A finite number in CSS pixels.
+ * @returns {number}
+ */
+export function pathNumber(value) {
+  return Number(value.toFixed(3));
+}
+
+/**
+ * Return the screen point at a radius and an angle from a center. Pure.
+ *
+ * Angles are in degrees on the screen: 0 points right and 90 points down, so a
+ * growing angle turns clockwise.
+ *
+ * @param {readonly [number, number]} center Screen point in CSS pixels.
+ * @param {number} radius CSS pixels.
+ * @param {number} degrees
+ * @returns {[number, number]}
+ */
+export function polarPoint(center, radius, degrees) {
+  const radians = (degrees * Math.PI) / 180;
+  return [
+    center[0] + radius * Math.cos(radians),
+    center[1] + radius * Math.sin(radians),
+  ];
+}
+
+/**
+ * Return a clockwise arc from one angle to a later one as SVG path text. Pure.
+ *
+ * start and end are degrees as polarPoint reads them, with end above start and
+ * at most 360 past it (use 359.9 for a nearly closed ring). The text starts with
+ * a move, so several arcs can share one path.
+ *
+ * @param {readonly [number, number]} center Screen point in CSS pixels.
+ * @param {number} radius CSS pixels.
+ * @param {number} start
+ * @param {number} end
+ * @returns {string}
+ */
+export function arcPath(center, radius, start, end) {
+  const [x0, y0] = polarPoint(center, radius, start);
+  const [x1, y1] = polarPoint(center, radius, end);
+  const r = pathNumber(radius);
+  return `M${pathNumber(x0)} ${pathNumber(y0)}A${r} ${r} 0 ${end - start > 180 ? 1 : 0} 1 ${pathNumber(x1)} ${pathNumber(y1)}`;
+}
+
+/**
+ * Return a full circle as SVG path text (two half arcs). Pure.
+ *
+ * @param {readonly [number, number]} center Screen point in CSS pixels.
+ * @param {number} radius CSS pixels.
+ * @returns {string}
+ */
+export function circlePath(center, radius) {
+  const r = pathNumber(radius);
+  return `M${pathNumber(center[0] - radius)} ${pathNumber(center[1])}a${r} ${r} 0 1 0 ${pathNumber(2 * radius)} 0a${r} ${r} 0 1 0 ${pathNumber(-2 * radius)} 0`;
 }
 
 /**

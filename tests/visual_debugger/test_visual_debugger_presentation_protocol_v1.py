@@ -1760,6 +1760,8 @@ def test_recursive_schema_is_closed_required_and_key_catalog_is_exhaustive() -> 
             "episode_seed",
             # Recorded per-slot controller names; None in older replays.
             "slot_controller_names",
+            # Capture the Flag's public flag return ticks; None in other modes.
+            "flag_return_steps",
         },
         "root.$defs.MatchDeathV1": {"killing_team_id", "contributors", "home_fall"},
         "root.$defs.MatchTeamV1": {"display_side"},

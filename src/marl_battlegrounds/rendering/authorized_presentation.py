@@ -2796,8 +2796,9 @@ class AuthorizedCaptureTheFlagV1:
         Positive reach for a pickup or a return, in map units.
     return_steps : int | None
         Positive ticks a dropped flag waits before going home by itself; None
-        where the audience has no source for it (Agent POV, until he decides
-        whether the setting is public there).
+        in Agent POV, whose scene is built from the actor's own rows. The
+        setting is public in every view, which reads it from the match summary
+        (``MatchSummaryV1.flag_return_steps``).
 
     Raises
     ------
@@ -6068,7 +6069,10 @@ class AgentPovVisualIncomingFlagChangedEventV1(_ReplayIncomingEventBaseV1):
     Built from the recipient's own two scenes, never from an Oracle flag event,
     so it says only what that view holds: the flag, its state before and after,
     and the carrier when that view names one. Require event kind flag_changed,
-    phase rank 130 and two different states. The anchor is the carrier at
+    phase rank 130 and two different states, except dropped to dropped: a flag
+    on the ground that an enemy picked up and dropped again on the same tick (a
+    grab and fall, decision 169), so it lies at a new spot or its countdown
+    started over. The anchor is the carrier at
     successor when the flag ends carried (a pickup), at transition_start when
     it starts carried (a capture or a drop), and None otherwise (a return, or a
     grab and fall, whose grabber is never named) or when that view did not see
@@ -6084,7 +6088,8 @@ class AgentPovVisualIncomingFlagChangedEventV1(_ReplayIncomingEventBaseV1):
     state_before : CaptureTheFlagFlagState
         "home", "carried" or "dropped" at transition_start.
     state_after : CaptureTheFlagFlagState
-        The state at successor; never equal to state_before.
+        The state at successor; equal to state_before only for dropped to
+        dropped (a grab and fall from the ground).
     agent_anchor : ReplayIncomingAgentAnchorV1 | None
         The carrier the view names, at the phase described above, or None.
     Raises
@@ -6100,7 +6105,7 @@ class AgentPovVisualIncomingFlagChangedEventV1(_ReplayIncomingEventBaseV1):
     state_before: CaptureTheFlagFlagState
     """"home", "carried" or "dropped" at transition_start."""
     state_after: CaptureTheFlagFlagState
-    """The state at successor; never equal to state_before."""
+    """The state at successor; equal to state_before only for dropped to dropped."""
     agent_anchor: ReplayIncomingAgentAnchorV1 | None
     """The carrier the view names, at the phase described above, or None."""
 
@@ -6122,9 +6127,12 @@ class AgentPovVisualIncomingFlagChangedEventV1(_ReplayIncomingEventBaseV1):
             self.flag_team_id not in (1, 2)
             or self.state_before not in states
             or self.state_after not in states
-            or self.state_before == self.state_after
+            or (self.state_before == self.state_after != "dropped")
         ):
-            raise ValueError("a flag change needs its flag and two different states.")
+            raise ValueError(
+                "a flag change needs its flag and two states that differ "
+                "(or dropped twice)."
+            )
         if self.agent_anchor is not None:
             _require_incoming_anchor(
                 self.agent_anchor,
@@ -6269,8 +6277,10 @@ class AgentPovVisualIncomingSummaryV1:
     flag_trajectories : tuple of two ReplayIncomingFlagTrajectoryV1, or None
         Both flags as this view's two scenes hold them, Team A's then Team B's,
         in a Capture the Flag game; None (the default) in every other mode.
-        Each flag_changed row is one flag whose state differs between its ends,
-        in team order; a named carrier joins its agent trajectory at that end.
+        Each flag_changed row is one flag that changed between its ends (its
+        state, or a dropped flag's spot or restarted countdown;
+        _agent_pov_flag_line_changed), in team order; a named carrier joins its
+        agent trajectory at that end.
     Raises
     ------
     ValueError
@@ -6325,8 +6335,8 @@ class AgentPovVisualIncomingSummaryV1:
         and the exact recipient at both endpoints. Event anchors must join
         authorized endpoints; after-state facts need an authorized successor and
         rejections belong only to the recipient. The flag_changed rows must be
-        exactly the flag trajectories' state changes, and named carriers join
-        their agent trajectories.
+        exactly the flag trajectories' changes (_agent_pov_flag_line_changed),
+        and named carriers join their agent trajectories.
         Raises
         ------
         ValueError
@@ -6550,7 +6560,7 @@ class AgentPovVisualIncomingSummaryV1:
         if changes != tuple(
             (row.team_id, row.transition_start.state, row.successor.state)
             for row in flags
-            if row.transition_start.state != row.successor.state
+            if _agent_pov_flag_line_changed(row.transition_start, row.successor)
         ):
             raise ValueError("Agent POV flag changes must equal the flag trajectories.")
         for row in flags:
@@ -9024,7 +9034,7 @@ def build_agent_pov_visual_incoming_summary_v1(
     trajectory_by_key = {row.agent_presentation_key: row for row in trajectories}
     for row in () if flag_trajectories is None else flag_trajectories:
         before, after = row.transition_start, row.successor
-        if before.state == after.state:
+        if not _agent_pov_flag_line_changed(before, after):
             continue
         carrier_end, phase = (
             (after, "successor")
@@ -9078,6 +9088,33 @@ def build_agent_pov_visual_incoming_summary_v1(
         events=event_rows,
         event_count=len(event_rows),
         flag_trajectories=flag_trajectories,
+    )
+
+
+def _agent_pov_flag_line_changed(
+    before: AuthorizedCaptureTheFlagFlagV1, after: AuthorizedCaptureTheFlagFlagV1
+) -> bool:
+    """Say whether one flag changed enough across a transition for a POV line.
+
+    Parameters
+    ----------
+    before, after : AuthorizedCaptureTheFlagFlagV1
+        The same flag at transition_start and at successor, from one view.
+
+    Returns
+    -------
+    bool
+        True when the state changed, or when a dropped flag stayed dropped but
+        lies at a new spot or its countdown went up (an enemy picked it up and
+        dropped it again on the same tick, decision 169). A dropped flag that
+        only counts down is no change. The browser's normalizer and its flag
+        look apply the same rule.
+    """
+    if before.state != after.state:
+        return True
+    return before.state == "dropped" and (
+        before.position != after.position
+        or after.countdown_steps > before.countdown_steps
     )
 
 

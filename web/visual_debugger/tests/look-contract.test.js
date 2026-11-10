@@ -54,6 +54,7 @@ const LOOK_NAMES = Object.freeze([
   "obstacles",
   "red-zone",
   "spawns",
+  "flags",
   "team-identity",
   "atmosphere",
   "champions",
@@ -79,6 +80,7 @@ const SUPPORT_FILES = Object.freeze([
 ]);
 const EMPTY_LOOKS = Object.freeze([
   "spawns",
+  "flags",
   "team-identity",
   "atmosphere",
   "fog",

@@ -21,7 +21,12 @@
  * inner half next to the middle and cover nothing (3 Oct 2026). Every
  * other client keeps it hidden.
  *
- * Who fills it: src/match-summary.js writes the scores, bars, the middle,
+ * Capture the Flag: each score box also holds its team's flag chip
+ * (span.sb-flag: the pennant, "Home", "Carried" with the carrier's class seal
+ * when the view sees it, or "Dropped · 28"), under its bar, facing the middle
+ * like the score.
+ *
+ * Who fills it: src/match-summary.js writes the scores, bars, the flag chips, the middle,
  * data-team-a-side and data-plain (the Scorebug switch off: a plain text
  * score, no bar); src/looks/hud.js writes the "Yours" tag, the controller
  * lines and the portraits (button.por: token, life bar, label). Life bars
@@ -665,6 +670,77 @@ html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer
   .bc-score[data-team-a-side="left"]
   .sb-score.b {
   justify-items: end;
+}
+
+/* Capture the Flag: each team's flag chip under its bar (match-summary.js
+   paintFlagChip). A held earlier chip shares its grid cell. */
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-score
+  > .sb-flag {
+  grid-row: 3;
+  grid-column: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+  padding: 1px 7px 1px 4px;
+  border-radius: 9px;
+  background: rgb(224 231 243 / 8%);
+  color: var(--moon);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag__pennant,
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag__seal {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag__seal {
+  width: 13px;
+  height: 13px;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag__pole {
+  fill: none;
+  stroke: var(--moon);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag__shape {
+  stroke: var(--ink);
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag[data-team="a"]
+  .sb-flag__shape {
+  fill: var(--azure);
+}
+
+html:is([data-product-kind="combat_debugger"], [data-product-kind="replay_viewer"])
+  .bc
+  .sb-flag[data-team="b"]
+  .sb-flag__shape {
+  fill: var(--crimson);
 }
 
 /* The middle: tick, First To, Respawn Wave In. */

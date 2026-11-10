@@ -3,8 +3,9 @@
  * tab and the BattleClient's Visual Filters drawer): one checkbox per display
  * switch that the current client shows (visualFiltersForProduct: in live play
  * only built switches, under their V5 labels and groups; less any switch the
- * page omits, such as Panel Tokens in the BattleClient), grouped under those
- * group names, each with its one-line help visible under it and its shipped default
+ * page omits, such as Panel Tokens in the BattleClient; a switch listed only in
+ * some game modes, such as Flags in Capture the Flag games, shows only while a
+ * game of its mode is installed), grouped under those group names, each with its one-line help visible under it and its shipped default
  * ("On by Default" or "Off by Default"); the "N of M On" count for the panel
  * and for each group; the five preset buttons (Default Configuration first and
  * lit while in use); the preset status line; Reset to Default Configuration;
@@ -44,10 +45,14 @@ import {
   DEFAULT_VISUAL_FILTER_STATE,
   isVisualFilterEnabled,
   LIVE_SWITCH_NAMES,
+  SWITCH_MODE_HELP,
+  SWITCH_TASK_MODES,
   VISUAL_FILTER_GROUPS,
   VISUAL_FILTER_PRESETS,
   VISUAL_FILTER_REGISTRY,
   visualFilterHandChanges,
+  visualFilterHelpInMode,
+  visualFilterShownInMode,
   visualFiltersForProduct,
 } from "./visual-filters.js";
 
@@ -301,7 +306,10 @@ export function visualFilterPresetStatus(state, presetId, switchIds) {
  * per registry group that has a switch, in VISUAL_FILTER_GROUPS order, whose
  * summary holds the group name and an "N of M On" count
  * (`data-visual-filter-group-count`); inside a group the switches keep
- * registry order. Replace the container's children so browser form
+ * registry order. A switch listed only in some game modes (Flags, Capture the
+ * Flag only; visualFilterShownInMode) is built hidden, with its help line, and
+ * renderVisualFilterControls shows it in a game of its mode. Replace the
+ * container's children so browser form
  * restoration cannot override a fresh page load. Each option label carries
  * `data-visual-filter-option` with its switch ID and ends with its shipped
  * default ("On by Default" or "Off by Default"); its help element (the
@@ -364,7 +372,9 @@ export function installVisualFilterControls(elements, product, options = {}) {
     const count = document.createElement("span");
     count.className = "visual-filters__group-count";
     count.dataset.visualFilterGroupCount = group;
-    count.textContent = `${members.filter((entry) => entry.defaultEnabled).length} of ${members.length} On`;
+    // Before any game, a mode-only switch (Flags) is hidden and not counted.
+    const listed = members.filter(({ id }) => visualFilterShownInMode(id, null));
+    count.textContent = `${listed.filter((entry) => entry.defaultEnabled).length} of ${listed.length} On`;
     summary.append(title, count);
     const body = document.createElement("div");
     body.className = "visual-filters__group-body";
@@ -392,6 +402,10 @@ export function installVisualFilterControls(elements, product, options = {}) {
       description.id = help.id;
       description.className = "visual-filters__option-help";
       description.textContent = help.text;
+      if (!visualFilterShownInMode(id, null)) {
+        option.hidden = true;
+        description.hidden = true;
+      }
       body.append(option, description);
     }
     section.append(summary, body);
@@ -511,11 +525,16 @@ export function createFilterControls(context) {
   /**
    * Paint checkbox, preset and bulk-button state from one local snapshot.
    *
-   * Sets each checkbox to its value in `snapshot`. The panel count reads
-   * "N of M On": it covers the switches this client shows plus the Ranges
+   * Sets each checkbox to its value in `snapshot`, and shows a mode-only switch
+   * (Flags) only while the installed game is of its mode (the presentation's
+   * public match_summary.task_mode; none before a game). The counts, Enable All,
+   * Disable All and the preset status cover only the switches listed for that
+   * mode. The panel count reads
+   * "N of M On": it covers those switches plus the Ranges
    * toggle (on when ranges show for the installed presentation), which counts
    * as one more control. Each group's count reads "N of M On" for its own
-   * switches only. Enable All is disabled when every control is on; Disable All when
+   * listed switches only. A help line with a mode version (SWITCH_MODE_HELP)
+   * shows the text for this game's mode. Enable All is disabled when every control is on; Disable All when
    * every control is off. The preset button of `presetId` is pressed
    * (`aria-pressed="true"`) and the others are not; the status line and Reset to
    * Default Configuration follow visualFilterPresetStatus (Reset is disabled
@@ -541,21 +560,50 @@ export function createFilterControls(context) {
         `Visual Filters requires exactly ${switches.length} checkboxes.`,
       );
     }
+    // The installed game's mode decides which mode-only switches are listed;
+    // the task mode is a public match fact.
+    const taskMode = state.presentation?.match_summary?.task_mode ?? null;
+    const listed = switches.filter(({ id }) => visualFilterShownInMode(id, taskMode));
+    const listedIds = Object.freeze(listed.map(({ id }) => id));
     let enabledCount = 0;
     for (const input of inputs) {
-      const enabled = isVisualFilterEnabled(snapshot, input.dataset.visualFilterId);
+      const id = input.dataset.visualFilterId;
+      const enabled = isVisualFilterEnabled(snapshot, id);
       input.checked = enabled;
-      enabledCount += enabled ? 1 : 0;
+      enabledCount += enabled && listedIds.includes(/** @type {string} */ (id)) ? 1 : 0;
+    }
+    // A help line that reads differently in this game's mode (the Fallen Feed
+    // in Capture the Flag) is rewritten for it.
+    for (const id of switchIds.filter((switchId) => switchId in SWITCH_MODE_HELP)) {
+      const text = visualFilterHelpInMode(id, taskMode);
+      for (const help of /** @type {NodeListOf<HTMLElement>} */ (
+        elements.visualFilterOptions.querySelectorAll(
+          `#${VISUAL_FILTER_OPTION_HELP[id].id}`,
+        )
+      )) {
+        if (help.textContent !== text) help.textContent = text;
+      }
+    }
+    // Show or hide each mode-only switch's row and help line for this game.
+    for (const id of switchIds.filter((switchId) => switchId in SWITCH_TASK_MODES)) {
+      const shown = listedIds.includes(id);
+      for (const node of /** @type {NodeListOf<HTMLElement>} */ (
+        elements.visualFilterOptions.querySelectorAll(
+          `[data-visual-filter-option="${id}"], #${VISUAL_FILTER_OPTION_HELP[id].id}`,
+        )
+      )) {
+        if (node.hidden === shown) node.hidden = !shown;
+      }
     }
     const rangesEnabled = installedPresentationRangesVisible(state.presentation);
-    const visibleControlCount = switches.length + 1;
+    const visibleControlCount = listed.length + 1;
     const enabledControlCount = enabledCount + (rangesEnabled ? 1 : 0);
     elements.visualFilterCount.textContent = `${enabledControlCount} of ${visibleControlCount} On`;
     for (const count of elements.visualFilterOptions.querySelectorAll(
       "[data-visual-filter-group-count]",
     )) {
       const group = count.dataset.visualFilterGroupCount;
-      const members = switches.filter((entry) => entry.group === group);
+      const members = listed.filter((entry) => entry.group === group);
       const on = members.filter(({ id }) => isVisualFilterEnabled(snapshot, id)).length;
       const text = `${on} of ${members.length} On`;
       if (count.textContent !== text) count.textContent = text;
@@ -564,7 +612,7 @@ export function createFilterControls(context) {
       enabledControlCount === visibleControlCount;
     elements.disableAllVisualFiltersButton.disabled = enabledControlCount === 0;
 
-    const status = visualFilterPresetStatus(snapshot, presetId, switchIds);
+    const status = visualFilterPresetStatus(snapshot, presetId, listedIds);
     for (const button of elements.visualFilterPresets.querySelectorAll(
       "button[data-visual-filter-preset]",
     )) {
@@ -591,6 +639,8 @@ export function createFilterControls(context) {
    * the two calls may repaint or send a request through their existing handlers.
    * In Agent POV the range change stays local; in Oracle View it asks Python.
    * The preset in use does not change; the switches now count as hand changes.
+   * A mode-only switch hidden in this game (Flags outside Capture the Flag) is
+   * set too, so it matches when a game of its mode is installed.
    *
    * @param {boolean} enabled True for Enable All, false for Disable All.
    * @returns {void}

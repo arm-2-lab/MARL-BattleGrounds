@@ -9,7 +9,8 @@
  * data, build(records, doc) gives export-safe SVG nodes, and this renderer puts
  * them in their layers. Durable looks mounted here: map skins (with tale
  * stones over the Standing Stones), atmosphere, Red Zone, spawn waystones,
- * Homeland Brackets, aura Ward Circles (with their played-tick moments, Aura
+ * Capture the Flag's flags and bases (on two layers, under and over the
+ * bodies; a carried flag rides its carrier's glide), Homeland Brackets, aura Ward Circles (with their played-tick moments, Aura
  * Glints and the Barrier Held stud flash), movement marks, reach rings and the
  * selection moonlight, the next-action thread (or the live hotbar) with the
  * Replay Viewer's All Staged Orders and Next Step Ghost (from the frame's own
@@ -55,7 +56,8 @@
  * own events (Oracle View: latest_events; Agent POV: visual_events, the POV
  * trajectories and the authorized sensor sources). In Agent POV that is the POV
  * scene alone: this file never reads the global researcher space or the match
- * summary's rows (the adapter scopes the double-scoring fall IDs it uses), so
+ * summary's rows (the adapter scopes the double-scoring fall IDs it uses, and
+ * reads the public episode limit and flag return ticks one field each), so
  * an aura or status tooltip can name only a champion the team can see, and a POV
  * status card never borrows a researcher row's source. The browser draws
  * supplied masks and events; it does not decide legality, advance games or
@@ -64,6 +66,7 @@
 import {
   authorizedPresentationCurrentTick,
   authorizedPresentationEpisodeLimit,
+  authorizedPresentationFlagReturnTicks,
   authorizedPresentationIncomingRows,
   authorizedPresentationInspectionState,
   authorizedPresentationMatchBeatFacts,
@@ -82,6 +85,7 @@ import {
 import * as atmosphere from "./looks/atmosphere.js";
 import * as championFrame from "./looks/champion-frame.js";
 import * as champions from "./looks/champions.js";
+import * as flags from "./looks/flags.js";
 import * as fog from "./looks/fog.js";
 import * as hotbar from "./looks/hotbar.js";
 import {
@@ -156,9 +160,11 @@ const DURABLE_VISUAL_PAINT_PARTS = Object.freeze({
  * (where bodies started), debug-range (selection moonlight, then reach rings),
  * pending-route (next action), fog (Agent POV sight veil, under stones),
  * obstacle, death-dim (Death Dimming over the floor and stones), strike-band
- * (activation routes: above stones, under bodies), body (selection brackets,
- * corpses, corpse marks, then living bodies), over (rings and marks on bodies),
- * selection-legality, transient-events, durable-status-modifier (docks),
+ * (activation routes: above stones, under bodies), flags-ground (Capture the
+ * Flag's bases and every flag on the ground, under every body), body (selection
+ * brackets, corpses, corpse marks, then living bodies), over (rings and marks on
+ * bodies), flags-above (a carried flag on its carrier's back, a dropped flag's
+ * ticks left and the flag cues, over every body), selection-legality, transient-events, durable-status-modifier (docks),
  * heralds (Herald Cards, above every body), explain (Frame Explanation marks)
  * and accessible-labels.
  */
@@ -176,8 +182,10 @@ export const BATTLEFIELD_LAYER_ORDER = Object.freeze([
   "obstacle",
   "death-dim",
   "strike-band",
+  "flags-ground",
   "body",
   "over",
+  "flags-above",
   "selection-legality",
   "transient-events",
   "durable-status-modifier",
@@ -656,6 +664,9 @@ export function incomingEventRows(summary) {
  *   in its `events` array; a look that reads rows (Rune Zones) gets that array.
  * - trajectories: Agent POV only, the visual_events agent_phase_trajectories
  *   array (null in Oracle View or when missing); the sight veil reads them.
+ * - flagTrajectories: this audience's flag rows for this tick (each flag at the
+ *   start and end of the transition; Agent POV builds its own from its two
+ *   scenes), or null outside Capture the Flag; the Flags and Bases look reads them.
  * - startSeen(presentationKey): whether a body was seen at the start of the tick
  *   (Oracle View: always true; Agent POV: its POV trajectory has a start spot).
  * - sensorSources: Agent POV only, current_endpoint.parts.authorized_sensor_sources
@@ -726,6 +737,9 @@ function audienceSources(frame, scene, visualFilters) {
   return Object.freeze({
     events,
     trajectories,
+    flagTrajectories: Array.isArray(events?.flag_trajectories)
+      ? /** @type {JsonRecord[]} */ (events.flag_trajectories)
+      : null,
     /**
      * Say whether the body with presentationKey was seen at the start of the tick.
      *
@@ -825,6 +839,7 @@ export class BattlefieldRenderer {
     const strikeBand = createLayer(doc, "strike-band", {
       "aria-label": "Authorized combat event routes",
     });
+    const flagsGround = createLayer(doc, "flags-ground", { "aria-hidden": "true" });
     const body = createLayer(doc, "body", { "aria-label": "Authorized agents" });
     this.bodyLayers = {
       dead: svgNode(doc, "g", { "data-body-state": "dead" }),
@@ -850,6 +865,7 @@ export class BattlefieldRenderer {
       this.bodyLayers.living,
     );
     const over = createLayer(doc, "over", { "aria-hidden": "true" });
+    const flagsAbove = createLayer(doc, "flags-above", { "aria-hidden": "true" });
     const selectionLegality = createLayer(doc, "selection-legality", {
       "aria-label": "Selection and exact actor-owned legality",
     });
@@ -883,8 +899,10 @@ export class BattlefieldRenderer {
       obstacle,
       deathDim,
       strikeBand,
+      flagsGround,
       body,
       over,
+      flagsAbove,
       selectionLegality,
       transientEvents,
       durableStatusModifier,
@@ -923,8 +941,10 @@ export class BattlefieldRenderer {
       obstacle,
       deathDim,
       strikeBand,
+      flagsGround,
       body,
       over,
+      flagsAbove,
       selectionLegality,
       transientEvents,
       durableStatusModifier,
@@ -1159,6 +1179,25 @@ export class BattlefieldRenderer {
         }),
         doc,
       ),
+    );
+    // Capture the Flag's flags and bases (no records in any other mode). The
+    // return ticks are a public rule setting fixed before the game (the same in
+    // both audiences); the adapter reads only that one field.
+    const flagInput = {
+      scene,
+      transform,
+      audience,
+      filters: visualFilterState,
+      flagTrajectories: sources.flagTrajectories,
+      returnTicks: authorizedPresentationFlagReturnTicks(frame),
+    };
+    replaceLayer(
+      this.layers.flagsGround,
+      flags.build(flags.records({ ...flagInput, part: "ground" }), doc),
+    );
+    replaceLayer(
+      this.layers.flagsAbove,
+      flags.build(flags.records({ ...flagInput, part: "above" }), doc),
     );
     replaceLayer(
       this.layers.teamIdentity,
@@ -1706,7 +1745,8 @@ export class BattlefieldRenderer {
   /**
    * Remove durable drawing children and reset retained scene and projection caches.
    *
-   * Clear every durable layer (map, atmosphere, Red Zone, spawns, brackets,
+   * Clear every durable layer (map, atmosphere, Red Zone, spawns, both flag
+   * layers, brackets,
    * aura, imprints, selection moonlight, ranges, route, fog, obstacles, Death
    * Dimming, bodies, corpse marks, plan marks, over, selection, legality,
    * docks, heralds,
@@ -1720,6 +1760,8 @@ export class BattlefieldRenderer {
     this.layers.atmosphere.replaceChildren();
     this.layers.redZone.replaceChildren();
     this.layers.spawns.replaceChildren();
+    this.layers.flagsGround.replaceChildren();
+    this.layers.flagsAbove.replaceChildren();
     this.layers.teamIdentity.replaceChildren();
     this.layers.aura.replaceChildren();
     this.layers.imprints.replaceChildren();

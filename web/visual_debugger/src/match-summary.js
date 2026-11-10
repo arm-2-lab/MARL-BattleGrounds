@@ -8,8 +8,8 @@
  * strip in #match-scoreboard in the Replay Viewer, or, in live play, the
  * match facts of the vision scorebug #scorebug: scores, "/ 20", the First To
  * bars, "Tick 91 of 300" (in a replay, "of" its last recorded tick), "First
- * to 20", "Respawn Wave in N Ticks" and the
- * side Team A sits on, through the pure liveScorebugView) and
+ * to 20", "Respawn Wave in N Ticks", the side Team A sits on and, in Capture
+ * the Flag, each team's flag chip, through the pure liveScorebugView),
  * hudSourcesFromFrame with
  * publicRosterIdentities and controllerRosterFromFrame (the one controller
  * model of controller-names.js for a frame; the Replay Viewer's team names,
@@ -42,7 +42,10 @@
  * facts (task, map, team names, scores, the scores 10 ticks ago, tick), plus
  * what the caller passes in its options (the public wave clock); it never
  * reads the researcher space. The live scorebug reads the same public facts,
- * the same in every view. hudSourcesFromFrame keeps the HUD's Agent POV rules: the
+ * the same in every view. Its flag chips are the one part it reads from the
+ * audience's own scene and events (flagChipSources): each flag's state and
+ * ticks left are public, and a chip shows the carrier's seal only when that
+ * scene names the carrier, which in Agent POV means the team sees it. hudSourcesFromFrame keeps the HUD's Agent POV rules: the
  * audience scene and visual events for what the team sees; the researcher
  * view only for the Replay Viewer's docked full record; identity fields only
  * (never health or positions) to list unseen champions in the BattleClient;
@@ -54,7 +57,14 @@
  * with an unchanged scorebug view leaves its DOM alone, so a hold that is
  * running keeps its nodes (renderLiveScorebug).
  */
-import { teamLabelFromId } from "./agent-identity.js";
+import {
+  classIdentityFromId,
+  isScoredTaskMode,
+  scoreLabel,
+  taskModeName,
+  teamLabelFromId,
+  tickCountText,
+} from "./agent-identity.js";
 import {
   authorizedPresentationAgentDisplayId,
   authorizedPresentationAudience,
@@ -72,8 +82,13 @@ import {
   rosterTeam,
 } from "./controller-names.js";
 import { createSvgIcon } from "./icons.js";
+import { flagChange, pennantGeometry } from "./looks/flags.js";
 import { symbolById } from "./symbols.js";
-import { createSemanticDescriptor, registerTooltipOwner } from "./tooltip.js";
+import {
+  createSemanticDescriptor,
+  createSymbolDescriptor,
+  registerTooltipOwner,
+} from "./tooltip.js";
 
 /** The most segments the First To bar draws; a higher threshold draws one fill. */
 export const SCORE_BAR_MAX_SEGMENTS = 40;
@@ -153,11 +168,26 @@ function tickLine(match, presentation) {
 }
 
 /**
+ * Say whether a game of a task mode has the per-champion Match Summary: the
+ * Ledger's match summary, the Match Summary sheet and the buttons that open it.
+ * Only Team Deathmatch (1) has it today; Capture the Flag (3) gets its own once
+ * its metric columns exist, and a sheet of Team Deathmatch rows would be false
+ * there. The one owner of that rule. Pure.
+ *
+ * @param {unknown} taskMode
+ * @returns {boolean}
+ */
+export function hasMatchSummarySheet(taskMode) {
+  return taskMode === 1;
+}
+
+/**
  * Build labels from a recognized presentation's match_summary, or return null.
  *
  * presentation may be any input. Unrecognized frames and missing summaries
  * produce null. Recognized records supply the map name/split, Team A/B names,
- * policy/checkpoint references, outcome and the tick. TDM adds scores and the
+ * policy/checkpoint references, outcome and the tick. A scored mode (Team
+ * Deathmatch or Capture the Flag; isScoredTaskMode) adds scores and the
  * threshold; combat diagnostics omit scores. The returned outer record and team
  * records are frozen; the teams array is newly allocated but not frozen. No DOM
  * or input record is changed. Normalization owns the validity of nested facts.
@@ -165,9 +195,9 @@ function tickLine(match, presentation) {
  * second, from agent-identity.js (no color words). Only match_summary is
  * read; the scoreboard sits beside the arena and shows public match facts.
  *
- * Fields: task ("TDM" or "Combat diagnostic"), taskMode (0 or 1), map (display
- * name with "(Test Map)" style split, or null), threshold (TDM points to win,
- * or null), tick ({current, limit, last, text} or null; see tickLine: a
+ * Fields: task ("TDM", "CTF" or "Combat diagnostic"), taskMode (0, 1 or 3), map
+ * (display name with "(Test Map)" style split, or null), threshold (points to
+ * win in Team Deathmatch, captures to win in Capture the Flag, or null), tick ({current, limit, last, text} or null; see tickLine: a
  * replay reads "Tick N of" its last recorded tick, live play "of" the draw
  * limit) and teams, in
  * recorded order (Team A first). Each team has teamId, side (the recorded spawn
@@ -185,14 +215,14 @@ export function matchSummaryView(presentation) {
     ? presentation.match_summary
     : null;
   if (!match) return null;
-  const tdm = match.task_mode === 1;
+  const scored = isScoredTaskMode(match.task_mode);
   return Object.freeze({
-    task: tdm ? "TDM" : "Combat diagnostic",
+    task: taskModeName(match.task_mode, { short: true }),
     taskMode: match.task_mode,
     map: match.map
       ? `${match.map.display_name}${match.map.split ? ` (${match.map.split[0].toUpperCase()}${match.map.split.slice(1)} Map)` : ""}`
       : null,
-    threshold: tdm ? match.score_threshold : null,
+    threshold: scored ? match.score_threshold : null,
     tick: tickLine(match, presentation),
     teams: match.teams.map(
       (/** @type {Record<string, any>} */ team, /** @type {number} */ index) =>
@@ -201,8 +231,8 @@ export function matchSummaryView(presentation) {
           side: matchTeamSide(match, team.team_id),
           label: teamLabelFromId(index + 1) ?? `Team ${index + 1}`,
           name: team.display_name,
-          score: tdm ? `${match.scores[index]}/${match.score_threshold}` : null,
-          scoreValue: tdm ? match.scores[index] : null,
+          score: scored ? `${match.scores[index]}/${match.score_threshold}` : null,
+          scoreValue: scored ? match.scores[index] : null,
           result:
             match.outcome === "draw"
               ? "DRAW"
@@ -313,6 +343,7 @@ export function renderMatchSummary(elements, presentation, options = {}) {
             ? beatScore.before
             : null,
         recentBaseline: momentumBaselineFromFrame(presentation, options.filters),
+        flags: flagChipSources(presentation),
       }),
     );
     return;
@@ -520,7 +551,8 @@ export const MOMENTUM_TICKS = 10;
  * state (null or absent: every switch at its default, so Momentum is off).
  * Returns the frozen [Team A, Team B] match_summary.scores_ten_ticks_ago
  * when filters.hud_momentum is true, the frame is an authorized presentation
- * of a TDM game (task_mode 1) and the field holds two whole numbers, each 0
+ * of a scored game (isScoredTaskMode: Team Deathmatch or Capture the Flag) and
+ * the field holds two whole numbers, each 0
  * or more and at most that team's score. Returns null with the switch off,
  * for a combat diagnostic, for a frame from before the field existed (null
  * or absent) and for a malformed pair, so no point is shown as recent. Each
@@ -539,7 +571,7 @@ export function momentumBaselineFromFrame(presentation, filters) {
   const match = isAuthorizedPresentationFrame(presentation)
     ? presentation.match_summary
     : null;
-  if (match?.task_mode !== 1) return null;
+  if (!isScoredTaskMode(match?.task_mode)) return null;
   const baseline = match.scores_ten_ticks_ago;
   const scores = match.scores;
   if (
@@ -572,6 +604,7 @@ export function momentumBaselineFromFrame(presentation, filters) {
  *   lit: number,
  *   recentFrom: number,
  *   before: Readonly<{scoreText: string, lit: number}> | null,
+ *   flag: FlagChip | null,
  * }>} LiveScoreTeam
  *   One team's score in the live scorebug. teamId 1 is Team A and key "a"
  *   names its elements (#score-a, #seg-a). value is the END score after this
@@ -586,14 +619,141 @@ export function momentumBaselineFromFrame(presentation, filters) {
  *   score, in the plain score or with no threshold. before is the score
  *   before this tick's Fall beat, {scoreText, lit} in the same form, when the
  *   score changed this tick; else null. The held old bar marks segments
- *   recentFrom to before.lit - 1 as recent.
+ *   recentFrom to before.lit - 1 as recent. flag is this team's own flag chip
+ *   in a Capture the Flag game (see FlagChip), else null.
  */
+
+/**
+ * @typedef {Readonly<{
+ *   state: "home" | "carried" | "dropped",
+ *   text: string,
+ *   seal: Readonly<{glyph: string, teamId: 1 | 2}> | null,
+ *   label: string,
+ * }>} FlagChipFace
+ *   What one flag chip shows: the flag's state, its words ("Home", "Carried",
+ *   "Dropped · 28" with the ticks left), the carrier's class seal (an icon key
+ *   such as "class-hunter", drawn in the carrier's team color) only when this
+ *   view's scene names the carrier, and its accessible name ("Team B's Flag:
+ *   Carried by a Hunter").
+ * @typedef {Readonly<FlagChipFace & {
+ *   before: FlagChipFace | null,
+ *   hold: Readonly<{kind: "impact" | "fall" | "score", key: string | null}> | null,
+ * }>} FlagChip
+ *   One team's flag chip at END, and, when the flag changed this tick, the chip
+ *   before the change and the beat it waits for (flags.js flagChange: "score"
+ *   for going home, the carrier's "fall" for a drop, "impact" for a pickup), so
+ *   the chip changes with the arena's flag and the capture count.
+ */
+
+/**
+ * Read this audience's flag chip sources from a presentation, or null outside
+ * Capture the Flag. Returns {flags, agents, trajectories}: the audience scene's
+ * capture_the_flag.flags and agents, and this audience's flag trajectories
+ * (Oracle View latest_events, Agent POV visual_events; null when absent). Agent
+ * POV: the scene names a carrier only when the view sees it, so a chip shows
+ * a seal only then. Never reads the researcher view. Pure.
+ *
+ * @param {unknown} presentation
+ * @returns {Readonly<{flags: ReadonlyArray<any>, agents: ReadonlyArray<any>, trajectories: ReadonlyArray<any> | null}> | null}
+ */
+function flagChipSources(presentation) {
+  const scene = authorizedPresentationSceneView(presentation);
+  const ctf = scene?.capture_the_flag;
+  if (ctf === null || typeof ctf !== "object" || !Array.isArray(ctf.flags)) return null;
+  const frame = /** @type {Record<string, any>} */ (presentation);
+  const events =
+    authorizedPresentationAudience(presentation) === "agent_pov"
+      ? frame.visual_events
+      : frame.latest_events;
+  return Object.freeze({
+    flags: ctf.flags,
+    agents: Array.isArray(scene?.agents) ? scene.agents : [],
+    trajectories: Array.isArray(events?.flag_trajectories)
+      ? events.flag_trajectories
+      : null,
+  });
+}
+
+/**
+ * Return what one flag row's chip shows (see FlagChipFace). agents is the
+ * audience scene's bodies, where a named carrier is looked up for its class.
+ * Pure.
+ *
+ * @param {Record<string, any>} flag
+ * @param {ReadonlyArray<any>} agents
+ * @returns {FlagChipFace}
+ */
+function flagChipFace(flag, agents) {
+  const team = teamLabelFromId(flag.team_id) ?? "A Team";
+  const carrier =
+    flag.state === "carried" && typeof flag.carrier_presentation_key === "string"
+      ? agents.find(
+          (agent) => agent?.presentation_key === flag.carrier_presentation_key,
+        )
+      : undefined;
+  const identity = carrier ? classIdentityFromId(carrier.class_id) : null;
+  const ticks = Number.isInteger(flag.countdown_steps) ? flag.countdown_steps : 0;
+  const state = /** @type {"home" | "carried" | "dropped"} */ (flag.state);
+  return Object.freeze({
+    state,
+    text:
+      state === "dropped"
+        ? `Dropped · ${ticks}`
+        : state === "carried"
+          ? "Carried"
+          : "Home",
+    seal:
+      identity && (carrier.team_id === 1 || carrier.team_id === 2)
+        ? Object.freeze({ glyph: `class-${identity.tokenId}`, teamId: carrier.team_id })
+        : null,
+    label:
+      state === "dropped"
+        ? `${team}'s Flag: Dropped, ${tickCountText(ticks)} left`
+        : state === "carried"
+          ? identity
+            ? `${team}'s Flag: Carried by a ${identity.label}`
+            : `${team}'s Flag: Carried`
+          : `${team}'s Flag: Home`,
+  });
+}
+
+/**
+ * Return one team's flag chip from the chip sources, or null without a flag of
+ * that team. Pure.
+ *
+ * @param {1 | 2} teamId
+ * @param {ReturnType<typeof flagChipSources>} sources
+ * @returns {FlagChip | null}
+ */
+function flagChip(teamId, sources) {
+  const flag = sources?.flags.find((row) => row?.team_id === teamId);
+  if (!sources || !flag) return null;
+  const start =
+    sources.trajectories?.find((row) => row?.team_id === teamId)?.transition_start ??
+    null;
+  const change = flagChange(start, flag);
+  const face = flagChipFace(flag, sources.agents);
+  const before = change && start ? flagChipFace(start, sources.agents) : null;
+  const changed = before !== null && JSON.stringify(before) !== JSON.stringify(face);
+  return Object.freeze({
+    ...face,
+    before: changed ? before : null,
+    hold:
+      changed && change
+        ? Object.freeze({
+            kind: change.beat,
+            key: change.beat === "fall" ? change.key : null,
+          })
+        : null,
+  });
+}
 
 /**
  * @typedef {Readonly<{
  *   available: boolean,
  *   teamASide: "left" | "right",
  *   plain: boolean,
+ *   tips: boolean,
  *   teams: ReadonlyArray<LiveScoreTeam>,
  *   tickText: string,
  *   firstToText: string,
@@ -615,8 +775,11 @@ export function momentumBaselineFromFrame(presentation, filters) {
  * - waves: the scene's respawn_waves rows ({team_index 0 or 1,
  *   countdown_steps}), or null/absent for no wave line.
  * - filters: the visual filter state, or null for the defaults. Only
- *   "scorebug" is read: false gives the plain text score ("Score: 2/20") with
- *   no "/ 20" and no bar (the switch's own help text).
+ *   "scorebug" and "symbol_explanations" are read. "symbol_explanations"
+ *   false gives a flag chip no tip (view.tips). "scorebug" false gives the
+ *   plain text score ("Score: 2/20", or "Captures: 2/3" in Capture the Flag)
+ *   with no "/ 20" and no bar (the switch's own help text). The flag chips
+ *   show either way.
  * - beforeScores: [Team A, Team B] scores before this tick, when the frame's
  *   beat view says the score changed this tick (beatView(...).score.before);
  *   null/absent for no Fall beat hold.
@@ -625,6 +788,9 @@ export function momentumBaselineFromFrame(presentation, filters) {
  *   host's match_summary.scores_ten_ticks_ago), or null/absent for Momentum
  *   off or unknown. Each team's segments earned since then are recent
  *   (recentFrom); a baseline at or above the score gives none.
+ * - flags: Capture the Flag's chip sources (flagChipSources: the audience
+ *   scene's flags and agents and this audience's flag trajectories), or
+ *   null/absent outside Capture the Flag for no chips.
  *
  * Returns a frozen LiveScorebugView:
  * - teamASide: the side of Team A's spawn end ("left" or "right", from the
@@ -651,16 +817,19 @@ export function momentumBaselineFromFrame(presentation, filters) {
  *   filters?: Readonly<Record<string, boolean>> | null,
  *   beforeScores?: ReadonlyArray<unknown> | null,
  *   recentBaseline?: ReadonlyArray<number> | null,
+ *   flags?: ReturnType<typeof flagChipSources>,
  * }} [options] Defaults to {}.
  * @returns {LiveScorebugView}
  */
 export function liveScorebugView(summary, options = {}) {
   const plain = options.filters?.scorebug === false;
+  const tips = options.filters?.symbol_explanations !== false;
   if (summary === null) {
     return Object.freeze({
       available: false,
       teamASide: "right",
       plain,
+      tips,
       teams: Object.freeze([]),
       tickText: "",
       firstToText: "",
@@ -679,9 +848,11 @@ export function liveScorebugView(summary, options = {}) {
       : Math.floor(
           (segments * Math.min(Math.max(0, value), threshold ?? 0)) / (threshold ?? 1),
         );
+  // The plain line names what is counted: Capture the Flag counts captures.
+  const scoreWord = scoreLabel(summary.taskMode);
   /** @param {number} value */
   const scoreTextFor = (value) =>
-    plain ? `Score: ${value}/${threshold}` : String(value);
+    plain ? `${scoreWord}: ${value}/${threshold}` : String(value);
   const teams = [1, 2].flatMap((teamId) => {
     const team = summary.teams.find(
       (/** @type {Record<string, any>} */ entry) => entry.teamId === teamId,
@@ -711,6 +882,7 @@ export function liveScorebugView(summary, options = {}) {
             ? segments
             : Math.min(segments, litFor(/** @type {number} */ (baseline))),
         before,
+        flag: flagChip(/** @type {1 | 2} */ (teamId), options.flags ?? null),
       }),
     ];
   });
@@ -725,6 +897,7 @@ export function liveScorebugView(summary, options = {}) {
     available: true,
     teamASide: teamA?.side === "left" ? "left" : "right",
     plain,
+    tips,
     teams: Object.freeze(teams),
     tickText: summary.tick?.text ?? "",
     firstToText: threshold === null ? "" : `First to ${threshold}`,
@@ -787,6 +960,11 @@ const paintedLiveScorebugs = new WeakMap();
  * aria-hidden). The choreographer times these only when #scorebug is one of
  * its beatHoldRoots; otherwise the END score shows at once.
  *
+ * Flag chips (Capture the Flag only): each score box gets one span.sb-flag
+ * under its bar for the team's own flag (paintFlagChip), held the same way
+ * when the flag changed this tick; outside Capture the Flag no chip node
+ * exists.
+ *
  * Repaints: a call whose view equals the last view painted into this
  * scorebug (same JSON, so the same tick, scores, holds and lines) changes
  * nothing. The page repaints a tick while it plays, for example when a new
@@ -828,6 +1006,7 @@ function renderLiveScorebug(scorebug, view) {
     clearLiveHold(score);
     clearLiveHold(bar);
     const team = view.teams.find((entry) => entry.key === key) ?? null;
+    paintFlagChip(box, team?.flag ?? null, key === "a" ? 1 : 2, view.tips);
     score.textContent = team?.scoreText ?? "";
     goal.textContent = team?.goalText ?? "";
     const recentFrom = team?.recentFrom ?? team?.segments ?? 0;
@@ -863,6 +1042,105 @@ function renderLiveScorebug(scorebug, view) {
     node.textContent = /** @type {string} */ (text);
     node.hidden = text === "";
   }
+}
+
+/**
+ * Paint one score box's flag chip: remove any earlier chip, then, for a chip,
+ * append span.sb-flag (flagChipNode) and, when the flag changed this tick, a
+ * "before" copy held until the change's beat (data-beat-hold, data-beat-key
+ * for a drop, data-beat-side "before", opacity 0 at END) while the END chip
+ * waits as the "after" node. DOM change only.
+ *
+ * @param {Element} box .sb-score.a or .sb-score.b.
+ * @param {FlagChip | null} chip
+ * @param {1 | 2} teamId The flag's team (the box's own team).
+ * @param {boolean} tips Whether the END chip carries its Flag tip (the Symbol
+ *   Explanations switch).
+ */
+function paintFlagChip(box, chip, teamId, tips) {
+  for (const old of box.querySelectorAll(".sb-flag")) old.remove();
+  if (chip === null) return;
+  const doc = box.ownerDocument;
+  const node = flagChipNode(doc, chip, teamId, tips);
+  box.append(node);
+  if (chip.before === null || chip.hold === null) return;
+  const old = flagChipNode(doc, chip.before, teamId, false);
+  holdBefore(old, chip.hold.kind);
+  for (const held of [old, node]) {
+    if (chip.hold.key !== null) held.dataset.beatKey = chip.hold.key;
+  }
+  node.dataset.beatHold = chip.hold.kind;
+  node.dataset.beatSide = "after";
+  box.append(old);
+}
+
+/**
+ * Build one flag chip: span.sb-flag (data-team "a" or "b", data-state, role
+ * "img" and the chip's accessible name) holding the team's pennant (the arena
+ * look's shape, pennantGeometry, in a 14 px svg), the words and, when the view
+ * names the carrier, the carrier's class seal in its team color
+ * (createSvgIcon, paint "host"). The pennant, words and seal are aria-hidden.
+ * With tips, the chip carries the Flag symbol tip (its team and state). Creates
+ * nodes and registers that tip only.
+ *
+ * @param {Document} doc
+ * @param {FlagChipFace} face
+ * @param {1 | 2} teamId
+ * @param {boolean} tips
+ * @returns {HTMLElement}
+ */
+function flagChipNode(doc, face, teamId, tips) {
+  const chip = doc.createElement("span");
+  chip.className = "sb-flag";
+  chip.dataset.team = teamId === 1 ? "a" : "b";
+  chip.dataset.state = face.state;
+  chip.setAttribute("role", "img");
+  chip.setAttribute("aria-label", face.label);
+  const namespace = "http://www.w3.org/2000/svg";
+  const glyph = doc.createElementNS(namespace, "svg");
+  glyph.setAttribute("class", "sb-flag__pennant");
+  glyph.setAttribute("viewBox", "0 0 14 14");
+  glyph.setAttribute("aria-hidden", "true");
+  const { pole, shape } = pennantGeometry(teamId, [3, 13], 12);
+  for (const [name, d] of [
+    ["sb-flag__pole", pole],
+    ["sb-flag__shape", shape],
+  ]) {
+    const path = doc.createElementNS(namespace, "path");
+    path.setAttribute("class", name);
+    path.setAttribute("d", d);
+    glyph.append(path);
+  }
+  const words = doc.createElement("span");
+  words.className = "sb-flag__text";
+  words.setAttribute("aria-hidden", "true");
+  words.textContent = face.text;
+  chip.append(glyph, words);
+  if (face.seal !== null) {
+    chip.append(
+      createSvgIcon(doc, face.seal.glyph, {
+        className: "sb-flag__seal",
+        paint: "host",
+        teamId: face.seal.teamId,
+        size: 13,
+      }),
+    );
+  }
+  if (tips) {
+    registerTooltipOwner(
+      chip,
+      createSymbolDescriptor({
+        symbol: "flag",
+        id: `flag:${teamId}`,
+        facts: [
+          { label: "Team", value: teamLabelFromId(teamId) ?? "Unavailable" },
+          { label: "State", value: face.label.split(": ").slice(1).join(": ") },
+        ],
+        note: null,
+      }),
+    );
+  }
+  return chip;
 }
 
 /**
@@ -1218,13 +1496,14 @@ function scoreBar(doc, value, threshold, className, recentBaseline = null) {
 }
 
 /**
- * Mark node as a Fall-beat "before" node of kind (the choreographer contract
+ * Mark node as a beat-held "before" node of kind (the choreographer contract
  * in choreography.js): data-beat-hold=kind, data-beat-side="before", drawn at
  * its END opacity 0 (attribute and inline style), and hidden from screen
- * readers. Changes node only.
+ * readers. The score uses "score"; a flag chip uses its change's beat. Changes
+ * node only.
  *
  * @param {HTMLElement} node
- * @param {"score"} kind
+ * @param {"score" | "fall" | "impact"} kind
  */
 function holdBefore(node, kind) {
   node.dataset.beatHold = kind;
@@ -1387,6 +1666,7 @@ export function hudSourcesFromFrame(frame) {
     controllerRoster:
       product === "replay_viewer" ? controllerRosterFromFrame(frame, null) : null,
     spawnShieldMechanics: scene?.spawn_shield_mechanics ?? null,
+    flags: scene?.capture_the_flag ?? null,
     mechanics: [
       ...list(frame.scene?.class_mechanics),
       ...list(researcher?.class_mechanics),

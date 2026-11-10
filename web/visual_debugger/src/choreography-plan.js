@@ -57,7 +57,7 @@
  * tick, the same in every view) and the frame's own per-view host facts. Researcher references can still join
  * display identity or Ultimate help for bodies the team does see.
  */
-import { canonicalAgentIdentity } from "./agent-identity.js";
+import { canonicalAgentIdentity, fallPoints } from "./agent-identity.js";
 import {
   authorizedPresentationAgentDisplayId,
   authorizedPresentationAudience,
@@ -73,6 +73,7 @@ import {
   BUDGET as BASIC_BUDGET,
   FOOTPRINT as BASIC_FOOTPRINT,
 } from "./looks/basics.js";
+import { flagChange } from "./looks/flags.js";
 import { BUDGET as FOCUS_TALLY_BUDGET } from "./looks/focus-tally.js";
 import { BUDGET as FOG_BUDGET } from "./looks/fog.js";
 import {
@@ -2864,7 +2865,9 @@ function derivedFamilyEnabled(visualFilters, family) {
  *   or the victim's opposing team for a source that left sight (blows only damage
  *   enemies). match_summary.deaths is never read.
  * - homeFall is the host's home_fall flag on the agent_died event (true, false, or
- *   null when the recording has no flag); points is 2, 1 or null to match.
+ *   null when the recording has no flag); points is 2, 1 or null to match, and
+ *   always null in Capture the Flag (match_summary.task_mode 3), where a fall
+ *   scores nothing.
  * - ultimate names a damaging Ultimate (Charge, Freezing Trap or Crippling Poison)
  *   that struck the victim this tick, as {classId, publicAgentId} of its caster, for
  *   the herald's Ultimate Takedown. Oracle View: an ultimate ability_activated event
@@ -3065,7 +3068,11 @@ function authorizedFalls(input) {
               ? 3 - victimSnapshot.team_id
               : null,
         homeFall,
-        points: homeFall === null ? null : homeFall ? 2 : 1,
+        // The task mode is public; fallPoints owns what a fall gives.
+        points:
+          homeFall === null
+            ? null
+            : fallPoints(presentation.match_summary?.task_mode, homeFall),
         ultimate,
         at: entry.at,
         world: point(victimAgent.position),
@@ -3769,17 +3776,25 @@ function planBodies(
  *   END world spots and state ("living", "falling" or "returning"). Corpses from
  *   earlier ticks are left out. Everyone in View fits these spots.
  * - fights: one entry per Basic or Ultimate activation with the world spots of its
- *   source and target (START for a source that left sight), and one per seen fall
- *   at the victim's END spot. Battle Cam frames these.
- * In Agent POV everything comes from the seen scene and visual_events, so the camera
- * never leans toward a champion the team cannot see. Pure.
+ *   source and target (START for a source that left sight), one per seen fall
+ *   at the victim's END spot, and, in Capture the Flag, one "flag" entry per flag
+ *   that changed this tick (flags.js flagChange): where the change happened,
+ *   which is the flag's END spot for a pickup, a drop or a grab and fall, and
+ *   its START spot for one that went home (the capture or the touch). Battle
+ *   Cam frames these.
+ * In Agent POV everything comes from the seen scene and visual_events (whose flag
+ * trajectories hold only public flag spots), so the camera never leans toward a
+ * champion the team cannot see. Pure.
  *
  * @param {ReadonlyArray<PlanBody>} bodies
  * @param {ReadonlyArray<Readonly<{id: string, kind: string, vocabulary: string, payload: any}>>} rows
  * @param {Map<string, Record<string, any>> | null} trajectories
  * @param {"researcher" | "agent_pov" | null} audience
+ * @param {ReadonlyArray<unknown> | null} [flagTrajectories] This audience's flag
+ *   trajectories (team_id, transition_start, successor), or null outside
+ *   Capture the Flag.
  */
-function planCamera(bodies, rows, trajectories, audience) {
+function planCamera(bodies, rows, trajectories, audience, flagTrajectories = null) {
   const cameraBodies = bodies
     .filter((body) => body.alive || body.died || body.returned)
     .map((body) =>
@@ -3835,6 +3850,23 @@ function planCamera(bodies, rows, trajectories, audience) {
         );
       }
     }
+  }
+  for (const row of array(flagTrajectories)) {
+    const flagRow = record(row);
+    const start = record(flagRow?.transition_start);
+    const end = record(flagRow?.successor);
+    if (flagRow === null || start === null || end === null) continue;
+    const change = flagChange(start, end);
+    if (change === null) continue;
+    const spot = point(change.home ? start.position : end.position);
+    if (spot === null) continue;
+    fights.push(
+      Object.freeze({
+        eventId: `flag:${String(flagRow.team_id)}`,
+        kind: "flag",
+        points: Object.freeze([spot]),
+      }),
+    );
   }
   return Object.freeze({
     audience,
@@ -5003,7 +5035,10 @@ function buildAuthorizedPresentationChoreographyPlan(
           member: Object.freeze({
             ...identity(death),
             killingTeamId: death.killing_team_id ?? null,
-            points: death.home_fall === true ? 2 : 1,
+            points: fallPoints(
+              presentation.match_summary?.task_mode,
+              death.home_fall === true,
+            ),
             homeFall: death.home_fall === true,
             contributors:
               death.contributors == null
@@ -5109,7 +5144,20 @@ function buildAuthorizedPresentationChoreographyPlan(
     array(record(presentation.scene)?.map?.obstacles),
     guessedPosts,
   );
-  const budgeted = applyPlanBudget(scheduled.events, familyRows, bodies, schedule);
+  // Each changed flag's holds (flags.js and the scorebug chip) need room too.
+  const flagChanges = array(latest?.flag_trajectories).filter((row) => {
+    const flagRow = record(row);
+    const start = record(flagRow?.transition_start);
+    const end = record(flagRow?.successor);
+    return start !== null && end !== null && flagChange(start, end) !== null;
+  }).length;
+  const budgeted = applyPlanBudget(
+    scheduled.events,
+    familyRows,
+    bodies,
+    schedule,
+    flagChanges,
+  );
   const events = budgeted.events;
   return Object.freeze({
     epochKey: JSON.stringify([presentation.session_id, transitionId]),
@@ -5138,7 +5186,13 @@ function buildAuthorizedPresentationChoreographyPlan(
     events,
     derivedEvents: budgeted.derivedEvents,
     bodies,
-    camera: planCamera(bodies, rows, trajectories, audience),
+    camera: planCamera(
+      bodies,
+      rows,
+      trajectories,
+      audience,
+      array(latest?.flag_trajectories),
+    ),
     bounds: budgeted.bounds,
   });
 }
@@ -5156,7 +5210,10 @@ function buildAuthorizedPresentationChoreographyPlan(
  * case of real recordings and every browser fixture frame fit under the caps, see
  * tests/plan-budget.test.js.
  * overrideAnimations caps the choreographer's own WAAPI overrides on durable nodes
- * (body glides, beat holds, cue fades and the camera ease).
+ * (body glides, beat holds, cue fades and the camera ease). A Capture the Flag
+ * tick adds OVERRIDE_BUDGET.perFlagChange to it for each changed flag
+ * (applyPlanBudget), so a flag's holds never take a fight's room and a Team
+ * Deathmatch tick keeps 96.
  */
 export const PLAN_RESOURCE_CAPS = Object.freeze({
   nodes: 1024,
@@ -5220,7 +5277,10 @@ const OPTIONAL_FAMILY_DROP_ORDER = Object.freeze([
  * life change); sightAndDim covers the Agent POV sight veil states and glints and
  * Death Dimming. The choreographer bounds the movement marks and the sight
  * veil's beats by the animation limit instead (choreography.js #install), so
- * these two lines are spare room for the holds of a busy tick.
+ * these two lines are spare room for the holds of a busy tick. perFlagChange
+ * covers one Capture the Flag flag that changed this tick (flags.js flagChange):
+ * its "before" and "after" pennant, countdown ring and ticks left, its base, its
+ * pulse, the capture mark and its scorebug chip's two holds (11).
  */
 const OVERRIDE_BUDGET = Object.freeze({
   perFall: 6,
@@ -5229,6 +5289,7 @@ const OVERRIDE_BUDGET = Object.freeze({
   cueFadesAndCamera: 4,
   perBodyLook: 4,
   sightAndDim: 8,
+  perFlagChange: 11,
 });
 
 /**
@@ -5309,15 +5370,24 @@ export function planEventBudget(event) {
  * - persistentNodes: the kept nodes of every drawn persistent row;
  * - overrideAnimations: per body one glide plus its look overrides
  *   (OVERRIDE_BUDGET.perBodyLook), plus OVERRIDE_BUDGET for the seen falls,
- *   returns, score and HUD, cue fades and camera, and the sight veil and dimming.
+ *   returns, score and HUD, cue fades and camera, the sight veil and dimming,
+ *   and each changed Capture the Flag flag.
  * Pure.
  *
  * @param {ReadonlyArray<Record<string, any>>} events
  * @param {ReadonlyArray<Record<string, any>>} derivedEvents
  * @param {ReadonlyArray<PlanBody>} bodies
  * @param {BeatSchedule} schedule
+ * @param {number} [flagChanges] How many flags changed this tick (0 to 2; 0, the
+ *   default, outside Capture the Flag).
  */
-export function planResourceDemand(events, derivedEvents, bodies, schedule) {
+export function planResourceDemand(
+  events,
+  derivedEvents,
+  bodies,
+  schedule,
+  flagChanges = 0,
+) {
   let nodes = 3;
   let animations = 3 + CARD_QUEUE_ANIMATIONS;
   let persistentNodes = 0;
@@ -5337,7 +5407,8 @@ export function planResourceDemand(events, derivedEvents, bodies, schedule) {
     OVERRIDE_BUDGET.perReturn * schedule.returns.length +
     OVERRIDE_BUDGET.scoreAndHud +
     OVERRIDE_BUDGET.cueFadesAndCamera +
-    OVERRIDE_BUDGET.sightAndDim;
+    OVERRIDE_BUDGET.sightAndDim +
+    OVERRIDE_BUDGET.perFlagChange * flagChanges;
   return Object.freeze({ nodes, animations, persistentNodes, overrideAnimations });
 }
 
@@ -5349,7 +5420,8 @@ export function planResourceDemand(events, derivedEvents, bodies, schedule) {
  * OPTIONAL_FAMILY_DROP_ORDER become data only (spatial false, droppedForBudget
  * true); plan.events rows are never dropped, so the tick is never blanked. Return
  * frozen {events, derivedEvents, bounds}, where bounds is the demand clipped to the
- * caps (nodes, animations, persistentNodes, overrideAnimations). A tick whose
+ * caps (nodes, animations, persistentNodes, overrideAnimations; the override cap
+ * grows by OVERRIDE_BUDGET.perFlagChange per changed flag). A tick whose
  * incoming events alone exceed a cap keeps the capped bound, exactly as before the beat clock.
  * buildChoreographyPlan calls it; it is exported for the budget tests. Pure.
  *
@@ -5357,10 +5429,18 @@ export function planResourceDemand(events, derivedEvents, bodies, schedule) {
  * @param {ReadonlyArray<Record<string, any>>} derivedEvents
  * @param {ReadonlyArray<PlanBody>} bodies
  * @param {BeatSchedule} schedule
+ * @param {number} [flagChanges] Changed Capture the Flag flags this tick, as for
+ *   planResourceDemand (default 0).
  */
-export function applyPlanBudget(events, derivedEvents, bodies, schedule) {
+export function applyPlanBudget(
+  events,
+  derivedEvents,
+  bodies,
+  schedule,
+  flagChanges = 0,
+) {
   let derived = derivedEvents;
-  let demand = planResourceDemand(events, derived, bodies, schedule);
+  let demand = planResourceDemand(events, derived, bodies, schedule, flagChanges);
   /**
    * Return whether a demand is over the node, animation or kept-node cap. Pure.
    *
@@ -5377,7 +5457,7 @@ export function applyPlanBudget(events, derivedEvents, bodies, schedule) {
         ? Object.freeze({ ...event, spatial: false, droppedForBudget: true })
         : event,
     );
-    demand = planResourceDemand(events, derived, bodies, schedule);
+    demand = planResourceDemand(events, derived, bodies, schedule, flagChanges);
   }
   return Object.freeze({
     events,
@@ -5391,7 +5471,8 @@ export function applyPlanBudget(events, derivedEvents, bodies, schedule) {
       ),
       overrideAnimations: Math.min(
         demand.overrideAnimations,
-        PLAN_RESOURCE_CAPS.overrideAnimations,
+        PLAN_RESOURCE_CAPS.overrideAnimations +
+          OVERRIDE_BUDGET.perFlagChange * flagChanges,
       ),
     }),
   });

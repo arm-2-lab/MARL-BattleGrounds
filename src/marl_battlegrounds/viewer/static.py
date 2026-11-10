@@ -19,6 +19,16 @@ if TYPE_CHECKING:
     from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
     from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactV3
     from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
+
+# Every replay version this view opens (evaluated only by type checkers).
+type _StaticReplay = (
+    ReplayArtifactV1
+    | ReplayArtifactV2
+    | ReplayArtifactV3
+    | ReplayArtifactV4
+    | ReplayArtifactV5
+)
 
 
 class _PyplotLike(Protocol):
@@ -124,7 +134,7 @@ def run_static_replay_renderer(
 
 def run_static_replay_artifact_renderer(
     *,
-    replay: "ReplayArtifactV1 | ReplayArtifactV2 | ReplayArtifactV3 | ReplayArtifactV4",
+    replay: _StaticReplay,
     frame_index: int,
     show_ranges: bool,
 ) -> int:
@@ -132,10 +142,12 @@ def run_static_replay_artifact_renderer(
 
     Parameters
     ----------
-    replay : ReplayArtifactV1, ReplayArtifactV2, ReplayArtifactV3 or ReplayArtifactV4
+    replay : ReplayArtifactV1, ReplayArtifactV2, ReplayArtifactV3, ReplayArtifactV4 or
+        ReplayArtifactV5
         Exact supported replay model, with matching frame and transition sequences.
         Replay V4 records the Red Zone depth; this Matplotlib view does not draw
-        the Red Zone strips.
+        the Red Zone strips. Replay V5 is any mode's replay, Capture the Flag's
+        included; the view draws its bases and flags.
     frame_index : int
         Zero-based frame index, including zero for the reset frame.
     show_ranges : bool
@@ -170,6 +182,7 @@ def run_static_replay_artifact_renderer(
     from marl_battlegrounds.evaluation._replays.replay_v2 import ReplayArtifactV2
     from marl_battlegrounds.evaluation._replays.replay_v3 import ReplayArtifactV3
     from marl_battlegrounds.evaluation._replays.replay_v4 import ReplayArtifactV4
+    from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
     from marl_battlegrounds.rendering.evaluation_adapter import (
         EvaluationScenePresentationStateV1,
         build_researcher_analyzer_projection_v2,
@@ -181,6 +194,7 @@ def run_static_replay_artifact_renderer(
         ReplayArtifactV2,
         ReplayArtifactV3,
         ReplayArtifactV4,
+        ReplayArtifactV5,
     ):
         raise TypeError("replay must be an exact supported replay artifact.")
     if type(frame_index) is not int:

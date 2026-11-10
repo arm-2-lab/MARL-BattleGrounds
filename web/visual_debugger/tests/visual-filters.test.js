@@ -1,6 +1,6 @@
 /**
  * @file Check the Visual Filter registry, defaults, immutable updates and the
- * paint-part table: 99 switches in fixed order (the 20 earlier switches first,
+ * paint-part table: 100 switches in fixed order (the 20 earlier switches first,
  * then the switches of the V5-picked looks, including the live-only Brand
  * Signature, High Contrast in all three clients, and Momentum, an interface
  * switch, then the Replay Viewer's Next Step Ghost and All Staged Orders,
@@ -16,8 +16,11 @@
  * Credit Glint, Saved Beat, Last Breath, Battle Text Detail, Aura Glints,
  * Barrier Held, Spawn Shield Expiry, Status Clear on Death, Freezing Trap
  * Break, Champion Streaks and Momentum) listed in both live play and the
- * Replay Viewer; 79 switches on by
- * default; the v4 paint key; one switch list per product (95 in the Replay
+ * Replay Viewer; Flags, listed only in Capture the Flag games, and the two Red
+ * Zone switches, listed before any game and in every game but those
+ * (SWITCH_TASK_MODES and visualFilterShownInMode); the Fallen Feed's help line
+ * without its points in Capture the Flag games (visualFilterHelpInMode); 80 switches on by
+ * default; the v4 paint key; one switch list per product (96 in the Replay
  * Viewer); strict reducer and
  * state validation; and paint parts read from each look module's PAINT_PARTS:
  * one owner per part, a repeated part or a malformed list throws, every part
@@ -36,11 +39,14 @@ import {
   isVisualFilterEnabled,
   isVisualPaintPartEnabled,
   reduceVisualFilterState,
+  SWITCH_TASK_MODES,
   setVisualFilterEnabled,
   VISUAL_FILTER_GROUPS,
   VISUAL_FILTER_IDS,
   VISUAL_FILTER_REGISTRY,
+  visualFilterHelpInMode,
   visualFilterPaintKey,
+  visualFilterShownInMode,
   visualFiltersForProduct,
   visualPaintPartRegistry,
 } from "../src/visual-filters.js";
@@ -99,6 +105,7 @@ const EXPECTED_FILTERS = Object.freeze([
   ["moonlight", "Moonlight", "Arena", false, "arena", "both"],
   ["floor_grid", "Floor Grid", "Arena", false, "arena", "both"],
   ["spawn_waystones", "Spawn Waystones", "Arena", true, "arena", "both"],
+  ["flags", "Flags", "Arena", true, "arena", "both"],
   ["survey_frame", "Survey Frame", "Arena", false, "arena", "both"],
   ["arena_rim", "Arena Rim", "Arena", false, "arena", "both"],
   ["obstacle_skins", "Obstacle Skins", "Arena", true, "arena", "both"],
@@ -281,7 +288,36 @@ const EARLIER_PAINT_PARTS = Object.freeze([
   [{ surface: "transient", kind: "spawn_shield_expiry" }, "spawn_shield_expiry"],
 ]);
 
-test("locked registry exposes 99 switches with exact labels, groups and defaults", () => {
+test("mode-only switches: Flags in Capture the Flag only, Red Zone everywhere else", () => {
+  assert.deepEqual(SWITCH_TASK_MODES, {
+    flags: [3],
+    red_zone_floors: [null, 0, 1],
+    red_zone_home_fall: [null, 0, 1],
+  });
+  const shown = (/** @type {string} */ id) =>
+    [null, undefined, 0, 1, 2, 3].map((mode) => visualFilterShownInMode(id, mode));
+  assert.deepEqual(shown("flags"), [false, false, false, false, false, true]);
+  // Before a game the Red Zone rows stay, so Team Deathmatch's panel is unchanged.
+  for (const id of ["red_zone_floors", "red_zone_home_fall"]) {
+    assert.deepEqual(shown(id), [true, true, true, true, false, false], id);
+  }
+  assert.deepEqual(shown("spawn_waystones"), [true, true, true, true, true, true]);
+  // Only a line that would be false changes: Capture the Flag's falls score nothing.
+  const fallen = VISUAL_FILTER_REGISTRY.find(
+    ({ id }) => id === "death_announcer",
+  )?.help;
+  assert.equal(visualFilterHelpInMode("death_announcer", null), fallen);
+  assert.equal(visualFilterHelpInMode("death_announcer", 1), fallen);
+  const ctf = visualFilterHelpInMode("death_announcer", 3);
+  assert.match(ctf, /and who fell\. In Agent POV/u);
+  assert.doesNotMatch(ctf, /points/u);
+  assert.equal(
+    visualFilterHelpInMode("scorebug", 3),
+    visualFilterHelpInMode("scorebug", 1),
+  );
+});
+
+test("locked registry exposes 100 switches with exact labels, groups and defaults", () => {
   assert.deepEqual(
     VISUAL_FILTER_REGISTRY.map(
       ({ id, label, group, defaultEnabled, surface, products }) => [
@@ -299,8 +335,8 @@ test("locked registry exposes 99 switches with exact labels, groups and defaults
     VISUAL_FILTER_IDS,
     EXPECTED_FILTERS.map(([id]) => id),
   );
-  assert.equal(new Set(VISUAL_FILTER_IDS).size, 99);
-  assert.equal(INITIAL_FILTER_IDS.length, 79);
+  assert.equal(new Set(VISUAL_FILTER_IDS).size, 100);
+  assert.equal(INITIAL_FILTER_IDS.length, 80);
   assert.deepEqual(EARLIER_FILTER_IDS, [
     "aura_fields",
     "aura_modifier_badges",
@@ -386,7 +422,7 @@ test("each product lists only the switches that matter there", () => {
       ([, , , , , products]) => products !== "combat_debugger",
     ).map(([id]) => id),
   );
-  assert.equal(replay.length, 95);
+  assert.equal(replay.length, 96);
   for (const id of [
     "camera_tip",
     "kill_cam",
@@ -527,11 +563,11 @@ test("state validation and paint-key serialization are strict and deterministic"
   );
   assert.equal(
     visualFilterPaintKey(DEFAULT_VISUAL_FILTER_STATE),
-    "visual-filters-v4:000111111111011111111001001111110111111111100111111111101111001011111111111111111111101111011110100",
+    "visual-filters-v4:0001111111110111111110011001111110111111111100111111111101111001011111111111111111111101111011110100",
   );
   assert.equal(
     visualFilterPaintKey(disabled),
-    "visual-filters-v4:000111111111011110111001001111110111111111100111111111101111001011111111111111111111101111011110100",
+    "visual-filters-v4:0001111111110111101110011001111110111111111100111111111101111001011111111111111111111101111011110100",
   );
   assert.equal(
     visualFilterPaintKey(Object.fromEntries([...Object.entries(disabled)].reverse())),

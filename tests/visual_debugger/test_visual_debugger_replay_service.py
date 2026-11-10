@@ -5,7 +5,8 @@ gives the same projection as a fresh Oracle render; the last POV actor is
 kept for the next POV entry.
 
 Agent POV presentations keep global match facts in their match summary only,
-including the Momentum switch's recorded scores 10 frames back.
+including the Momentum switch's recorded scores 10 frames back and the public
+flag return ticks (None outside Capture the Flag).
 
 The shared-lock check fails at once if its held metric-report worker finishes
 before it enters the blocked read. It releases that worker inside the executor
@@ -2934,7 +2935,10 @@ def test_agent_presentations_exclude_privileged_fields_and_canonical_values(
         "episode_seed",
         "slot_controller_names",
         "scores_ten_ticks_ago",
+        "flag_return_steps",
     }
+    # A public Capture the Flag rule setting; None in this Team Deathmatch game.
+    assert match_summary["flag_return_steps"] is None
     context = replay.header.context
     frame = replay.frames[raw.cursor.frame_index]
     assert match_summary["previous_scores"] == list(

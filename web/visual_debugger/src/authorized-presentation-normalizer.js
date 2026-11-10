@@ -2422,7 +2422,10 @@ function validateLatestEvents(latest) {
  * order, recipient identity, and start/successor trajectories must agree. Every
  * spatial event anchor must match an allowed trajectory anchor. After-step facts
  * need a visible successor. The payload must not contain hidden intermediate
- * movement/respawn events or forbidden aggregate damage/healing fields.
+ * movement/respawn events or forbidden aggregate damage/healing fields. In
+ * Capture the Flag the flag_changed lines must be exactly one per changed flag
+ * of the flag trajectories: a new state, or a dropped flag at a new spot or with
+ * a restarted countdown (the host's rule), and only a carried end names an agent.
  *
  * Returns undefined or throws TypeError. This validates the producer's visible
  * inventory and consistency; it does not recompute visibility or combat.
@@ -2606,8 +2609,16 @@ function validateAgentVisualEvents(visual) {
   if (
     !structurallyEqual(
       lines.map((event) => [event.flag_team_id, event.state_before, event.state_after]),
+      // A line for each changed flag: a new state, or a dropped flag grabbed and
+      // dropped again (a new spot or a restarted countdown), the host's rule.
       (flagTrajectories ?? [])
-        .filter((row) => row.transition_start.state !== row.successor.state)
+        .filter(
+          ({ transition_start: before, successor: after }) =>
+            before.state !== after.state ||
+            (before.state === "dropped" &&
+              (!structurallyEqual(before.position, after.position) ||
+                after.countdown_steps > before.countdown_steps)),
+        )
         .map((row) => [row.team_id, row.transition_start.state, row.successor.state]),
     ) ||
     lines.some(
@@ -5917,7 +5928,9 @@ function validateMatchMoments(frame, oracle) {
  * schema fields, coherent identities/epochs/scenes/actions/events, and matching
  * endpoint, overlay, and presentation-key hashes. Match-summary facts are checked
  * when present, including previous_scores, returned_agent_ids and each death's
- * home_fall (see validateMatchBeatFacts), and the champion streak, Honors and
+ * home_fall (see validateMatchBeatFacts), Capture the Flag's flag_return_steps
+ * (present in that mode only, equal to the Oracle scene's return_steps and never
+ * below a dropped flag's countdown in any view), and the champion streak, Honors and
  * Herald Cards history host facts are checked against the frame's own view
  * (validateChampionStreaks, validateMatchHonors, validateMatchMoments). Hashes establish consistency with supplied identities and data;
  * the trusted Python producer remains the authority for permitted information.
@@ -6041,6 +6054,25 @@ export async function normalizeAuthorizedPresentationFrameV1(value) {
         (match.score_threshold === 0 || match.outcome === "not_applicable"))
     ) {
       invalid("Match summary does not join the current task and source epoch.");
+    }
+    // Capture the Flag's public return ticks: recorded in that mode only, the
+    // same number the Oracle scene carries, and never below a dropped flag's
+    // countdown in any view (Agent POV's scene carries no return ticks).
+    const returnTicks = match.flag_return_steps ?? null;
+    const sceneFlags = frame.scene?.capture_the_flag ?? null;
+    if (
+      (returnTicks === null) !== (match.task_mode !== 3) ||
+      (sceneFlags !== null &&
+        ((sceneFlags.return_steps !== null &&
+          sceneFlags.return_steps !== returnTicks) ||
+          sceneFlags.flags.some(
+            (/** @type {Record<string, any>} */ flag) =>
+              flag.countdown_steps > returnTicks,
+          )))
+    ) {
+      invalid(
+        "Match summary flag return ticks do not join the Capture the Flag rules.",
+      );
     }
   }
   validateChampionStreaks(frame, semantic.oracle);

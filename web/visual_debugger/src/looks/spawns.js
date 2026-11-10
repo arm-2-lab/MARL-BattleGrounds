@@ -1,6 +1,8 @@
 /**
  * @file The Spawns and Bases look (Moon Waystones): one rune circle per claimed
- * spawn pad in the `spawns` layer, and the Call when a champion returns.
+ * spawn pad in the `spawns` layer, and the Call when a champion returns. In
+ * Capture the Flag the pad under each team's flag base (its flag's home) also
+ * says so in its tip; the base itself is drawn by `looks/flags.js`.
  *
  * The waystone (durable, drawn every render): a rim of radius 0.56 world units
  * with its gap facing the nearer floor edge, an inner ring at 0.34 (Team B adds a
@@ -31,7 +33,8 @@
  * agent_respawned pulse (the Call). `visual-filters.js` reads PAINT_PARTS.
  *
  * Boundary: records reads only this audience's arena scene (`spawn_pads`,
- * `respawn_waves`, `agents`) and the caller's beat lists, which come from this
+ * `respawn_waves`, `agents`, and the flags' public homes in
+ * `capture_the_flag`) and the caller's beat lists, which come from this
  * audience's own events. In Agent POV a pad whose champion is unseen (no
  * assigned key in the scene, or no such body in the scene) is Dormant, with no
  * pips and no champion in its tip. It never reads a researcher view or a match
@@ -393,6 +396,13 @@ export function records(input) {
       .filter(isRecord)
       .map((wave) => [Number(wave.team_id), wave]),
   );
+  // Capture the Flag: each team's flag base sits on one of its pads (the
+  // middle one), so that pad's tip also says it is the base.
+  const flagHomes = new Map(
+    asArray(isRecord(scene.capture_the_flag) ? scene.capture_the_flag.flags : [])
+      .filter(isRecord)
+      .map((flag) => [Number(flag.team_id), asArray(flag.home_position)]),
+  );
   /** @type {LookRecord[]} */
   const result = [];
   for (const pad of asArray(scene.spawn_pads)) {
@@ -492,6 +502,23 @@ export function records(input) {
     }
     if (period > 0)
       facts.push({ label: "Wave Period", value: `Every ${tickCountText(period)}` });
+    const home = flagHomes.get(teamId);
+    const isBase =
+      home !== undefined &&
+      home.length === 2 &&
+      Math.abs(finiteNumber(home[0], Number.NaN) - position[0]) < 1e-6 &&
+      Math.abs(finiteNumber(home[1], Number.NaN) - position[1]) < 1e-6;
+    const team = teamLabelFromId(teamId) ?? "This team";
+    const enemy = teamLabelFromId(teamId === 1 ? 2 : 1) ?? "the other team";
+    if (isBase) facts.push({ label: "Flag Base", value: team });
+    const notes = [
+      ...(seen ? [] : ["Your team cannot see this pad's champion now."]),
+      ...(isBase
+        ? [
+            `${team} captures by bringing ${enemy}'s flag here while its own flag is home.`,
+          ]
+        : []),
+    ];
     result.push(
       Object.freeze({
         kind: "waystone",
@@ -512,7 +539,7 @@ export function records(input) {
         hit: Object.freeze({ cx: point.x, cy: point.y, r: FOOTPRINT.rimUnits * ppu }),
         tip: Object.freeze({
           facts: Object.freeze(facts.map((fact) => Object.freeze(fact))),
-          note: seen ? null : "Your team cannot see this pad's champion now.",
+          note: notes.length === 0 ? null : notes.join(" "),
         }),
       }),
     );
@@ -860,8 +887,11 @@ export function update(nodes, records) {
 /**
  * Return the "Spawn Pad" Symbol Tip for a waystone record, or null for any other
  * record. Facts: the team, and only for a champion this audience sees, who
- * returns here and the stone's state; the wave period. An unseen pad in Agent
- * POV says "Your team cannot see this pad's champion now." Pure.
+ * returns here and the stone's state; the wave period; in Capture the Flag, on
+ * the pad at its team's flag home, "Flag Base". An unseen pad in Agent POV says
+ * "Your team cannot see this pad's champion now."; the flag base pad adds
+ * "Team A captures by bringing Team B's flag here while its own flag is home."
+ * Pure.
  *
  * @param {LookRecord} record
  */

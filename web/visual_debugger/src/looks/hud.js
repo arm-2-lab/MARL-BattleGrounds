@@ -137,6 +137,7 @@ import {
 } from "../tooltip.js";
 import { classTokenFromId, resolveVisualToken } from "../vocabulary.js";
 import * as champions from "./champions.js";
+import { carriedFlagTeam, carryingWords, pennantGeometry } from "./flags.js";
 import { EMPTY_BUDGET, SVG_NAMESPACE } from "./look-support.js";
 import * as statuses from "./statuses.js";
 
@@ -283,6 +284,7 @@ function field(value, key) {
  *   researcherAgents: ReadonlyArray<Record<string, any>> | null,
  *   identities: ReadonlyArray<Readonly<{publicAgentId: string, teamId: 1 | 2, teamLocalSlot: number, classId: number | null}>>,
  *   spawnShieldMechanics?: Record<string, any> | null,
+ *   flags?: Record<string, any> | null,
  *   mechanics: ReadonlyArray<Record<string, any>>,
  *   waves: ReadonlyArray<Record<string, any>>,
  *   visualEvents: ReadonlyArray<Record<string, any>>,
@@ -304,7 +306,10 @@ function field(value, key) {
  *   POV and, in both views, for each champion's command slot in the live
  *   scorebug. spawnShieldMechanics: the scene's Spawn Shield mechanics, for
  *   the live portraits' ward and the Champion Card's Spawn Shield drain line
- *   (null or absent when the scene has none). mechanics: class mechanics (Ultimate
+ *   (null or absent when the scene has none). flags: the audience scene's
+ *   capture_the_flag (null or absent outside Capture the Flag), for an Arena
+ *   Frame's carrier chip, which therefore shows only for a carrier that scene
+ *   names (in Agent POV, one the team sees). mechanics: class mechanics (Ultimate
  *   cooldown steps). waves: scene.respawn_waves (public wave clocks).
  *   visualEvents: Agent POV visual_events.events, else []. teams and deaths:
  *   match_summary.teams and match_summary.deaths (deaths only in Oracle View,
@@ -568,6 +573,14 @@ export function records(input) {
       ultimate,
       tray,
       spawnShield: alive && Number.isInteger(shield) && shield > 0 ? shield : null,
+      // Capture the Flag: the flag this champion carries, from the audience
+      // scene only (cardAgent is that scene's body; none for an unseen one).
+      carriedFlag: alive
+        ? carriedFlagTeam(sources.flags, cardAgent?.presentation_key)
+        : null,
+      carrying: alive
+        ? carryingWords(sources.flags, cardAgent?.presentation_key)
+        : null,
       returned: returned && on("respawn_wave"),
       returnsIn: !alive && Number.isInteger(countdown) ? countdown + 1 : null,
       credits,
@@ -1237,6 +1250,39 @@ function aliveBody(doc, record, tips, interactive, lifeOverride = null) {
       );
     }
     tray.append(chip);
+  }
+  if (record.carriedFlag === 1 || record.carriedFlag === 2) {
+    // The carrier chip: the carried flag's outlined pennant, the arena's own
+    // carrier mark, beside the Spawn Shield chip.
+    const flagChip = el(doc, "span", "arena-frame__flag", "");
+    flagChip.dataset.team = record.carriedFlag === 1 ? "a" : "b";
+    const glyph = doc.createElementNS(SVG_NAMESPACE, "svg");
+    glyph.setAttribute("viewBox", "0 0 14 14");
+    glyph.setAttribute("aria-hidden", "true");
+    const { pole, shape } = pennantGeometry(record.carriedFlag, [3, 13], 12);
+    for (const [name, d] of [
+      ["arena-frame__flag-pole", pole],
+      ["arena-frame__flag-shape", shape],
+    ]) {
+      const path = doc.createElementNS(SVG_NAMESPACE, "path");
+      path.setAttribute("class", name);
+      path.setAttribute("d", d);
+      glyph.append(path);
+    }
+    flagChip.append(glyph);
+    flagChip.setAttribute("role", "img");
+    flagChip.setAttribute("aria-label", String(record.carrying));
+    if (interactive) {
+      symbol(flagChip, `carrier:${record.publicAgentId}`, tips, () =>
+        descriptor(
+          `carrier:${record.publicAgentId}`,
+          symbolById("flag")?.title ?? "Flag",
+          String(record.carrying),
+          [],
+        ),
+      );
+    }
+    tray.append(flagChip);
   }
   body.append(tray);
   return body;

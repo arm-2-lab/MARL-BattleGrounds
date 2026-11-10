@@ -3,6 +3,13 @@
  * plain label and help line, its default, the five presets and the paint-part
  * table that tells each drawing which switch controls it.
  *
+ * Which game lists which switch: a few switches draw only one mode's things and
+ * are listed only in games of the modes named for them (SWITCH_TASK_MODES:
+ * Flags only in Capture the Flag games; the Red Zone switches only in Team
+ * Deathmatch and combat diagnostics, and before a game); the Visual Filters
+ * panel hides them in every other mode, and a hidden switch keeps its state.
+ * A new mode adds itself to the entries whose drawings it has.
+ *
  * Which client lists which switch: each row names its products. A switch whose
  * drawing belongs to the match itself is listed in live play (the BattleClient
  * and the DevClient combat screen) and in the Replay Viewer, with the default
@@ -48,6 +55,7 @@ import { PAINT_PARTS as BASICS_PAINT_PARTS } from "./looks/basics.js";
 import { PAINT_PARTS as CAMERA_PAINT_PARTS } from "./looks/camera.js";
 import { PAINT_PARTS as CHAMPION_FRAME_PAINT_PARTS } from "./looks/champion-frame.js";
 import { PAINT_PARTS as CHAMPIONS_PAINT_PARTS } from "./looks/champions.js";
+import { PAINT_PARTS as FLAGS_PAINT_PARTS } from "./looks/flags.js";
 import { PAINT_PARTS as FOCUS_TALLY_PAINT_PARTS } from "./looks/focus-tally.js";
 import { PAINT_PARTS as FOG_PAINT_PARTS } from "./looks/fog.js";
 import { PAINT_PARTS as FRAME_EXPLANATION_PAINT_PARTS } from "./looks/frame-explanation.js";
@@ -91,6 +99,7 @@ import { PAINT_PARTS as ULTIMATES_PAINT_PARTS } from "./looks/ultimates.js";
  *   | "moonlight"
  *   | "floor_grid"
  *   | "spawn_waystones"
+ *   | "flags"
  *   | "survey_frame"
  *   | "arena_rim"
  *   | "obstacle_skins"
@@ -442,6 +451,15 @@ const REGISTRY_ROWS = [
     "arena",
     BOTH,
     "One rune circle per champion at its team's spawn edge. It lights when its champion comes home. In Agent POV a pad whose champion is unseen stays quiet. Off: a plain thin ring marks each spawn pad.",
+  ],
+  [
+    "flags",
+    "Flags",
+    "Arena",
+    true,
+    "arena",
+    BOTH,
+    "Each team's flag and its base at the middle waystone: a triangle pennant for Team A, a swallowtail for Team B. A base is bright while its flag is home and faded while it is away, a dashed ring shows where a flag is captured, a carried flag rides outlined on its carrier, and a dropped flag shows the ticks left before it goes home. In Agent POV both flags always show, so a carried flag can move with no champion seen under it. Off: a plain pennant and a plain base, with no rings or marks.",
   ],
   [
     "survey_frame",
@@ -1226,6 +1244,80 @@ export function visualFiltersForProduct(product) {
   );
 }
 
+/**
+ * The switches listed only in some game modes, keyed by switch ID, with the
+ * task modes (match_summary.task_mode) that list them; null in a list means
+ * "before any game is installed". A switch with no entry is listed in every
+ * mode and before a game. Flags draws only Capture the Flag's flags and bases
+ * (task mode 3), so only those games list it. The two Red Zone switches draw
+ * only Team Deathmatch's Red Zone, so they are listed only in Team Deathmatch
+ * (1), in combat diagnostics (0, which can still record one) and before a game
+ * (null); any other mode, Capture the Flag and a future King of the Hills
+ * included, leaves them out. A new mode adds its task mode to each entry whose
+ * drawing it has.
+ *
+ * @type {Readonly<Record<string, ReadonlyArray<number | null>>>}
+ */
+export const SWITCH_TASK_MODES = Object.freeze({
+  flags: Object.freeze([3]),
+  red_zone_floors: Object.freeze([null, 0, 1]),
+  red_zone_home_fall: Object.freeze([null, 0, 1]),
+});
+
+/**
+ * Say whether a switch is listed in a game of one task mode. Pure.
+ *
+ * id is a switch ID; taskMode is the installed game's task mode (0 a combat
+ * diagnostic, 1 Team Deathmatch, 3 Capture the Flag), or null before any game
+ * is installed. A switch with no SWITCH_TASK_MODES entry is listed in every
+ * mode, also before any game; a mode-only switch is listed only in the modes
+ * its entry names, and before a game only when the entry holds null. A hidden
+ * switch keeps its state and its preset values, and Enable All and Disable All
+ * still set it.
+ *
+ * @param {string} id
+ * @param {number | null | undefined} taskMode
+ * @returns {boolean}
+ */
+export function visualFilterShownInMode(id, taskMode) {
+  const modes = SWITCH_TASK_MODES[id];
+  return (
+    modes === undefined ||
+    modes.includes(Number.isInteger(taskMode) ? Number(taskMode) : null)
+  );
+}
+
+/**
+ * Help lines that read differently in one game mode, keyed by switch ID, then
+ * by task mode. Only a registry line that would be false in that mode has one:
+ * in Capture the Flag a fall scores nothing, so the Fallen Feed's line there
+ * ends at "who fell".
+ *
+ * @type {Readonly<Record<string, Readonly<Record<number, string>>>>}
+ */
+export const SWITCH_MODE_HELP = Object.freeze({
+  death_announcer: Object.freeze({
+    3: "The Fallen panel at the top of the side rail lists the falls of the last 8 ticks, newest first, at most 4: everyone who shared the fall, a dot for a Basic or a diamond for an Ultimate, and who fell. In Agent POV only the falls your team saw, naming only the attackers it saw. Off: no panel.",
+  }),
+});
+
+/**
+ * Return a switch's help line for a game of one task mode: its SWITCH_MODE_HELP
+ * line for that mode when it has one, else its registry line. taskMode is the
+ * installed game's task mode, or null before any game (the registry line).
+ * Returns "" for an unknown switch. Pure.
+ *
+ * @param {string} id
+ * @param {number | null | undefined} taskMode
+ * @returns {string}
+ */
+export function visualFilterHelpInMode(id, taskMode) {
+  const special = Number.isInteger(taskMode)
+    ? SWITCH_MODE_HELP[id]?.[Number(taskMode)]
+    : undefined;
+  return special ?? VISUAL_FILTER_REGISTRY.find((entry) => entry.id === id)?.help ?? "";
+}
+
 // ---------------------------------------------------------------------------
 // Presets
 // ---------------------------------------------------------------------------
@@ -1276,6 +1368,7 @@ export const VISUAL_FILTER_PRESETS = Object.freeze([
       survey_frame: true,
       floor_grid: true,
       spawn_waystones: true,
+      flags: true,
       obstacle_relief: true,
       red_zone_floors: true,
       last_move_ghosts: true,
@@ -1329,6 +1422,7 @@ export const VISUAL_FILTER_PRESETS = Object.freeze([
       hud_momentum: false,
       floor_grid: true,
       spawn_waystones: true,
+      flags: true,
       red_zone_floors: true,
       status_marks: true,
       cooldown_effects: true,
@@ -1443,6 +1537,7 @@ const LOOK_PAINT_PART_SOURCES = Object.freeze([
   ["obstacles", () => OBSTACLES_PAINT_PARTS],
   ["red-zone", () => RED_ZONE_PAINT_PARTS],
   ["spawns", () => SPAWNS_PAINT_PARTS],
+  ["flags", () => FLAGS_PAINT_PARTS],
   ["team-identity", () => TEAM_IDENTITY_PAINT_PARTS],
   ["atmosphere", () => ATMOSPHERE_PAINT_PARTS],
   ["champions", () => CHAMPIONS_PAINT_PARTS],
@@ -1890,6 +1985,14 @@ if (VISUAL_FILTER_ID_SET.size !== VISUAL_FILTER_IDS.length) {
 for (const { id, group } of VISUAL_FILTER_REGISTRY) {
   if (!VISUAL_FILTER_GROUPS.includes(group)) {
     throw new TypeError(`Visual filter ${id} has unknown group ${group}.`);
+  }
+}
+for (const [id, modes] of Object.entries(SWITCH_TASK_MODES)) {
+  if (
+    !VISUAL_FILTER_ID_SET.has(/** @type {VisualFilterId} */ (id)) ||
+    !modes.every((mode) => [null, 0, 1, 3].includes(mode))
+  ) {
+    throw new TypeError(`Visual filter mode table names ${id} or a mode wrongly.`);
   }
 }
 for (const { id, overrides } of VISUAL_FILTER_PRESETS) {

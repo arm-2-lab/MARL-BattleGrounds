@@ -80,6 +80,7 @@ import {
   statusTokenIdFromCatalogId,
   teamTokenFromId,
 } from "../vocabulary.js";
+import { carryingWords } from "./flags.js";
 import {
   agentIdentity,
   asArray,
@@ -794,6 +795,9 @@ function classSeal(context) {
  * layoutSlot, globalSlot, presentationKey, center, radius, controlled, selected,
  * statuses, audience, spawnShieldMechanics, showSpawnShield} (center and radius
  * in CSS pixels; layoutSlot never shown as a public fact) and adds:
+ * - carrying: "Carrying Team B's flag" when the scene's capture_the_flag names
+ *   this champion as a carrier (flags.js carryingWords), else null; the body's
+ *   screen-reader label and its tip say it.
  * - classKey and teamKey (CSS keys), geometry (tokenGeometry(radius)).
  * - look: always "heraldic" (Heraldic Tokens is part of the game, not a switch;
  *   the "plain" branches below are kept only until a later clean-up);
@@ -982,6 +986,9 @@ export function records(input) {
     drafts.push({
       kind: "champion",
       agent,
+      // Capture the Flag: "Carrying Team B's flag" when this scene names it as
+      // a carrier (only a seen carrier in Agent POV), else null.
+      carrying: carryingWords(scene.capture_the_flag, presentationKey),
       identityKey,
       layoutSlot: agentLayoutSlot(agent, index),
       globalSlot,
@@ -2544,6 +2551,7 @@ function updateChampion(nodes, record) {
       healthText,
       agent.alive ? "alive" : "dead",
       record.ward !== null ? "spawn shield" : null,
+      typeof record.carrying === "string" ? record.carrying.toLowerCase() : null,
       controlled ? "controlled actor" : null,
       selected ? "selected target" : null,
     ]
@@ -2722,7 +2730,8 @@ function clearHitCues(nodes) {
  *
  * Oracle View uses the full agent explanation; Agent POV uses the POV agent
  * explanation (which shows only fields of the POV scene row), with the record's
- * controlled and selected flags. Pure; returns a tooltip descriptor.
+ * controlled and selected flags. Both carry the record's carrying words (a
+ * Capture the Flag carrier). Pure; returns a tooltip descriptor.
  *
  * @param {LookRecord} record
  */
@@ -2731,6 +2740,7 @@ export function tooltip(record) {
     ? explainPovAgent(record.agent, {
         controlled: record.controlled,
         selected: record.selected,
+        carrying: record.carrying ?? null,
       })
-    : explainAgent(record.agent);
+    : explainAgent(record.agent, { carrying: record.carrying ?? null });
 }

@@ -4,7 +4,8 @@
  * vision.
  *
  * Contracts: the place line splits into a bold map name and "Map 47 · Team
- * Deathmatch" (a scenario shows its tale title; matchPlaceTitle keeps its old
+ * Deathmatch" ("Capture the Flag" in that mode, which gives way the same way; a
+ * scenario shows its tale title; matchPlaceTitle keeps its old
  * words); the view tag reads "Oracle View · You See Everything" or "Agent POV ·
  * Your Team's Sight · N Unseen" ("Team A's" when nobody plays by hand), with N
  * counted from the Agent POV scene's own spawn pads and bodies, never from the
@@ -19,7 +20,8 @@
  * reduced card, a seen champion the full card) and a seen champion's card is
  * the same in Agent POV and Oracle View, also in the Replay Viewer, where who
  * plays it is the team's name; the How to Play overlay has the vision's
- * four rule titles; the live Visual Filters list holds the V5 add-ons too
+ * four rule titles, and a Capture the Flag game's card 4 is "4 · Flags and
+ * Winning" with no Team Deathmatch scoring words; the live Visual Filters list holds the V5 add-ons too
  * (Class Seals to Momentum, as in the Replay Viewer), lists Lore Emblems
  * (Bodies) in both clients, shows the V5
  * names while the Replay Viewer keeps its own, and lists Step Ghost in live
@@ -32,12 +34,14 @@ import test from "node:test";
 import { authorizedPresentationSceneView } from "../src/authorized-presentation-adapter.js";
 import { normalizeAuthorizedPresentationFrameV1 } from "../src/authorized-presentation-normalizer.js";
 import {
+  CAPTURE_THE_FLAG_RULE,
   championCardFacts,
   HELP_OVERLAY_RULES,
   hasManualChampion,
   liveViewTag,
   matchPlaceParts,
   matchPlaceTitle,
+  placeLineSplit,
 } from "../src/shell.js";
 import {
   championCardModel,
@@ -93,6 +97,13 @@ test("the place line is a bold name, then the map number and the task", () => {
     },
   );
   assert.equal(matchPlaceParts({ map: null }), null);
+  // Capture the Flag names its own mode, and it gives way like Team Deathmatch.
+  const ctf = matchPlaceParts({ map, task_mode: 3 });
+  assert.deepEqual(ctf?.details, ["Map 47", "Capture the Flag"]);
+  assert.deepEqual(placeLineSplit(/** @type {any} */ (ctf)), {
+    lead: ["Map 47"],
+    more: ["Capture the Flag"],
+  });
 });
 
 test("the view tag says what each view shows, from the audience scene only", async () => {
@@ -316,6 +327,10 @@ test("How to Play shows the vision's four rule cards", () => {
       "4 · Points and Winning",
     ],
   );
+  // A Capture the Flag game shows its own scoring card in place of card 4.
+  assert.equal(CAPTURE_THE_FLAG_RULE[0], "4 · Flags and Winning");
+  assert.match(CAPTURE_THE_FLAG_RULE[1], /First team to 3 captures wins\./u);
+  assert.doesNotMatch(CAPTURE_THE_FLAG_RULE[1], /Red Zone|point/u);
 });
 
 test("the live Visual Filters list shows the V5 add-ons, under their V5 names", () => {

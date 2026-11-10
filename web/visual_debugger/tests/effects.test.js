@@ -10,7 +10,8 @@
  * motion keeps a short copy of the whole schedule. Also pins where each drawing
  * rule now lives: the arena layer order (Strike Band routes above stones and
  * under every body and information layer; the atmosphere, Death Dimming and
- * heralds layers included), and the look modules under `src/looks/` that own
+ * heralds layers included; Capture the Flag's ground flags over the routes and
+ * under the bodies, and its carried flags over the bodies and their marks), and the look modules under `src/looks/` that own
  * the activation footprints (no shared route arrows remain), the Spawn Ward,
  * status docks, status-change marks and rest numbers, with their footprints. A
  * Basic carries its optional sub-parts (glow, close_range, kindled) and an
@@ -1608,8 +1609,10 @@ test("activation routes sit in the Strike Band: above stones, beneath every body
     "obstacle",
     "death-dim",
     "strike-band",
+    "flags-ground",
     "body",
     "over",
+    "flags-above",
     "selection-legality",
     "transient-events",
     "durable-status-modifier",
@@ -1648,6 +1651,13 @@ test("activation routes sit in the Strike Band: above stones, beneath every body
       `${foregroundLayer} must paint over activation routes`,
     );
   }
+  // Flags on the ground lie over the routes and under every body; a carried
+  // flag rides over the bodies and their marks.
+  const order = (/** @type {string} */ name) => BATTLEFIELD_LAYER_ORDER.indexOf(name);
+  assert.ok(order("strike-band") < order("flags-ground"));
+  assert.ok(order("flags-ground") < order("body"));
+  assert.ok(order("over") < order("flags-above"));
+  assert.ok(order("flags-above") < order("selection-legality"));
 });
 
 test("activation footprints stay in one table and the old route arrows are gone", async () => {

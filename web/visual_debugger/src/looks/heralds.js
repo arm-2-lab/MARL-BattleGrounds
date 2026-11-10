@@ -416,7 +416,9 @@ export function textWidth(text, size, caps = false) {
  *   or 11 px, cut with "…" only when it still does not fit),
  *   honours?: [{label, value, leaders: [{classId, teamId}]}] (at most 3 are
  *   drawn; an older row with classId and teamId and no leaders names one
- *   leader)}. The caller passes the frame's own Honors (every champion in
+ *   leader), summary? (default true; false for a game with no Match Summary
+ *   sheet, such as Capture the Flag until its own summary exists: the card
+ *   then has its Show Arena button only)}. The caller passes the frame's own Honors (every champion in
  *   both views: they come only once the game is over). leftTeamId (1 or 2,
  *   default 1) is the team whose home end is on the left of the arena: its
  *   column is drawn on the left. tucked true (the page's Show Arena) or
@@ -1860,7 +1862,7 @@ function honourValueText(value) {
  * per honor (its leaders' 22 px living medallions, 16 px apart, up to
  * HONOR_MEDALLIONS_MAX and then "+N"; the 11 px label; the 15 px value);
  * then the Match Summary and Show Arena buttons (24 px tall, 8 px apart,
- * centred); 9 px padding. Columns follow leftTeamId: the left column is the
+ * centred; Show Arena alone when verdict.summary is false); 9 px padding. Columns follow leftTeamId: the left column is the
  * team whose home end is on the left. The card is centred on the arena and
  * vertically in the room under the top band (store fullBox), scaled to fit
  * (between FOOTPRINT.verdict.minScale and 1). The record carries layout (the
@@ -2017,14 +2019,18 @@ function verdictRecord(input, bounds, full, avoid, chrome) {
   const buttonTop = y;
   y += layoutSize.buttonHeight + layoutSize.padBottom;
   const height = y;
-  const buttonWidths = VERDICT_BUTTONS.map(
+  // A game with no Match Summary (verdict.summary false) shows Show Arena only.
+  const shownButtons = VERDICT_BUTTONS.filter(
+    (button) => button.id !== "summary" || verdict.summary !== false,
+  );
+  const buttonWidths = shownButtons.map(
     (button) => textWidth(button.label, 13) + 2 * layoutSize.buttonPadX + 2,
   );
   const buttonsWidth =
     buttonWidths.reduce((sum, width) => sum + width, 0) +
-    layoutSize.buttonGap * (VERDICT_BUTTONS.length - 1);
+    layoutSize.buttonGap * (shownButtons.length - 1);
   let buttonLeft = (cardWidth - buttonsWidth) / 2;
-  const buttons = VERDICT_BUTTONS.map((button, index) => {
+  const buttons = shownButtons.map((button, index) => {
     const box = Object.freeze({
       id: button.id,
       label: button.label,

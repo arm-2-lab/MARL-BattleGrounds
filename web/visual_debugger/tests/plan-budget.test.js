@@ -16,6 +16,9 @@
  * the map 47 tournament replay (episode 1002, Oracle View: ticks 105, 110, 225 and
  * 245, whose rows were recorded from the real plan on 4 Oct 2026) ask for 535 to
  * 637 nodes, more than the old 512, and keep their Herald Card and Fallen rows.
+ * Each Capture the Flag flag that changed on a tick adds 11 override
+ * animations for its holds, to the demand and to the cap, so a busy tick's
+ * flag holds keep their own room; a tick with no flag change adds none.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -37,8 +40,8 @@ import * as fog from "../src/looks/fog.js";
 import * as healthText from "../src/looks/health-text.js";
 import * as heralds from "../src/looks/heralds.js";
 import * as redZone from "../src/looks/red-zone.js";
-import * as spawns from "../src/looks/spawns.js";
 import * as requiems from "../src/looks/requiems.js";
+import * as spawns from "../src/looks/spawns.js";
 import * as statuses from "../src/looks/statuses.js";
 import { ACTIVATION_FOOTPRINTS } from "../src/looks/strike-routes.js";
 import * as ultimates from "../src/looks/ultimates.js";
@@ -500,4 +503,22 @@ test("undrawn status-change rows cost nothing, so a busy tick keeps its herald c
   });
   const withLift = planResourceDemand([wardLift], [], [], schedule);
   assert.equal(withLift.nodes, 3 + statuses.BUDGET.nodesPerRecord);
+});
+
+test("each changed Capture the Flag flag adds room for its holds", () => {
+  const schedule = beatSchedule();
+  const none = planResourceDemand([], [], [], schedule).overrideAnimations;
+  assert.equal(planResourceDemand([], [], [], schedule, 0).overrideAnimations, none);
+  assert.equal(
+    planResourceDemand([], [], [], schedule, 2).overrideAnimations,
+    none + 22,
+  );
+  // A tick already over the cap still gives its flags their own room on top.
+  const bodies = /** @type {any[]} */ (Array.from({ length: 16 }, () => ({})));
+  const cap = PLAN_RESOURCE_CAPS.overrideAnimations;
+  assert.equal(applyPlanBudget([], [], bodies, schedule).bounds.overrideAnimations, cap);
+  assert.equal(
+    applyPlanBudget([], [], bodies, schedule, 2).bounds.overrideAnimations,
+    cap + 22,
+  );
 });

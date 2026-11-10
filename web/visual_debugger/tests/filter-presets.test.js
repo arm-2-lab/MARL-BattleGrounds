@@ -78,6 +78,7 @@ const EXPECTED_PRESETS = [
         "survey_frame",
         "floor_grid",
         "spawn_waystones",
+        "flags",
         "obstacle_relief",
         "red_zone_floors",
         "last_move_ghosts",
@@ -119,6 +120,7 @@ const EXPECTED_PRESETS = [
       [
         "floor_grid",
         "spawn_waystones",
+        "flags",
         "red_zone_floors",
         "status_marks",
         "cooldown_effects",

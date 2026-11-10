@@ -15,14 +15,18 @@ POV key, leaves an unseen carrier unnamed, has no return ticks (None), and
 refuses rows Core has not filled yet, a named carrier the view does not hold
 and bits that break decision 139. Its event summary gets one flag_changed line
 per flag whose state changed between its two scenes (a pickup names the
-teammate it sees, at successor), never one of the six Oracle flag events, and
-refuses flag lines without flag trajectories. Real games come once Core
+teammate it sees, at successor), and one for a dropped flag grabbed and
+dropped again (a new spot or a restarted countdown, decision 169), which a
+whole summary accepts, never for a dropped flag that only counts down; never
+one of the six Oracle flag events; and refuses flag lines without flag
+trajectories. Real games come once Core
 scores Capture the Flag (his C1.3 and C1.4); these frames and rows are
 hand-set, and the scene test uses frame 1 because today's Core leaves frame
 0's Capture the Flag context rows at zero. Host only, on CPU.
 """
 
 import dataclasses
+from typing import cast
 
 import jax
 import pytest
@@ -59,7 +63,10 @@ from marl_battlegrounds.rendering.authorized_pov_scene import (
     build_no_shared_obs_authorized_scene_v1,
 )
 from marl_battlegrounds.rendering.authorized_presentation import (
+    AgentPovVisualIncomingFlagChangedEventV1,
     AuthorizedBattlefieldSceneV1,
+    AuthorizedCaptureTheFlagFlagV1,
+    _agent_pov_flag_line_changed,  # pyright: ignore[reportPrivateUsage]
     _agent_pov_visual_event_is_authorized,  # pyright: ignore[reportPrivateUsage]
     _project_replay_incoming_summary_v1,  # pyright: ignore[reportPrivateUsage]
     build_agent_pov_visual_incoming_summary_v1,
@@ -71,6 +78,7 @@ from marl_battlegrounds.rendering.evaluation_adapter import (
 )
 from marl_battlegrounds.rendering.scene import (
     CaptureTheFlagFlagSceneV1,
+    CaptureTheFlagFlagState,
     VisualEventBatchV2,
 )
 from marl_battlegrounds.tasks import make_standard_capture_the_flag_config
@@ -550,3 +558,91 @@ def test_agent_pov_gets_its_own_flag_lines_and_no_oracle_flag_event(
     )
     with pytest.raises(ValueError, match="need the flag trajectories"):
         dataclasses.replace(summary, flag_trajectories=None)
+
+
+def test_a_flag_grabbed_and_dropped_again_gets_an_agent_pov_line() -> None:
+    def dropped(
+        position: tuple[float, float], countdown: int
+    ) -> AuthorizedCaptureTheFlagFlagV1:
+        return AuthorizedCaptureTheFlagFlagV1(
+            team_id=1,
+            state="dropped",
+            position=position,
+            home_position=(0.5, 5.0),
+            carrier_presentation_key=None,
+            carrier_public_agent_id=None,
+            countdown_steps=countdown,
+        )
+
+    lying = dropped((7.5, 3.5), 5)
+    changed = _agent_pov_flag_line_changed
+    assert not changed(lying, dropped((7.5, 3.5), 4))  # it only counts down
+    assert changed(lying, dropped((7.75, 3.5), 30))  # grabbed and dropped again
+    assert changed(lying, dropped((7.5, 3.5), 30))  # same spot, a fresh countdown
+
+    def line(
+        before: CaptureTheFlagFlagState, after: CaptureTheFlagFlagState
+    ) -> AgentPovVisualIncomingFlagChangedEventV1:
+        return AgentPovVisualIncomingFlagChangedEventV1(
+            event_id="e:visual-event:0000",
+            ordinal=0,
+            phase_rank=130,
+            event_kind="flag_changed",
+            flag_team_id=1,
+            state_before=before,
+            state_after=after,
+            agent_anchor=None,
+        )
+
+    assert line("dropped", "dropped").state_after == "dropped"
+    with pytest.raises(ValueError, match="dropped twice"):
+        line("home", "home")
+
+
+def test_a_whole_agent_pov_summary_accepts_a_grab_and_fall_from_the_ground(
+    game: tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4],
+) -> None:
+    start, transition, successor = game
+    config = _CONTEXT.resolved_env_config
+    homes = config.capture_the_flag_flag_home_positions
+    touch = config.capture_the_flag_flag_interaction_distance
+    full = config.capture_the_flag_dropped_flag_auto_return_steps
+    here, there = (7.5, 3.5), (7.75, 3.5)
+
+    def lying(frame: EvaluationFrameV4, spot: tuple[float, float], left: int) -> object:
+        # Team B's flag lies dropped at spot with left ticks; Team A's is home.
+        dropped = (1.0, *spot, touch, 0.0, 0.0, float(left), 0.0, 0.0, 0.0, 0.0, 0.0)
+        return _with_rows(
+            _frame(
+                frame,
+                flag_positions=(homes[0], spot),
+                dropped_flag_countdowns=(0, left),
+            ),
+            _flag_rows(own=_row(homes[0], touch, ally=1.0), enemy=dropped),
+        )
+
+    before = cast(EvaluationFrameV4, lying(start, here, 5))
+    after = cast(EvaluationFrameV4, lying(successor, there, full))
+    view = _view(before, transition, after)
+    batch = build_visual_event_batch_v2(view)
+    assert isinstance(view.transition, EvaluationTransitionV2)
+    start_scene, successor_scene = (
+        _pov_scene(before, view.transition, after, index) for index in (0, 1)
+    )
+    prefix = f"{batch.episode_id}:actor-pov:{_CONTEXT.roster[0].public_agent_id}"
+    summary = build_agent_pov_visual_incoming_summary_v1(
+        batch,
+        transition_start_scene=start_scene,
+        successor_scene=successor_scene,
+        recipient_public_agent_id=_CONTEXT.roster[0].public_agent_id,
+        incoming_recipient_transition_id=f"{prefix}:transition:0",
+        incoming_start_recipient_frame_id=f"{prefix}:frame:0",
+        incoming_successor_recipient_frame_id=f"{prefix}:frame:1",
+    )
+    lines = [
+        (event.flag_team_id, event.state_before, event.state_after, event.agent_anchor)
+        for event in summary.events
+        if event.event_kind == "flag_changed"
+    ]
+    # One line for the flag picked up and dropped again; its grabber stays unnamed.
+    assert lines == [(2, "dropped", "dropped", None)]

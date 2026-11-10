@@ -12,9 +12,14 @@
  * - The Out of Sight chip text "Warrior · ID 6 · Out of Sight".
  * - The plain accessible identity "Agent ID 5".
  * - Class names (Mage, Warrior, Hunter, Rogue, Priest), team names ("Team A",
- *   "Team B" only) and tick counts ("1 Tick", "2 Ticks" for labels; "1 tick",
+ *   "Team B" only), game mode names ("Team Deathmatch", "Capture the Flag",
+ *   "Combat Diagnostic", and "TDM" and "CTF" when short) and tick counts ("1 Tick", "2 Ticks" for labels; "1 tick",
  *   "2 ticks" inside sentences).
  * - The Full Record chip words ("Full Record · Not Limited to Agent 3's View").
+ * - The scoring rules each mode's words follow, one owner each: which modes
+ *   keep score (isScoredTaskMode), what a fall gives (fallPoints) and what a
+ *   score counts ("Score" or "Captures", scoreLabel). The arena looks import
+ *   them from here, since match-summary.js is outside their import walk.
  *
  * `vocabulary.js` builds its class and team display tokens from the two tables
  * here, and `class-documentation.js` reads the class names, so each name has one
@@ -155,6 +160,67 @@ export function teamIdentityFromId(teamId) {
  */
 export function teamLabelFromId(teamId) {
   return teamIdentityFromId(teamId)?.label ?? null;
+}
+
+/**
+ * Name a game mode from its task mode (match_summary.task_mode).
+ *
+ * 1 is "Team Deathmatch" ("TDM" when short), 3 is "Capture the Flag" ("CTF"),
+ * and anything else, 0 included, is a combat diagnostic: "Combat Diagnostic"
+ * as a label, "Combat diagnostic" when short. The mode is public (both teams
+ * play it), so every view may show it. Pure.
+ *
+ * @param {unknown} taskMode
+ * @param {{short?: boolean}} [options] short (default false) picks the short form.
+ * @returns {string}
+ */
+export function taskModeName(taskMode, options = {}) {
+  if (taskMode === 1) return options.short ? "TDM" : "Team Deathmatch";
+  if (taskMode === 3) return options.short ? "CTF" : "Capture the Flag";
+  return options.short ? "Combat diagnostic" : "Combat Diagnostic";
+}
+
+/**
+ * Say whether a task mode keeps score: 1 (Team Deathmatch, points) and 3
+ * (Capture the Flag, captures) do; 0 (a combat diagnostic) and anything else do
+ * not. The one owner of that rule for the scorebug, the Verdict, Momentum and
+ * the place line's mode name. Checks that belong to Team Deathmatch alone (its
+ * Red Zone, its metric panel, its Herald Cards) stay explicit task_mode 1
+ * checks. Pure.
+ *
+ * @param {unknown} taskMode
+ * @returns {boolean}
+ */
+export function isScoredTaskMode(taskMode) {
+  return taskMode === 1 || taskMode === 3;
+}
+
+/**
+ * Return the points one fall gives the other team in a game of this task mode:
+ * 2 for a Home Fall (homeFall true: it fell in its own Red Zone), else 1, or
+ * null in Capture the Flag (3), where a fall scores nothing and only captures
+ * score. A combat diagnostic (0) keeps Team Deathmatch's count. The one owner
+ * of that rule for the Fallen feed, the death cards and the Frame Explanation.
+ * Pure.
+ *
+ * @param {unknown} taskMode
+ * @param {boolean} homeFall
+ * @returns {1 | 2 | null}
+ */
+export function fallPoints(taskMode, homeFall) {
+  if (taskMode === 3) return null;
+  return homeFall ? 2 : 1;
+}
+
+/**
+ * Name what a game's score counts, for a plain score line: "Captures" in
+ * Capture the Flag (3), "Score" in every other mode. Pure.
+ *
+ * @param {unknown} taskMode
+ * @returns {"Captures" | "Score"}
+ */
+export function scoreLabel(taskMode) {
+  return taskMode === 3 ? "Captures" : "Score";
 }
 
 /**

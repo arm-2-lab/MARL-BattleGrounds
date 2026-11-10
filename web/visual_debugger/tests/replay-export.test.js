@@ -1,11 +1,13 @@
 /**
  * @file Check PNG/export provenance, audience-specific source facts and rejection of
- * forged or extra fields. New exports write provenance version 5: the switches that
+ * forged or extra fields. New exports write provenance version 6: the switches that
  * draw on the Replay Viewer battlefield (a frozen list that must still match the
- * registry, now with High Contrast, Next Step Ghost and All Staged Orders) and the camera frame, a
+ * registry, now with High Contrast, Next Step Ghost, All Staged Orders and Flags,
+ * which sits right after Spawn Waystones) and the camera frame, a
  * world rectangle that is the painted map for Whole Map when no camera is given;
  * Everyone in View and Battle Cam frames are recorded as given and malformed frames
- * are rejected. Version-4 provenance (version 5 without High Contrast),
+ * are rejected. Version-5 provenance (version 6 without Flags), version-4
+ * provenance (version 5 without High Contrast),
  * version-3 provenance with its 70 filters and a camera frame,
  * version-2 provenance with its 20 filters and version-1 provenance with its 19
  * filters still read; mixed forms (wrong filter list for the version, a camera frame
@@ -390,11 +392,11 @@ test("canonical provenance recursively sorts keys and preserves exact UTF-8", ()
   assert.throws(() => canonicalReplayPngProvenanceV1(nonfinite), /safe integer/u);
 });
 
-test("new exports write provenance 5 while versions 1 to 4 stay readable", () => {
+test("new exports write provenance 6 while versions 1 to 5 stay readable", () => {
   const current = projectReplayPngProvenanceV1(
     projectionOptions(presentations.replay_oracle),
   );
-  assert.equal(current.schema_version, 5);
+  assert.equal(current.schema_version, 6);
   assert.equal(
     Object.keys(current.presentation.visual_filters).length,
     REPLAY_PNG_RECORDED_FILTER_IDS.length,
@@ -405,6 +407,7 @@ test("new exports write provenance 5 while versions 1 to 4 stay readable", () =>
   assert.equal(current.presentation.visual_filters.high_contrast, true);
   assert.equal(current.presentation.visual_filters.next_step_ghost, false);
   assert.equal(current.presentation.visual_filters.all_staged_orders, false);
+  assert.equal(current.presentation.visual_filters.flags, true);
   for (const notRecorded of [
     "scorebug",
     "camera_framing",
@@ -416,10 +419,29 @@ test("new exports write provenance 5 while versions 1 to 4 stay readable", () =>
       false,
     );
   }
-  assert.equal(canonicalReplayPngProvenanceV1(current).provenance.schema_version, 5);
+  assert.equal(canonicalReplayPngProvenanceV1(current).provenance.schema_version, 6);
 
-  // Version 4: the same camera frame and every switch but High Contrast.
-  const v4Ids = REPLAY_PNG_RECORDED_FILTER_IDS.filter((id) => id !== "high_contrast");
+  // Version 5: the same camera frame and every switch but Flags.
+  const v5Ids = REPLAY_PNG_RECORDED_FILTER_IDS.filter((id) => id !== "flags");
+  const versionFive = /** @type {Record<string, any>} */ (structuredClone(current));
+  versionFive.schema_version = 5;
+  versionFive.presentation.visual_filters = Object.fromEntries(
+    v5Ids.map((id) => [id, current.presentation.visual_filters[id]]),
+  );
+  const readFive = canonicalReplayPngProvenanceV1(versionFive).provenance;
+  assert.equal(readFive.schema_version, 5);
+  assert.deepEqual(Object.keys(readFive.presentation.visual_filters), v5Ids);
+  const versionSixOldFilters = /** @type {Record<string, any>} */ (
+    structuredClone(versionFive)
+  );
+  versionSixOldFilters.schema_version = 6;
+  assert.throws(
+    () => canonicalReplayPngProvenanceV1(versionSixOldFilters),
+    /unknown or missing fields/u,
+  );
+
+  // Version 4: the same camera frame and every version-5 switch but High Contrast.
+  const v4Ids = v5Ids.filter((id) => id !== "high_contrast");
   const versionFour = /** @type {Record<string, any>} */ (structuredClone(current));
   versionFour.schema_version = 4;
   versionFour.presentation.visual_filters = Object.fromEntries(
@@ -439,7 +461,7 @@ test("new exports write provenance 5 while versions 1 to 4 stay readable", () =>
 
   // Version 3: the same camera frame and the 70 switches before High Contrast
   // and the two Replay Tools switches.
-  const v3Ids = REPLAY_PNG_RECORDED_FILTER_IDS.filter(
+  const v3Ids = v5Ids.filter(
     (id) =>
       id !== "high_contrast" && id !== "next_step_ghost" && id !== "all_staged_orders",
   );
@@ -533,17 +555,21 @@ test("new exports write provenance 5 while versions 1 to 4 stay readable", () =>
     /unknown or missing fields/u,
   );
   const futureVersion = /** @type {Record<string, any>} */ (structuredClone(current));
-  futureVersion.schema_version = 6;
+  futureVersion.schema_version = 7;
   assert.throws(
     () => canonicalReplayPngProvenanceV1(futureVersion),
     /root identity is invalid/u,
   );
 });
 
-test("version 5 records exactly the registry's battlefield switches", () => {
+test("version 6 records exactly the registry's battlefield switches", () => {
   assert.deepEqual(REPLAY_PNG_RECORDED_FILTER_IDS, replayPngExportableFilterIds());
   assert.equal(Object.isFrozen(REPLAY_PNG_RECORDED_FILTER_IDS), true);
-  assert.equal(REPLAY_PNG_RECORDED_FILTER_IDS.length, 73);
+  assert.equal(REPLAY_PNG_RECORDED_FILTER_IDS.length, 74);
+  assert.equal(
+    REPLAY_PNG_RECORDED_FILTER_IDS.indexOf("flags"),
+    REPLAY_PNG_RECORDED_FILTER_IDS.indexOf("spawn_waystones") + 1,
+  );
   assert.deepEqual(REPLAY_PNG_RECORDED_FILTER_IDS.slice(-3), [
     "high_contrast",
     "next_step_ghost",
@@ -787,7 +813,7 @@ test("artifact builder inserts one canonical uncompressed iTXt after IHDR", asyn
   assert.deepEqual(inspected.provenance, first.provenance);
 });
 
-test("artifact builder carries the camera frame into the embedded version-5 provenance", async () => {
+test("artifact builder carries the camera frame into the embedded version-6 provenance", async () => {
   const cameraFrame = { camera: "battle_cam", minX: 3, minY: 1.5, maxX: 15, maxY: 9 };
   const artifact = buildReplayBattlefieldPngArtifactV1({
     ...projectionOptions(presentations.replay_oracle),
@@ -797,7 +823,7 @@ test("artifact builder carries the camera frame into the embedded version-5 prov
   const inspected = inspectReplayBattlefieldPngV1(
     new Uint8Array(await artifact.blob.arrayBuffer()),
   );
-  assert.equal(inspected.provenance.schema_version, 5);
+  assert.equal(inspected.provenance.schema_version, 6);
   assert.deepEqual(inspected.provenance.presentation.camera_frame, {
     camera: "battle_cam",
     min_x: 3,

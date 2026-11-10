@@ -2,7 +2,8 @@
 
 render_scene_geometry creates a figure, draw_scene_geometry replaces an
 existing axes, and redraw_scene_geometry reuses a RenderResult. V1 supports
-legacy debugger scenes; V2 paints canonical analyzer records. The caller
+legacy debugger scenes; V2 paints canonical analyzer records, with Capture the
+Flag's bases and flags when the scene has them. The caller
 owns audience authorization, matching scene/event versions, and figure
 saving, display and cleanup.
 
@@ -532,7 +533,9 @@ def _draw_scene_v2(
     parts supplies Matplotlib factories; options chooses optional ranges,
     labels and events. event_batch is None or a batch already joined by the
     public caller. Draw pads, living aura fields, bodies, clocks and direct
-    event cues without inferring missing events. Mutate axes and return None.
+    event cues without inferring missing events; in Capture the Flag, the bases
+    and ground flags under the bodies and a carried flag over them. Mutate axes
+    and return None.
     """
     axes.clear()
     _draw_map(axes, parts, scene)
@@ -541,7 +544,9 @@ def _draw_scene_v2(
     if options.show_ranges:
         _draw_v2_ranges(axes, parts, scene)
     _draw_obstacles(axes, parts, scene)
+    _draw_v2_capture_the_flag(axes, parts, scene, carried=False)
     _draw_v2_agents(axes, parts, scene, options)
+    _draw_v2_capture_the_flag(axes, parts, scene, carried=True)
     _draw_v2_wave_clocks(axes, scene)
     if options.show_events and event_batch is not None:
         _draw_events_v2(axes, event_batch)
@@ -661,6 +666,118 @@ def _draw_v2_spawn_pads(
                 f"scene:v2:spawn-pad:{pad.assigned_public_agent_id}",
             )
         )
+
+
+def _draw_v2_capture_the_flag(
+    axes: _AxesLike,
+    parts: _MatplotlibParts,
+    scene: BattlefieldSceneV2,
+    *,
+    carried: bool,
+) -> None:
+    """Paint Capture the Flag's bases and flags, in the browser look's meanings.
+
+    Parameters
+    ----------
+    axes : _AxesLike
+        Matplotlib axes to draw on.
+    parts : _MatplotlibParts
+        Circle and polygon factories.
+    scene : BattlefieldSceneV2
+        The scene; nothing is drawn when its ``capture_the_flag`` is None
+        (every mode but Capture the Flag).
+    carried : bool
+        False for the layer under the bodies: each base (a rim of 0.66 world
+        units, two for Team B, full while its flag is home and faint while it
+        is away, and a dashed ring at the capture distance) and every flag on
+        the ground, a dropped one with its ticks left as text, since a still
+        has no moving countdown. True for the layer over the bodies: a carried
+        flag on its carrier.
+
+    Notes
+    -----
+    A pennant stands on a 0.92-unit pole from the flag's position and flies
+    toward the middle of the map from its own home's side, so a carried or
+    dropped flag never flips as it crosses the middle: Team A's a triangle,
+    Team B's a swallowtail (Team B's second cue, as its two rims are).
+    Mutates axes and returns None.
+    """
+    ctf = scene.capture_the_flag
+    if ctf is None:
+        return
+    for flag in ctf.flags:
+        color = _TEAM_A if flag.team_id == 1 else _TEAM_B
+        tag = f"scene:v2:flag:{flag.team_id}"
+        if not carried:
+            strength = 1.0 if flag.state == "home" else 0.4
+            for radius in (0.66,) if flag.team_id == 1 else (0.61, 0.71):
+                rim = parts.circle(
+                    flag.home_position,
+                    radius,
+                    facecolor="none",
+                    edgecolor=color,
+                    linewidth=1.0,
+                    alpha=strength,
+                    zorder=3,
+                )
+                axes.add_patch(_tag(rim, f"{tag}:base"))
+            ring = parts.circle(
+                flag.home_position,
+                ctf.capture_distance,
+                facecolor="none",
+                edgecolor=color,
+                linewidth=0.8,
+                linestyle="--",
+                alpha=0.5 * strength,
+                zorder=3,
+            )
+            axes.add_patch(_tag(ring, f"{tag}:capture-ring"))
+        if (flag.state == "carried") != carried:
+            continue
+        x, y = flag.position
+        # Every pennant flies toward the middle from its home's side, as in
+        # the browser (looks/flags.js), so it never flips at the middle.
+        side = -1.0 if flag.home_position[0] > scene.map.width / 2 else 1.0
+        top, low, width = y + 0.92, y + 0.92 * 0.38, side * 0.575
+        shape = (
+            [(x, top), (x + width, (top + low) / 2), (x, low)]
+            if flag.team_id == 1
+            else [
+                (x, top),
+                (x + width, top),
+                (x + 0.62 * width, (top + low) / 2),
+                (x + width, low),
+                (x, low),
+            ]
+        )
+        # Matplotlib's z-order, not the drawing order, decides what is on top:
+        # a ground flag sits over the stones (20) and under the bodies (24 up),
+        # a carried one over the bodies and their selection rings (up to 32).
+        under = 21 if not carried else 33
+        pole = parts.rectangle((x - 0.025, y), 0.05, 0.92, color=_TEXT, zorder=under)
+        axes.add_patch(_tag(pole, f"{tag}:pole"))
+        pennant = parts.polygon(
+            shape,
+            closed=True,
+            facecolor=color,
+            edgecolor=_TEXT if flag.state == "carried" else "#0A0D14",
+            linewidth=1.0,
+            zorder=under + 1,
+        )
+        axes.add_patch(_tag(pennant, f"{tag}:pennant"))
+        if flag.state == "dropped":
+            ticks = axes.text(
+                x + ctf.interaction_distance,
+                y + ctf.interaction_distance,
+                str(flag.countdown_steps),
+                color=color,
+                fontsize=7,
+                fontweight="bold",
+                ha="left",
+                va="bottom",
+                zorder=35,
+            )
+            _tag(ticks, f"{tag}:ticks")
 
 
 def _draw_v2_aura_fields(

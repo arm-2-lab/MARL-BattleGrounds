@@ -154,7 +154,10 @@ def test_live_no_shared_excludes_oracle_ids_and_diagnostics() -> None:
         "root_seed",
         "episode_seed",
         "slot_controller_names",
+        "flag_return_steps",
     }
+    # A public Capture the Flag rule setting; None in this Team Deathmatch game.
+    assert match_summary["flag_return_steps"] is None
     context = service.session.evaluation_context
     frame = service.session.current_evaluation_frame
     assert match_summary["schema_version"] == 1

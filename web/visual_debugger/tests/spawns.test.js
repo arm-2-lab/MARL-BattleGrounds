@@ -7,7 +7,8 @@
  * whose champion is unseen is Dormant with no pips and no champion in its tip),
  * the Call event part (only for an agent_respawned pulse, three animations with
  * fill "backwards" in normal motion, no blaze in reduced motion, none when
- * settled), the "Spawn Pad" tip, and build() export safety.
+ * settled), the "Spawn Pad" tip (in Capture the Flag the pad at each flag's
+ * home adds "Flag Base" and how that team captures), and build() export safety.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -295,6 +296,41 @@ test("Agent POV: a pad whose champion is unseen is Dormant with no pips and no c
   const seenTip = JSON.stringify(spawns.tooltip(/** @type {any} */ (records[0])));
   assert.ok(seenTip.includes("Mage · ID 0"));
   assert.equal(spawns.tooltip(/** @type {any} */ ({ kind: "anything" })), null);
+});
+
+test("in Capture the Flag the pad under each flag base says so in its tip", () => {
+  const ctf = {
+    ...SCENE,
+    capture_the_flag: {
+      flags: [
+        { team_id: 1, home_position: [1.5, 4] },
+        { team_id: 2, home_position: [18.5, 2] },
+      ],
+    },
+  };
+  const tips = spawns
+    .records({ scene: ctf, transform, audience: "researcher" })
+    .map((record) => JSON.stringify(spawns.tooltip(/** @type {any} */ (record))));
+  const base = tips.filter((tip) => tip.includes("Flag Base"));
+  assert.equal(base.length, 2);
+  assert.ok(
+    base[0].includes(
+      "Team A captures by bringing Team B's flag here while its own flag is home.",
+    ),
+  );
+  assert.ok(
+    base[1].includes(
+      "Team B captures by bringing Team A's flag here while its own flag is home.",
+    ),
+  );
+  // Team Deathmatch keeps every tip as it was.
+  const plain = recordsOf().map((record) =>
+    JSON.stringify(spawns.tooltip(/** @type {any} */ (record))),
+  );
+  assert.equal(
+    plain.some((tip) => tip.includes("Flag Base")),
+    false,
+  );
 });
 
 test("the Call answers only an agent_respawned pulse and is timed from its Return beat", () => {

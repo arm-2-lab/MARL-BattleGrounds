@@ -1,0 +1,119 @@
+/*
+ * Styles for the Flags and Bases look (src/looks/flags.js): Capture the Flag's
+ * bases, pennants, return countdowns, ticks left, pulses and capture marks.
+ * styles.css imports this file at its top. Colors come from the shared tokens:
+ * the team colors for bases, pennants, rings and marks, the team field tones for
+ * the capture zones, the light team colors for a carrier's outline and the ticks
+ * left, Moon Silver for the poles and Ink for their shadows. Stroke widths, dash
+ * lengths, font sizes and opacities are written by the look as attributes (they
+ * follow the screen scale and the flag's state); no rule here animates anything.
+ */
+.flag-base,
+.flag-countdown,
+.flag-pennant,
+.flag-ticks,
+.flag-pulse,
+.flag-mark {
+  pointer-events: none;
+}
+
+.flag-base__zone {
+  fill-opacity: 0.4;
+  stroke: none;
+}
+
+.flag-base__ring {
+  fill: none;
+  stroke-opacity: 0.7;
+}
+
+.flag-base__rim {
+  fill: none;
+}
+
+.flag-base--team-a .flag-base__zone {
+  fill: var(--team-a-field);
+}
+
+.flag-base--team-b .flag-base__zone {
+  fill: var(--team-b-field);
+}
+
+.flag-base--team-a .flag-base__ring,
+.flag-base--team-a .flag-base__rim,
+.flag-countdown--team-a,
+.flag-pulse--team-a,
+.flag-mark--team-a {
+  stroke: var(--team-a);
+}
+
+.flag-base--team-b .flag-base__ring,
+.flag-base--team-b .flag-base__rim,
+.flag-countdown--team-b,
+.flag-pulse--team-b,
+.flag-mark--team-b {
+  stroke: var(--team-b);
+}
+
+.flag-countdown__track,
+.flag-countdown__arc,
+.flag-pulse,
+.flag-mark {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.flag-countdown__track {
+  stroke-opacity: 0.3;
+}
+
+.flag-pennant__pole-shadow,
+.flag-pennant__pole {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.flag-pennant__pole-shadow {
+  stroke: var(--ink);
+}
+
+.flag-pennant__pole {
+  stroke: var(--moon-silver);
+}
+
+.flag-pennant__shape {
+  stroke: var(--ink);
+  stroke-linejoin: round;
+}
+
+.flag-pennant--team-a .flag-pennant__shape {
+  fill: var(--team-a);
+}
+
+.flag-pennant--team-b .flag-pennant__shape {
+  fill: var(--team-b);
+}
+
+/* The carrier's mark: the pennant outlined in its team's light color. */
+.flag-pennant--marked.flag-pennant--team-a .flag-pennant__shape {
+  stroke: var(--team-a-light);
+}
+
+.flag-pennant--marked.flag-pennant--team-b .flag-pennant__shape {
+  stroke: var(--team-b-light);
+}
+
+.flag-ticks {
+  font-family: "Atkinson Hyperlegible", sans-serif;
+  font-weight: 700;
+  stroke: var(--ink);
+  stroke-linejoin: round;
+}
+
+.flag-ticks--team-a {
+  fill: var(--team-a-light);
+}
+
+.flag-ticks--team-b {
+  fill: var(--team-b-light);
+}

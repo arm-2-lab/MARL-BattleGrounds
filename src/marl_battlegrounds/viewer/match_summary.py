@@ -27,6 +27,9 @@ Agent POV note: every field here is global researcher data, attached to Agent
 POV frames only for docked researcher panels. Nothing drawn on or over the
 arena in Agent POV may read it. The scorebug beside the arena reads only its
 public match facts (scores, threshold, tick), which are the same in every view.
+The one more public rule fact is Capture the Flag's ``flag_return_steps``: the
+arena reads it only through its one-field adapter reader, as it reads the
+episode limit.
 
 Honors (the game-over Verdict card's leaders and Match Summary rows) are the
 one exception built here for the arena: ``match_transition_totals_v1`` turns
@@ -78,6 +81,7 @@ from marl_battlegrounds.evaluation.models import (
     FlagCapturedEventV1,
     LethalDamageContributionEventV1,
     RecipientHealthResolutionEventV1,
+    ResolvedEnvConfigCaptureTheFlagV3,
     SourceDamageOutputEventV1,
     SourceHealingOutputEventV1,
     TeamDeathmatchCompletedEventV1,
@@ -252,6 +256,14 @@ class MatchSummaryV1(_MatchModel):
         2 October 2026); clients then fall back to the team names. The Replay
         Viewer builds its controller lists from it. Who controls a champion is
         fixed before the game, so it reveals nothing in Agent POV.
+    flag_return_steps : int or None
+        Capture the Flag only: the ticks a dropped flag waits before it goes
+        home by itself (the recorded
+        ``capture_the_flag_dropped_flag_auto_return_steps``, 30 by default).
+        It is a public rule setting fixed before the game, the same in every
+        view, like ``score_threshold``, so the arena may size a dropped flag's
+        countdown with it in Agent POV too. None in every other
+        mode, and required in Capture the Flag.
     """
 
     schema_version: Literal[1]
@@ -285,6 +297,9 @@ class MatchSummaryV1(_MatchModel):
     slot_controller_names: (
         Annotated[tuple[_Name | None, ...], Field(min_length=10, max_length=10)] | None
     ) = Field(default_factory=lambda: None)
+    flag_return_steps: Annotated[int, Field(gt=0)] | None = Field(
+        default_factory=lambda: None
+    )
 
     @model_validator(mode="after")
     def _validate_task(self) -> Self:
@@ -315,6 +330,10 @@ class MatchSummaryV1(_MatchModel):
             raise ValueError("match display sides must be opposite or both unavailable")
         if len({death.public_agent_id for death in self.deaths}) != len(self.deaths):
             raise ValueError("match deaths must contain each incoming recipient once")
+        if (self.flag_return_steps is None) != (self.task_mode != 3):
+            raise ValueError(
+                "only Capture the Flag records the flag return ticks, and it must"
+            )
         if self.task_mode == 0:
             if (
                 self.score_threshold != 0
@@ -639,7 +658,9 @@ def build_match_summary_v1(
         also for a game that starts mid-way), and the expected number of
         transitions in combat diagnostics. In Capture the Flag the scores are
         captures, the threshold is the captures to win, and the outcome comes
-        from the ``capture_the_flag_completed`` event. Team names
+        from the ``capture_the_flag_completed`` event, and
+        ``flag_return_steps`` is the recorded return ticks (None in every
+        other mode). Team names
         and ``slot_controller_names`` are the recorded controller names,
         exactly as recorded; records without per-slot names give
         ``slot_controller_names`` None and keep their team names or older
@@ -867,6 +888,14 @@ def build_match_summary_v1(
         root_seed=context.seed_protocol.root_seed,
         episode_seed=context.seed_protocol.episode_seed,
         slot_controller_names=slot_names,
+        # Capture the Flag's public return ticks (None in every other mode).
+        flag_return_steps=(
+            context.resolved_env_config.capture_the_flag_dropped_flag_auto_return_steps
+            if isinstance(
+                context.resolved_env_config, ResolvedEnvConfigCaptureTheFlagV3
+            )
+            else None
+        ),
     )
 
 

@@ -9,9 +9,9 @@
  * What it owns: the brand lockup (the MARL-BGs emblem, the rune-cut "MARL-BGs"
  * wordmark, whose flat hyphen keeps the one spelling "MARL-BGs", and the
  * product name) and the tab title; the place line (the map or a scenario's
- * tale title in bold, then "Map 47" or "Scenario 1" and "Team Deathmatch",
- * in two spans so that only "Team Deathmatch" gives way when the top bar
- * runs short and the map name stays whole in live play); the live terminal
+ * tale title in bold, then "Map 47" or "Scenario 1" and the mode's name, such
+ * as "Team Deathmatch" or "Capture the Flag", in two spans so that only the
+ * mode's name gives way when the top bar runs short and the map name stays whole in live play); the live terminal
  * pill's "Game Over"; the live Visual Filters drawer's top (below the
  * scorebug); the View switch (Agent POV first, its hover help kept true) and
  * the hidden View select it drives; the Replay Viewer's POV agent chip and its
@@ -66,7 +66,11 @@
  * everyone). Agent POV and Oracle View change only what the human sees.
  */
 
-import { exactAuthorizedAgentIdentityV1 } from "./agent-identity.js";
+import {
+  exactAuthorizedAgentIdentityV1,
+  isScoredTaskMode,
+  taskModeName,
+} from "./agent-identity.js";
 import {
   authorizedPresentationAudience,
   authorizedPresentationIdentityRows,
@@ -79,6 +83,7 @@ import {
 import { classNamesV1 } from "./class-documentation.js";
 import { commandHelpRows } from "./command-set.js";
 import { createSvgIcon } from "./icons.js";
+import { carryingWords, pennantGeometry } from "./looks/flags.js";
 import { publicRosterIdentities } from "./match-summary.js";
 import { applyPalette } from "./palette.js";
 import {
@@ -509,8 +514,8 @@ export function matchPlaceTitle(matchSummary) {
   return [parts.name, ...placeLineSplit(parts).lead].join(" · ");
 }
 
-/** What the top bar's place line says for task mode 1, Team Deathmatch. */
-const TEAM_DEATHMATCH_LABEL = "Team Deathmatch";
+/** What the top bar's place line says for each scored mode, by task mode. */
+const MODE_LABELS = Object.freeze([taskModeName(1), taskModeName(3)]);
 
 /**
  * Split the top bar's place line into its bold name and the plain parts that
@@ -520,7 +525,8 @@ const TEAM_DEATHMATCH_LABEL = "Team Deathmatch";
  * name is the scenario's tale title or the map's display name. details lists,
  * in order, "Scenario N" (a built-in scenario) or "Map N" (a map with a
  * registered ID; none for a map without one, such as "Custom Map"), then
- * "Team Deathmatch" when the summary's task_mode is 1. The map is public (both
+ * the mode's name, "Team Deathmatch" for task_mode 1 or "Capture the Flag" for
+ * task_mode 3 (none for a combat diagnostic). The map is public (both
  * teams play on it), so Agent POV shows the same line. Pure.
  *
  * @param {unknown} matchSummary `presentation.match_summary`, or anything else.
@@ -546,7 +552,9 @@ export function matchPlaceParts(matchSummary) {
     name = record.display_name;
     if (Number.isInteger(record.map_id)) details.push(`Map ${record.map_id}`);
   }
-  if (summary.task_mode === 1) details.push(TEAM_DEATHMATCH_LABEL);
+  if (isScoredTaskMode(summary.task_mode)) {
+    details.push(taskModeName(summary.task_mode));
+  }
   return Object.freeze({ name, details: Object.freeze(details) });
 }
 
@@ -558,7 +566,8 @@ export function matchPlaceParts(matchSummary) {
  * "Scenario 1"; empty for a map without a registered ID). The top bar always
  * shows the bold name and lead whole, for example "Teutoburg Forest · Map
  * 47" (3 Oct 2026: the full map name at every supported size and in
- * every phase). more keeps the rest ("Team Deathmatch"), which the top-bar
+ * every phase). more keeps the rest (the mode's name, such as "Team
+ * Deathmatch" or "Capture the Flag"), which the top-bar
  * styles cut with "…" first when the bar runs short. Both keep their order
  * in parts.details. Pure.
  *
@@ -570,11 +579,9 @@ export function matchPlaceParts(matchSummary) {
 export function placeLineSplit(parts) {
   return Object.freeze({
     lead: Object.freeze(
-      parts.details.filter((detail) => detail !== TEAM_DEATHMATCH_LABEL),
+      parts.details.filter((detail) => !MODE_LABELS.includes(detail)),
     ),
-    more: Object.freeze(
-      parts.details.filter((detail) => detail === TEAM_DEATHMATCH_LABEL),
-    ),
+    more: Object.freeze(parts.details.filter((detail) => MODE_LABELS.includes(detail))),
   });
 }
 
@@ -708,7 +715,9 @@ export function liveViewTag(input) {
  * life, place, Ultimate or status. In Oracle View, or in the Replay Viewer, a
  * champion with no body gets no card. A fallen champion's card ends with
  * "Fallen · Returns in N" from the scene's public respawn_waves clock (the
- * same note the Replay Viewer's frames show).
+ * same note the Replay Viewer's frames show). In Capture the Flag, a carrier's
+ * card ends with "Carrying Team B's flag" (flags.js carryingWords) when the
+ * audience scene names it as the carrier.
  *
  * Who plays it: live play reads the transport frame's combat configuration
  * ("You play this champion" for a manual_slots slot, else its slot_labels
@@ -875,9 +884,13 @@ export function championCardFacts(input) {
   });
   // Live play shows the slot as the Agent ID even when the row has no
   // display ID of its own.
-  return facts.displayId === null && slot !== null
-    ? Object.freeze({ ...facts, displayId: String(slot) })
-    : facts;
+  // Capture the Flag: a carrier's card says which flag it carries, in the note
+  // line (a carrier is never fallen, so the line is free).
+  const carrying = carryingWords(scene.capture_the_flag, agent.presentation_key);
+  const shown = carrying === null ? facts : Object.freeze({ ...facts, note: carrying });
+  return shown.displayId === null && slot !== null
+    ? Object.freeze({ ...shown, displayId: String(slot) })
+    : shown;
 }
 
 /**
@@ -1209,6 +1222,21 @@ export const HELP_OVERLAY_RULES = Object.freeze([
 ]);
 
 /**
+ * Capture the Flag's fourth rule card, shown in place of "4 · Points and
+ * Winning" in a Capture the Flag game: [title, sentence]. Every number is the
+ * game's default (First to 3, a draw at tick 300, a 30-tick return, waves
+ * every 5 ticks, a 3-tick shield).
+ *
+ * @type {readonly [string, string]}
+ */
+export const CAPTURE_THE_FLAG_RULE = Object.freeze(
+  /** @type {const} */ ([
+    "4 · Flags and Winning",
+    "Take the other team's flag from its base and carry it to your own base to capture it. Your own flag must be at home. First team to 3 captures wins. At tick 300 the game is a draw, whatever the score. A dropped flag goes home when its own team touches it, or by itself after 30 ticks. The fallen come back on the next respawn wave (every 5 ticks), shielded for 3 ticks, and a shielded champion cannot touch a flag.",
+  ]),
+);
+
+/**
  * Class name of each class ID, for the rule cards' small tokens. The studs get
  * the class `tok-studs--<name>`; overlays.css paints them with the palette's
  * class token (`--class-<name>`), so this file holds no team or class color.
@@ -1392,10 +1420,12 @@ function ruleToken(doc, classId, teamId, fallen = false) {
  * "+", the "1 Basic" slot, "or", the "2 Ultimate" slot. Rule 3: a Hunter's
  * dashed sight circle with a stone casting a shadow (no facing). Rule 4: a
  * fallen Team B Rogue "+1", then inside a Red Zone strip marked ×2, another
- * "+2". Pure apart from creating nodes.
+ * "+2". Index 4, Capture the Flag's rule 4: a Team A Hunter, Team B's
+ * swallowtail pennant (the arena look's shape), "→" and "+1". Pure apart from
+ * creating nodes.
  *
  * @param {Document} doc Creates the nodes.
- * @param {number} index The rule, 0 to 3.
+ * @param {number} index The rule, 0 to 3, or 4 for Capture the Flag's rule 4.
  * @returns {HTMLDivElement}
  */
 function rulePicture(doc, index) {
@@ -1489,6 +1519,21 @@ function rulePicture(doc, index) {
       hunter,
     );
     ill.append(svg);
+  } else if (index === 4) {
+    // Capture the Flag: a Team A champion with Team B's flag, carried home.
+    const pennant = svgElement(doc, "svg", {
+      class: "rule-flag rule-flag--b",
+      width: 22,
+      height: 22,
+      viewBox: "0 0 14 14",
+      "aria-hidden": "true",
+    });
+    const { pole, shape } = pennantGeometry(2, [3, 13], 12);
+    pennant.append(
+      svgElement(doc, "path", { class: "rule-flag__pole", d: pole }),
+      svgElement(doc, "path", { class: "rule-flag__shape", d: shape }),
+    );
+    ill.append(ruleToken(doc, 3, 1), pennant, span("plus", "→"), span("pts", "+1"));
   } else {
     const zone = doc.createElement("span");
     zone.className = "zone";
@@ -1502,34 +1547,56 @@ function rulePicture(doc, index) {
 
 /**
  * Fill the How to Play overlay's body (#htp-body) with the four rule cards,
- * when the overlay first opens, as in the BattleClient vision.
+ * as in the BattleClient vision, for the installed game's mode.
  *
  * Writes one `.rules` grid with four `.rule` cards (picture, title h3 and
- * sentence p, from HELP_OVERLAY_RULES). Does nothing when root has no
- * #htp-body or the body already has children, so calling it again is safe.
- * The overlay's key row and Close button are page markup. It reads no frame,
- * so it is the same in Oracle View and Agent POV. Side effects: DOM only.
+ * sentence p, from HELP_OVERLAY_RULES); in a Capture the Flag game (taskMode
+ * 3) the fourth card is CAPTURE_THE_FLAG_RULE with its own picture. The body
+ * remembers which set it holds (data-rules-mode "ctf" or "tdm"); a call for
+ * the set it already holds does nothing, so calling it on every repaint is
+ * safe, and a game of the other mode rewrites the cards. Does nothing when
+ * root has no #htp-body. The overlay's key row and Close button are page
+ * markup. The mode is public, so the cards are the same in Oracle View and
+ * Agent POV. Side effects: DOM only.
  *
  * @param {ParentNode} root Where to look, normally `document`.
+ * @param {unknown} [taskMode] The installed game's task mode
+ *   (match_summary.task_mode); anything but 3, or none, gives Team
+ *   Deathmatch's cards.
  * @returns {boolean} True when the cards were written now.
  */
-export function renderHelpOverlayRules(root) {
-  const body = root.querySelector("#htp-body");
-  if (body === null || body.childElementCount > 0) return false;
+export function renderHelpOverlayRules(root, taskMode = null) {
+  const body = /** @type {HTMLElement | null} */ (root.querySelector("#htp-body"));
+  const mode = taskMode === 3 ? "ctf" : "tdm";
+  if (
+    body === null ||
+    (body.childElementCount > 0 && body.dataset.rulesMode === mode)
+  ) {
+    return false;
+  }
   const doc = body.ownerDocument;
   const rules = doc.createElement("div");
   rules.className = "rules";
-  for (const [index, [title, sentence]] of HELP_OVERLAY_RULES.entries()) {
+  const cards =
+    mode === "ctf"
+      ? [...HELP_OVERLAY_RULES.slice(0, 3), CAPTURE_THE_FLAG_RULE]
+      : HELP_OVERLAY_RULES;
+  for (const [index, [title, sentence]] of cards.entries()) {
     const card = doc.createElement("div");
     card.className = "rule";
     const heading = doc.createElement("h3");
     heading.textContent = title;
     const text = doc.createElement("p");
     text.textContent = sentence;
-    card.append(rulePicture(doc, index), heading, text);
+    card.append(
+      rulePicture(doc, mode === "ctf" && index === 3 ? 4 : index),
+      heading,
+      text,
+    );
     rules.append(card);
   }
-  body.append(rules);
+  body.replaceChildren(rules);
+  body.dataset.rulesMode = mode;
   return true;
 }
 
@@ -2469,6 +2536,10 @@ export function createShell(context) {
    * @returns {void}
    */
   function renderPlaceLine(presentation) {
+    // The How to Play cards follow the installed game's mode (card 4).
+    if (typeof document.querySelector === "function") {
+      renderHelpOverlayRules(document, presentation?.match_summary?.task_mode ?? null);
+    }
     const place = shellParts.matchPlace;
     if (place === null) return;
     const parts = matchPlaceParts(presentation?.match_summary);

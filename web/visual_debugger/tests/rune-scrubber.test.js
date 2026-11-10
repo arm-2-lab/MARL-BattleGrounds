@@ -6,7 +6,10 @@
  * Event Track records (frame-to-x, the 36 px lanes from SCRUBBER_LANES, runes on the
  * groove with damaging ones last, the current tick split, the veil, switches), hover
  * rows with "Team B Warrior · ID 6" labels and titles such as "Tick 2 · Team B
- * Warrior Fell", beat times and beat names from a choreography schedule, track seeks
+ * Warrior Fell", a Capture the Flag capture (a pennant in the capturing team's
+ * row, lit with the falls, "Captured" on hover and named first in the title,
+ * by the team alone when the view did not see the carrier; a capturer from the
+ * other team is refused; a tick without the field has none), beat times and beat names from a choreography schedule, track seeks
  * through the controller's one queue (a press pauses first, the thumb shows the
  * target in flight or queued, a button press adds to it, a track press replaces it,
  * queued presses cost one round trip, no cursor refuses), the
@@ -269,6 +272,53 @@ test("hover rows and titles name champions with Team A or Team B and ability nam
     tickMarkTitle(marks.ticks[2], 107),
     "Tick 107 · Team A Rogue Fell · 2 More",
   );
+});
+
+test("a Capture the Flag capture is a pennant in its team's row, named first on hover", () => {
+  const raw = /** @type {any} */ (rawMarks());
+  raw.ticks.push({
+    frame_index: 18,
+    falls: [{ ...agent("agent-6", 2, 2), home_fall: false }],
+    ultimates: [],
+    returns: [],
+    captures: [{ team_id: 1, capturer: agent("agent-3", 1, 4) }],
+  });
+  raw.ticks.push({
+    frame_index: 19,
+    falls: [],
+    ultimates: [],
+    returns: [],
+    captures: [{ team_id: 2, capturer: null }],
+  });
+  const marks = normalizeTimelineMarks(raw);
+  // A tick without the field (Team Deathmatch, an older server) has no capture.
+  assert.deepEqual(marks.ticks[0].captures, []);
+  const capture = marks.ticks.at(-2);
+  assert.ok(capture);
+  assert.deepEqual(tickMarkRows(capture).at(-1), {
+    label: "Captured",
+    value: "Team A Rogue · ID 3",
+  });
+  assert.equal(tickMarkTitle(capture, 18), "Tick 18 · Team A Rogue Captured · 1 More");
+  const records = scrubberTrackRecords({
+    marks,
+    frameIndex: 18,
+    finalFrameIndex: 20,
+    width: 600,
+  });
+  assert.match(records.currentMarks.captureA, /^M/u);
+  assert.equal(records.currentMarks.captureB, "");
+  assert.equal(records.currentMarks.hasFalls, true);
+  assert.equal(records.staticMarks.captureA, "");
+  // Agent POV: a capture whose carrier the team did not see names its team.
+  const unseen = marks.ticks.at(-1);
+  assert.ok(unseen);
+  assert.deepEqual(tickMarkRows(unseen), [{ label: "Captured", value: "Team B" }]);
+  assert.equal(tickMarkTitle(unseen, 19), "Tick 19 · Team B Captured");
+  const later = scrubberTrackRecords({ marks, frameIndex: 20, finalFrameIndex: 20, width: 600 });
+  assert.match(later.staticMarks.captureB, /^M/u);
+  raw.ticks.at(-1).captures = [{ team_id: 2, capturer: agent("agent-3", 1, 4) }];
+  assert.throws(() => normalizeTimelineMarks(raw), /capturing team/u);
 });
 
 test("beat times and beat names come from the choreography schedule", () => {

@@ -102,11 +102,13 @@ const CLASS_TOKENS = Object.freeze({
  * }>} ScrubberAgentMark
  * @typedef {Readonly<ScrubberAgentMark & {homeFall: boolean}>} ScrubberFallMark
  * @typedef {Readonly<ScrubberAgentMark & {damaging: boolean}>} ScrubberUltimateMark
+ * @typedef {Readonly<{teamId: 1 | 2, capturer: ScrubberAgentMark | null}>} ScrubberCaptureMark
  * @typedef {Readonly<{
  *   frameIndex: number,
  *   falls: ReadonlyArray<ScrubberFallMark>,
  *   ultimates: ReadonlyArray<ScrubberUltimateMark>,
  *   returns: ReadonlyArray<ScrubberAgentMark>,
+ *   captures: ReadonlyArray<ScrubberCaptureMark>,
  * }>} ScrubberTickMarks
  * @typedef {Readonly<{
  *   audience: "oracle" | "agent_pov",
@@ -231,6 +233,41 @@ function normalizeAgentMark(raw, extra, label) {
 }
 
 /**
+ * Check one Capture the Flag capture mark ({team_id, capturer}) and return a
+ * frozen camelCase copy: teamId is the capturing team (1 or 2) and capturer
+ * its champion mark, or null when the view did not see the carrier (a capture
+ * is public, so every view has it).
+ *
+ * @param {unknown} raw
+ * @param {string} label
+ * @returns {ScrubberCaptureMark}
+ * @throws {TypeError} When a field is missing or unknown, team_id is not 1 or
+ *   2, or the capturer is not a valid champion mark on that team.
+ */
+function normalizeCaptureMark(raw, label) {
+  const record = requireRecord(raw, label);
+  for (const key of Object.keys(record)) {
+    if (key !== "team_id" && key !== "capturer") {
+      throw new TypeError(`${label} has unknown field ${key}.`);
+    }
+  }
+  if (record.team_id !== 1 && record.team_id !== 2) {
+    throw new TypeError(`${label}.team_id must be 1 or 2.`);
+  }
+  if (record.capturer === undefined) {
+    throw new TypeError(`${label}.capturer must be a champion mark or null.`);
+  }
+  const capturer =
+    record.capturer === null
+      ? null
+      : normalizeAgentMark(record.capturer, null, `${label}.capturer`);
+  if (capturer !== null && capturer.teamId !== record.team_id) {
+    throw new TypeError(`${label}.capturer must be on the capturing team.`);
+  }
+  return Object.freeze({ teamId: record.team_id, capturer });
+}
+
+/**
  * Check the host's timeline marks payload and return a frozen camelCase copy.
  *
  * raw is the parsed JSON of GET /api/replay/timeline-marks
@@ -238,7 +275,8 @@ function normalizeAgentMark(raw, extra, label) {
  * audience "oracle" or "agent_pov", recipient_public_agent_id (a string in
  * Agent POV, null in Oracle View), final_frame_index (integer, 0 or more) and
  * ticks (only ticks with at least one mark; frame_index 1 or more, strictly
- * increasing; falls, ultimates and returns lists). Frame indices above
+ * increasing; falls, ultimates and returns lists, and Capture the Flag's
+ * captures, read as empty when absent). Frame indices above
  * final_frame_index are refused, and so is any other field (the payload has
  * no fight list any more).
  *
@@ -289,7 +327,7 @@ export function normalizeTimelineMarks(raw) {
   const ticks = requireArray(record.ticks, "ticks").map((rawTick, index) => {
     const tick = requireRecord(rawTick, `ticks[${index}]`);
     for (const key of Object.keys(tick)) {
-      if (!["frame_index", "falls", "ultimates", "returns"].includes(key)) {
+      if (!["frame_index", "falls", "ultimates", "returns", "captures"].includes(key)) {
         throw new TypeError(`ticks[${index}] has unknown field ${key}.`);
       }
     }
@@ -317,6 +355,12 @@ export function normalizeTimelineMarks(raw) {
       returns: Object.freeze(
         requireArray(tick.returns, `ticks[${index}].returns`).map((mark, j) =>
           normalizeAgentMark(mark, null, `ticks[${index}].returns[${j}]`),
+        ),
+      ),
+      // Capture the Flag's captures; absent (an older server) reads as none.
+      captures: Object.freeze(
+        requireArray(tick.captures ?? [], `ticks[${index}].captures`).map((mark, j) =>
+          normalizeCaptureMark(mark, `ticks[${index}].captures[${j}]`),
         ),
       ),
     });
@@ -450,6 +494,7 @@ function rectPath(x, y, width, height) {
 /**
  * @typedef {Readonly<{
  *   fallA: string, fallB: string, pipA: string, pipB: string,
+ *   captureA: string, captureB: string,
  *   runes: ReadonlyArray<Readonly<{classToken: string, damaging: boolean, d: string}>>,
  * }>} ScrubberMarkPaths
  */
@@ -459,7 +504,9 @@ function rectPath(x, y, width, height) {
  *
  * Fallen marks are 2 x 9 px bars (a second and third fall of one team on one
  * tick add bars 3 px to the right); return pips are 3 x 2 px (4 px for two or
- * more returns, growing away from the groove); runes are 5 px diamonds on the
+ * more returns, growing away from the groove); a capture (Capture the Flag) is
+ * a small pennant in its team's fall row, a 1 px pole the row's height with a 5
+ * px wide pennant at its top; runes are 5 px diamonds on the
  * groove, grouped by class and by damaging or not. Damaging runes are listed
  * last, so they draw on top when several share a tick.
  *
@@ -468,7 +515,14 @@ function rectPath(x, y, width, height) {
  * @returns {ScrubberMarkPaths}
  */
 function markPaths(ticks, xOf) {
-  const paths = { fallA: "", fallB: "", pipA: "", pipB: "" };
+  const paths = {
+    fallA: "",
+    fallB: "",
+    pipA: "",
+    pipB: "",
+    captureA: "",
+    captureB: "",
+  };
   /** @type {Map<string, {classToken: string, damaging: boolean, d: string}>} */
   const runes = new Map();
   for (const tick of ticks) {
@@ -480,6 +534,12 @@ function markPaths(ticks, xOf) {
         const d = rectPath(x - 1 + j * 3, lane.y, 2, lane.height);
         if (teamId === 1) paths.fallA += d;
         else paths.fallB += d;
+      }
+      if (tick.captures.some((mark) => mark.teamId === teamId)) {
+        const top = lane.y;
+        const d = `${rectPath(x - 0.5, top, 1, lane.height)}M${round2(x + 0.5)} ${round2(top)}l5 2.25l-5 2.25z`;
+        if (teamId === 1) paths.captureA += d;
+        else paths.captureB += d;
       }
       const returns = tick.returns.filter((mark) => mark.teamId === teamId).length;
       if (returns > 0) {
@@ -588,7 +648,9 @@ export function scrubberTrackRecords(input) {
     staticMarks,
     currentMarks: Object.freeze({
       ...current,
-      hasFalls: currentTick !== null && currentTick.falls.length > 0,
+      hasFalls:
+        currentTick !== null &&
+        (currentTick.falls.length > 0 || currentTick.captures.length > 0),
       hasRunes: currentTick !== null && currentTick.ultimates.length > 0,
       hasReturns: currentTick !== null && currentTick.returns.length > 0,
     }),
@@ -629,9 +691,11 @@ function markAgentText(mark) {
 
 /**
  * Return the hover rows for one marked tick: who fell (with "Home Fall, +2"
- * when the fall scored double), whose Ultimate was cast (by its ability name)
- * and who returned. In Agent POV the marks are already limited to what the
- * recipient's team saw, so the rows name only seen champions.
+ * when the fall scored double), whose Ultimate was cast (by its ability name),
+ * who returned and, in Capture the Flag, who captured a flag. In Agent POV the
+ * marks are already limited to what the recipient's team saw, so the rows name
+ * only seen champions; a capture whose carrier the team did not see names its
+ * team alone ("Team A").
  *
  * @param {ScrubberTickMarks} tick
  * @returns {Array<{label: string, value: string}>}
@@ -656,12 +720,23 @@ export function tickMarkRows(tick) {
   for (const back of tick.returns) {
     rows.push({ label: "Returned", value: markAgentText(back) });
   }
+  for (const capture of tick.captures) {
+    rows.push({
+      label: "Captured",
+      value:
+        capture.capturer === null
+          ? (teamLabelFromId(capture.teamId) ?? "Unknown Team")
+          : markAgentText(capture.capturer),
+    });
+  }
   return rows;
 }
 
 /**
- * Return the hover title for one marked tick: "Tick 58 · Team B Warrior Fell"
- * names the first fall, else the first Ultimate ("Tick 40 · Team A Rogue Used
+ * Return the hover title for one marked tick: "Tick 12 · Team A Rogue
+ * Captured" names the first capture (Capture the Flag; "Team A Captured" when
+ * the view did not see the carrier), else "Tick 58 · Team B
+ * Warrior Fell" the first fall, else the first Ultimate ("Tick 40 · Team A Rogue Used
  * Crippling Poison"), else the first return ("Tick 61 · Team B Warrior
  * Returned"). "· 2 More" follows when the tick holds further marks.
  *
@@ -679,16 +754,27 @@ export function tickMarkTitle(tick, shownTick) {
   const who = (mark) =>
     `${teamLabelFromId(mark.teamId)} ${classNamesV1(mark.classId)?.className ?? "Champion"}`;
   const first =
-    tick.falls.length > 0
-      ? `${who(tick.falls[0])} Fell`
-      : tick.ultimates.length > 0
-        ? `${who(tick.ultimates[0])} Used ${
-            classAbilityNameV1(tick.ultimates[0].classId, "ultimate") ?? "Ultimate"
-          }`
-        : tick.returns.length > 0
-          ? `${who(tick.returns[0])} Returned`
-          : null;
-  const more = tick.falls.length + tick.ultimates.length + tick.returns.length - 1;
+    tick.captures.length > 0
+      ? `${
+          tick.captures[0].capturer === null
+            ? teamLabelFromId(tick.captures[0].teamId)
+            : who(tick.captures[0].capturer)
+        } Captured`
+      : tick.falls.length > 0
+        ? `${who(tick.falls[0])} Fell`
+        : tick.ultimates.length > 0
+          ? `${who(tick.ultimates[0])} Used ${
+              classAbilityNameV1(tick.ultimates[0].classId, "ultimate") ?? "Ultimate"
+            }`
+          : tick.returns.length > 0
+            ? `${who(tick.returns[0])} Returned`
+            : null;
+  const more =
+    tick.captures.length +
+    tick.falls.length +
+    tick.ultimates.length +
+    tick.returns.length -
+    1;
   return [
     `Tick ${shownTick}`,
     ...(first === null ? [] : [first]),
@@ -917,6 +1003,9 @@ function appendMarkPaths(doc, parent, paths) {
   add(returns, "rune-scrubber__pip rune-scrubber__pip--b", paths.pipB);
   add(falls, "rune-scrubber__fall rune-scrubber__fall--a", paths.fallA);
   add(falls, "rune-scrubber__fall rune-scrubber__fall--b", paths.fallB);
+  // A capture changes the score, so it lights with the falls at the Fall beat.
+  add(falls, "rune-scrubber__capture rune-scrubber__capture--a", paths.captureA);
+  add(falls, "rune-scrubber__capture rune-scrubber__capture--b", paths.captureB);
   for (const rune of paths.runes) {
     add(
       runes,

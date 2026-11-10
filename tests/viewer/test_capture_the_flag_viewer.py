@@ -14,10 +14,22 @@ to win as the threshold, the result from the capture_the_flag_completed event
 and the configured last tick as the episode limit. Without the start frame,
 the score before the tick comes from the flag_captured event, credited to the
 carrier's team (the captured flag's enemy), whether the events are the
-transition's own or the visual batch's. The frames, objective rows and flag
-facts are hand-set, as in tests/rendering/test_capture_the_flag_presentation.py,
-until Core scores Capture the Flag (his C1.3 and C1.4). Host only, on CPU.
+transition's own or the visual batch's. Every view's summary carries the
+recorded flag return ticks, a public rule setting. A fall scores no points in
+Capture the Flag, so the Fallen panel's recent falls carry none. The static
+Matplotlib view opens a Capture the Flag replay V5 and draws both bases (Team B
+double-lined), the capture rings, the ground and carried pennants (each flying
+from its home's side, even at the other end) and a dropped flag's ticks left.
+The Rune Scrubber marks every capture at its tick, by the capturing team, in
+Oracle View and in every Agent POV, and names the capturer only where the view
+saw the carrier. The frames,
+objective rows and flag facts are hand-set, as in
+tests/rendering/test_capture_the_flag_presentation.py, until Core scores Capture
+the Flag (his C1.3 and C1.4). Host only, on CPU.
 """
+
+import json
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -58,6 +70,10 @@ from marl_battlegrounds.rendering.authorized_presentation import (
 )
 from marl_battlegrounds.rendering.evaluation_adapter import build_visual_event_batch_v2
 from marl_battlegrounds.tasks import make_standard_capture_the_flag_config
+from marl_battlegrounds.viewer.champion_streaks import (
+    TickTakedownsV1,
+    recent_falls_v1,
+)
 from marl_battlegrounds.viewer.match_summary import build_match_summary_v1
 from marl_battlegrounds.viewer.presentation_protocol import (
     ReplayNoSharedObsAuthorizedPresentationFrameV1,
@@ -96,9 +112,30 @@ def test_a_winning_capture_summarizes_as_capture_the_flag(
         summary.previous_scores,
         summary.outcome,
         summary.episode_limit,
-    ) == (3, 3, (3, 0), (2, 0), "team_a_win", 50)
+        summary.flag_return_steps,
+    ) == (
+        3,
+        3,
+        (3, 0),
+        (2, 0),
+        "team_a_win",
+        50,
+        _CONTEXT.resolved_env_config.capture_the_flag_dropped_flag_auto_return_steps,
+    )
     for events in (view.transition.events, build_visual_event_batch_v2(view).events):
         assert build_match_summary_v1(_CONTEXT, won, events).previous_scores == (2, 0)
+
+
+def test_a_capture_the_flag_fall_scores_no_points() -> None:
+    # Team Deathmatch's points ride on its Red Zone rule; in Capture the Flag a
+    # fall scores nothing, so the Fallen panel's rows carry no points.
+    tick = TickTakedownsV1(
+        falls=frozenset({1, 6}), takedowns=frozenset(), home_falls=frozenset({1})
+    )
+    assert [row.points for row in recent_falls_v1(_CONTEXT, [(4, tick)])] == [
+        None,
+        None,
+    ]
 
 
 def _with_c1c_rows(
@@ -184,6 +221,12 @@ _MODES = ("no_shared_obs", "shared_obs")
 
 @pytest.fixture(scope="module")
 def story() -> dict[str, tuple[EvaluationEpisodeContextV5, ReplayArtifactV5]]:
+    return build_capture_the_flag_story()
+
+
+def build_capture_the_flag_story() -> dict[
+    str, tuple[EvaluationEpisodeContextV5, ReplayArtifactV5]
+]:
     contexts: dict[str, EvaluationEpisodeContextV5] = {}
     for mode in _MODES:
         context, _ = build_recording_context(
@@ -467,3 +510,94 @@ def test_a_capture_the_flag_replay_shows_each_view_its_own_flags(
                     match.scores,
                     match.outcome,
                 ) == (3, 1, (1, 0), "team_a_win")
+            # The return ticks are a public rule setting: every view's match
+            # summary carries the recorded value.
+            assert payload.match_summary is not None
+            assert payload.match_summary.flag_return_steps == (
+                context.resolved_env_config.capture_the_flag_dropped_flag_auto_return_steps
+            )
+
+
+def test_the_static_view_opens_a_capture_the_flag_replay_and_draws_its_flags(
+    story: dict[str, tuple[EvaluationEpisodeContextV5, ReplayArtifactV5]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("matplotlib")
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as pyplot
+
+    from marl_battlegrounds.rendering import render_scene_geometry
+    from marl_battlegrounds.viewer import static
+
+    _, replay = story["no_shared_obs"]
+    drawn: list[tuple[str, float]] = []
+    pennants: dict[str, list[list[float]]] = {}
+
+    def paint(scene: object, **options: object) -> object:
+        result = render_scene_geometry(scene, **options)  # pyright: ignore[reportArgumentType]
+        axes: Any = result.axes
+        for artist in (*axes.patches, *axes.texts):
+            gid: object = artist.get_gid()
+            if isinstance(gid, str) and gid.startswith("scene:v2:flag:"):
+                drawn.append((gid, float(artist.get_zorder())))
+                if gid.endswith(":pennant"):
+                    pennants[gid] = artist.get_xy().tolist()
+        pyplot.close(result.figure)  # pyright: ignore[reportArgumentType]
+        return result
+
+    monkeypatch.setattr(static, "render_scene_geometry", paint)
+    monkeypatch.setattr(static, "_load_pyplot", lambda: pyplot)
+    monkeypatch.setattr(pyplot, "show", lambda: None)
+    # Frame 1: Team A's flag lies dropped and Team B's is carried by agent 0.
+    assert (
+        static.run_static_replay_artifact_renderer(
+            replay=replay, frame_index=1, show_ranges=False
+        )
+        == 0
+    )
+    kinds = {gid.rsplit(":", 1)[1] for gid, _ in drawn}
+    assert {"base", "capture-ring", "pole", "pennant", "ticks"} <= kinds
+    # Team B is double-lined.
+    assert sum(gid == "scene:v2:flag:2:base" for gid, _ in drawn) == 2
+    assert sum(gid == "scene:v2:flag:1:base" for gid, _ in drawn) == 1
+    # Team A's dropped flag lies under the bodies (z-order 24 and up); Team B's,
+    # carried, rides over them and their selection rings (up to 32).
+    order = dict(drawn)
+    assert order["scene:v2:flag:1:pennant"] < 24 < 32 < order["scene:v2:flag:2:pennant"]
+    # Each pennant flies from its home's side, as in the browser: Team B's,
+    # carried at Team A's end, still flies left (its second point is the tip).
+    team_a, team_b = (
+        pennants["scene:v2:flag:1:pennant"],
+        pennants["scene:v2:flag:2:pennant"],
+    )
+    assert team_a[1][0] > team_a[0][0]
+    assert team_b[1][0] < team_b[0][0]
+
+
+@pytest.mark.parametrize("execution_information_mode", _MODES)
+def test_the_rune_scrubber_marks_every_capture_and_names_only_a_seen_capturer(
+    story: dict[str, tuple[EvaluationEpisodeContextV5, ReplayArtifactV5]],
+    execution_information_mode: str,
+) -> None:
+    context, replay = story[execution_information_mode]
+    capturer = context.roster[1].public_agent_id
+    # Oracle View; agent 0, the capturer's teammate; and Team B's rogue, which
+    # never sees Team A's carriers but sees the score step up.
+    for recipient, seen in ((None, True), (0, True), (5, False)):
+        service = ReplayViewerService(
+            LoadedReplay(replay),
+            view_mode="researcher" if recipient is None else "pov",
+            pov_global_slot=recipient,
+        )
+        ticks: list[dict[str, Any]] = json.loads(service.timeline_marks())["ticks"]
+        captures: dict[int, list[tuple[int, str | None]]] = {
+            tick["frame_index"]: [
+                (mark["team_id"], (mark["capturer"] or {}).get("public_agent_id"))
+                for mark in tick["captures"]
+            ]
+            for tick in ticks
+            if tick["captures"]
+        }
+        assert captures == {6: [(1, capturer if seen else None)]}, recipient

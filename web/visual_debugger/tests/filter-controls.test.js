@@ -8,12 +8,16 @@
  * counts hand changes only among the shown switches, reads "Every switch as it
  * ships" at the default, and greys Reset only then; and the `omit` option
  * leaves a switch out of the list and its group count (the BattleClient omits
- * Panel Tokens, which changes only the DevClient's docked panels).
+ * Panel Tokens, which changes only the DevClient's docked panels). A switch
+ * listed only in some game modes (Flags, Capture the Flag only) is built hidden
+ * with its help line, shown and counted only while a game of its mode is
+ * installed, and hidden and uncounted again after a game of another mode.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createFilterControls,
   installVisualFilterControls,
   visualFilterPresetStatus,
 } from "../src/filter-controls.js";
@@ -22,6 +26,7 @@ import {
   setVisualFilterEnabled,
   VISUAL_FILTER_GROUPS,
   VISUAL_FILTER_PRESETS,
+  visualFilterShownInMode,
   visualFiltersForProduct,
 } from "../src/visual-filters.js";
 
@@ -121,12 +126,14 @@ for (const product of /** @type {const} */ (["replay_viewer", "combat_debugger"]
         const members = expected.filter(
           (entry) => entry.group === group.dataset.visualFilterGroup,
         );
+        // Before any game, a mode-only switch (Flags) is built hidden and not counted.
+        const listed = members.filter(({ id }) => visualFilterShownInMode(id, null));
         const count = descendants(group).find(
           (node) => node.dataset?.visualFilterGroupCount !== undefined,
         );
         assert.equal(
           count.textContent,
-          `${members.filter((entry) => entry.defaultEnabled).length} of ${members.length} On`,
+          `${listed.filter((entry) => entry.defaultEnabled).length} of ${listed.length} On`,
         );
         for (const label of descendants(group).filter(
           (node) => node.dataset?.visualFilterOption !== undefined,
@@ -144,6 +151,7 @@ for (const product of /** @type {const} */ (["replay_viewer", "combat_debugger"]
           );
           const input = label.children[0];
           assert.equal(input.checked, entry.defaultEnabled);
+          assert.equal(label.hidden === true, id === "flags");
         }
         const helps = descendants(group).filter(
           (node) => node.className === "visual-filters__option-help",
@@ -168,6 +176,74 @@ for (const product of /** @type {const} */ (["replay_viewer", "combat_debugger"]
     }
   });
 }
+
+test("Flags is listed and counted only while a Capture the Flag game is installed", () => {
+  const switches = visualFiltersForProduct("replay_viewer");
+  const inputs = switches.map(({ id }) => ({
+    dataset: { visualFilterId: id },
+    checked: false,
+  }));
+  const flagsRow = { hidden: true };
+  const flagsHelp = { hidden: true };
+  const node = () => ({ textContent: "", disabled: false, querySelectorAll: () => [] });
+  const count = node();
+  const state = { presentation: /** @type {any} */ (null) };
+  const controls = createFilterControls(
+    /** @type {any} */ ({
+      elements: {
+        visualFilters: node(),
+        visualFilterOptions: {
+          querySelectorAll: (/** @type {string} */ selector) =>
+            selector.includes("data-visual-filter-id")
+              ? inputs
+              : selector.includes('data-visual-filter-option="flags"')
+                ? [flagsRow, flagsHelp]
+                : [],
+        },
+        visualFilterCount: count,
+        visualFilterPresets: node(),
+        visualFilterPresetStatus: node(),
+        resetVisualFiltersButton: node(),
+        enableAllVisualFiltersButton: node(),
+        disableAllVisualFiltersButton: node(),
+      },
+      state,
+      switches,
+      installedPresentationRangesVisible: () => false,
+      applyVisualFilterAction: () => true,
+      setActiveRangesVisible: () => false,
+      storage: null,
+    }),
+  );
+  /** @param {number | null} mode */
+  const expected = (mode) => {
+    const listed = switches.filter(({ id }) => visualFilterShownInMode(id, mode));
+    return `${listed.filter((entry) => entry.defaultEnabled).length} of ${listed.length + 1} On`;
+  };
+  /** @param {number | null} taskMode */
+  const show = (taskMode) => {
+    state.presentation =
+      taskMode === null ? null : { match_summary: { task_mode: taskMode } };
+    controls.renderVisualFilterControls(DEFAULT_VISUAL_FILTER_STATE, "default");
+    return [count.textContent, flagsRow.hidden, flagsHelp.hidden];
+  };
+  // Team Deathmatch lists what it listed before Flags existed, so its count
+  // leaves Flags out; Capture the Flag lists Flags and leaves out the two Red
+  // Zone switches.
+  assert.equal(expected(1), expected(null));
+  assert.notEqual(expected(3), expected(1));
+  assert.deepEqual(show(null), [expected(null), true, true]);
+  assert.deepEqual(show(1), [expected(1), true, true]);
+  assert.deepEqual(show(3), [expected(3), false, false]);
+  // The DevClient can install a Team Deathmatch game after a Capture the Flag one.
+  assert.deepEqual(show(1), [expected(1), true, true]);
+  // A hand change to the hidden switch is not counted in another mode.
+  const flagsOff = setVisualFilterEnabled(DEFAULT_VISUAL_FILTER_STATE, "flags", false);
+  assert.equal(
+    visualFilterPresetStatus(flagsOff, "default", ["moonlight"]).atDefault,
+    true,
+  );
+});
 
 test("omit leaves a switch out of the list and its group count", () => {
   const { create, document } = fakeDom();

@@ -12,9 +12,11 @@
  * audience's own scene and events in Agent POV, never researcher_space or the global
  * match deaths and returns. authorizedPresentationEpisodeLimit and
  * authorizedPresentationCurrentTick give the two public clock numbers (the draw
- * tick and the tick on screen) that the arena may use in either audience.
+ * tick and the tick on screen) that the arena may use in either audience, and
+ * authorizedPresentationFlagReturnTicks the one public Capture the Flag rule
+ * setting it may use (a dropped flag's return ticks).
  */
-import { exactAuthorizedAgentIdentityV1 } from "./agent-identity.js";
+import { exactAuthorizedAgentIdentityV1, taskModeName } from "./agent-identity.js";
 import { isNormalizedAuthorizedPresentationFrameV1 } from "./authorized-presentation-normalizer.js";
 
 /**
@@ -94,6 +96,34 @@ export function authorizedPresentationEpisodeLimit(value) {
   // setting, the same in both views, never a hidden fact about a champion.
   const limit = isRecord(summary) ? summary.episode_limit : null;
   return Number.isInteger(limit) && Number(limit) > 0 ? Number(limit) : null;
+}
+
+/**
+ * Return the ticks a dropped flag waits before going home by itself, or null.
+ *
+ * Reads only `match_summary.flag_return_steps` (Capture the Flag's return-ticks
+ * setting) and returns it when it is a positive whole number of ticks. Returns
+ * null for an unapproved value, a missing match summary, any other mode, or a
+ * missing, zero, negative or non-integer value. It reads no other match summary
+ * field.
+ *
+ * Agent POV: the setting is fixed before the game starts and is the same number
+ * in Oracle View and Agent POV, like the score threshold, so it reveals no
+ * champion, position or timing the POV team cannot see. That is why the arena's
+ * dropped-flag countdown may use it in both views.
+ *
+ * @param {unknown} value The installed presentation, or anything else.
+ * @returns {number | null} The return ticks, or null.
+ */
+export function authorizedPresentationFlagReturnTicks(value) {
+  if (!isAuthorizedPresentationFrame(value)) return null;
+  const summary = /** @type {Record<string, unknown> | null | undefined} */ (
+    /** @type {Record<string, unknown>} */ (value).match_summary
+  );
+  // Allowed under the Agent POV rule: the return ticks are a public rule
+  // setting, the same in both views, never a hidden fact about a champion.
+  const ticks = isRecord(summary) ? summary.flag_return_steps : null;
+  return Number.isInteger(ticks) && Number(ticks) > 0 ? Number(ticks) : null;
 }
 
 /**
@@ -1519,8 +1549,16 @@ export function authorizedPresentationNextActionOwnership(value) {
  * latest_events; Agent POV: visual_events); score is {changed, after} from the
  * public scoreboard (authorizedPresentationMatchBeatFacts), or null without a
  * match summary; tick is the incoming successor tick count of that audience's
- * summary, or null. Agent POV: nothing here reads researcher_space, and the score
- * is the public scoreboard both audiences see. Pure.
+ * summary, or null; flags is the shown scene's capture_the_flag (both flags'
+ * public states, positions and ticks left, and a carrier only when the scene
+ * names it), or null outside Capture the Flag; teamId is, in Agent POV, the
+ * recipient's team (1 or 2, from the POV scene, which always holds the
+ * recipient), else null; returnTicks is the public flag return ticks
+ * (authorizedPresentationFlagReturnTicks), or null; taskMode is the match
+ * summary's task_mode (public; both audiences get the same), or null without
+ * a match summary. Agent POV: nothing here
+ * reads researcher_space, and the score is the public scoreboard both
+ * audiences see. Pure.
  *
  * @param {unknown} value
  * @returns {Readonly<{
@@ -1529,6 +1567,10 @@ export function authorizedPresentationNextActionOwnership(value) {
  *   events: ReadonlyArray<unknown>,
  *   score: Readonly<{changed: boolean, after: readonly number[]}> | null,
  *   tick: number | null,
+ *   flags: Readonly<Record<string, any>> | null,
+ *   teamId: 1 | 2 | null,
+ *   returnTicks: number | null,
+ *   taskMode: number | null,
  * }> | null}
  */
 export function authorizedPresentationFrameExplanationInput(value) {
@@ -1539,9 +1581,18 @@ export function authorizedPresentationFrameExplanationInput(value) {
   const tick = isRecord(summary)
     ? summary.incoming_successor_simulator_step_count
     : null;
+  const scene = authorizedPresentationSceneView(value);
+  const recipientId =
+    audience === "agent_pov" && isRecord(value.authority)
+      ? value.authority.recipient_public_agent_id
+      : null;
+  const recipient = (scene?.agents ?? []).find(
+    (/** @type {Record<string, any>} */ agent) =>
+      recipientId !== null && agent.public_agent_id === recipientId,
+  );
   return Object.freeze({
     audience: /** @type {"researcher" | "agent_pov"} */ (audience),
-    agents: authorizedPresentationSceneView(value)?.agents ?? Object.freeze([]),
+    agents: scene?.agents ?? Object.freeze([]),
     events: Object.freeze(
       authorizedPresentationIncomingRows(value)
         .filter((row) => row.vocabulary === "event")
@@ -1552,6 +1603,13 @@ export function authorizedPresentationFrameExplanationInput(value) {
         ? null
         : Object.freeze({ changed: beat.score_changed, after: beat.scores_after }),
     tick: Number.isInteger(tick) ? Number(tick) : null,
+    flags: isRecord(scene?.capture_the_flag) ? scene.capture_the_flag : null,
+    teamId:
+      recipient?.team_id === 1 || recipient?.team_id === 2 ? recipient.team_id : null,
+    returnTicks: authorizedPresentationFlagReturnTicks(value),
+    taskMode: Number.isInteger(value.match_summary?.task_mode)
+      ? Number(value.match_summary.task_mode)
+      : null,
   });
 }
 
@@ -1836,7 +1894,8 @@ function isTechnicalFactValue(valueKind, value) {
  * its technical_kind, without invoking getters. Any missing/invalid required fact
  * returns an empty array. Optional null facts are omitted. Rows contain id, Title Case
  * label, and value in declared order, plus permitted match-summary facts such as map,
- * mode, horizon, and recorded seeds when available. No spatial or actor-input fallback
+ * mode, horizon, Capture the Flag's flag return ticks ("Flag Return", in that mode
+ * only), and recorded seeds when available. No spatial or actor-input fallback
  * is used; unmarked input returns an empty array.
  *
  * @param {unknown} value
@@ -1891,12 +1950,7 @@ export function authorizedPresentationTechnicalFacts(value) {
       Object.freeze({
         id: "task_mode",
         label: "Task Mode",
-        value:
-          match.task_mode === 1
-            ? "TDM"
-            : match.task_mode === 3
-              ? "CTF"
-              : "Combat diagnostic",
+        value: taskModeName(match.task_mode, { short: true }),
       }),
     );
     if (match.map) {
@@ -1919,6 +1973,16 @@ export function authorizedPresentationTechnicalFacts(value) {
           id: "episode_limit",
           label: "Episode Limit",
           value: `${match.episode_limit} ticks`,
+        }),
+      );
+    }
+    // Capture the Flag's public return ticks, a rule fixed before the game.
+    if (Number.isInteger(match.flag_return_steps)) {
+      facts.push(
+        Object.freeze({
+          id: "flag_return",
+          label: "Flag Return",
+          value: `${match.flag_return_steps} ticks`,
         }),
       );
     }

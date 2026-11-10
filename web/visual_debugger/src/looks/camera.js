@@ -84,9 +84,11 @@ import { EMPTY_BUDGET, isRecord } from "./look-support.js";
  * }>} CameraBody
  *   One body of plan.camera.bodies: its START spot (null when not disclosed or
  *   for a return), its END spot and its state this tick.
- * @typedef {Readonly<{eventId?: string, kind: "blow" | "fall", points: ReadonlyArray<WorldPoint>}>} CameraFight
+ * @typedef {Readonly<{eventId?: string, kind: "blow" | "fall" | "flag", points: ReadonlyArray<WorldPoint>}>} CameraFight
  *   One fight of plan.camera.fights: a Basic or Ultimate ("blow", source and
- *   target spots) or a seen fall ("fall", the victim's END spot).
+ *   target spots), a seen fall ("fall", the victim's END spot) or a Capture
+ *   the Flag flag change ("flag", where it happened). Battle Cam frames a
+ *   "flag" like a blow; the Kill Cam lean reads only falls.
  * @typedef {Readonly<{
  *   audience?: "researcher" | "agent_pov" | null,
  *   bodies: ReadonlyArray<CameraBody>,
@@ -154,6 +156,13 @@ export const BODY_REACH = 0.56;
 
 /** How far (world units) a body kept inside a frame stays from its edge. */
 export const EDGE_INSET = 0.06;
+/**
+ * How far a flag's pennant reaches from its foot, in world units [x, y]: to
+ * the side it flies (toward the map's middle, so either way) and up (world y
+ * grows up the screen), about the pennant's width and height at
+ * the whole-map camera, so the clean-edge check keeps the whole pennant in.
+ */
+export const FLAG_REACH = Object.freeze([0.6, 0.95]);
 
 /** How far (world units) a camera frame may reach past the map edge. */
 export const MAP_EDGE_ALLOWANCE = 0.45;
@@ -508,10 +517,16 @@ export function cameraEase(input) {
  * stand in, each at its scene position (sceneCameraBodies), so V frames
  * everyone on the very first turn too.
  *
+ * Capture the Flag: a flag in play off a seen body (a dropped flag, or one
+ * carried by a champion this view cannot see) is kept in the frame like a
+ * champion, and no edge cuts a pennant; flags at home are not kept, so V can
+ * still zoom in.
+ *
  * Return frozen {frame, zoom}: frame is a WorldFrame and zoom 1 means the Whole
  * Map frame {0, 0, worldWidth, worldHeight}. With no bodies at all, the Whole
  * Map. Agent POV: pass only the POV plan camera and POV scene; nothing else is
- * read, so only champions the team sees can be framed.
+ * read, so only champions the team sees can be framed (flag spots are public
+ * in every view).
  * Throw TypeError when the world size is not positive and finite. Pure.
  *
  * @param {Readonly<{camera?: PlanCamera | null, worldWidth: number, worldHeight: number, scene?: Record<string, any> | null}>} input
@@ -521,8 +536,13 @@ export function everyoneInViewFrame(input) {
   const world = worldOf(input);
   const planned = cameraBodies(input.camera);
   const bodies = planned.length > 0 ? planned : sceneCameraBodies(input.scene);
+  // A flag in play off a seen body (dropped, or carried by a champion this
+  // view cannot see) is kept in view like a champion; flags at home are not,
+  // or V could never zoom in, since the homes sit at the two ends.
   /** @type {WorldPoint[]} */
-  const must = [];
+  const must = sceneFlags(input.scene)
+    .filter((flag) => flag.inPlay)
+    .map((flag) => flag.foot);
   const drawn = drawnSpots(bodies, input.scene);
   for (const body of bodies) {
     if (body.state === "returning") {
@@ -1605,7 +1625,9 @@ function cameraFights(camera) {
 
 /**
  * Every drawn body spot for the clean-edge check: the camera bodies' END spots
- * plus the audience scene's agent positions (earlier corpses).
+ * plus the audience scene's agent positions (earlier corpses), and in Capture
+ * the Flag each flag's pennant (its foot and its top corner, FLAG_REACH), so no
+ * frame cuts a flag in half. Base rings are ground, like stones, and may be cut.
  *
  * @param {CameraBody[]} bodies
  * @param {Record<string, any> | null | undefined} scene
@@ -1620,7 +1642,42 @@ function drawnSpots(bodies, scene) {
       if (spot !== null) spots.push(spot);
     }
   }
+  // A pennant flies toward the middle, to either side of its pole.
+  for (const { foot } of sceneFlags(scene)) {
+    spots.push(
+      foot,
+      [foot[0] + FLAG_REACH[0], foot[1] + FLAG_REACH[1]],
+      [foot[0] - FLAG_REACH[0], foot[1] + FLAG_REACH[1]],
+    );
+  }
   return spots;
+}
+
+/**
+ * The Capture the Flag flags of the audience scene, as {foot, inPlay}: the
+ * flag's world spot, and whether it is in play off a body this view sees (a
+ * dropped flag, or a carried flag whose carrier this view does not name). None
+ * outside Capture the Flag. Flag spots are public in every view. Pure.
+ *
+ * @param {Record<string, any> | null | undefined} scene
+ * @returns {Array<{foot: WorldPoint, inPlay: boolean}>}
+ */
+function sceneFlags(scene) {
+  const ctf = isRecord(scene) ? scene.capture_the_flag : null;
+  if (!isRecord(ctf) || !Array.isArray(ctf.flags)) return [];
+  /** @type {Array<{foot: WorldPoint, inPlay: boolean}>} */
+  const out = [];
+  for (const flag of ctf.flags) {
+    const foot = isRecord(flag) ? pointOf(flag.position) : null;
+    if (foot === null) continue;
+    out.push({
+      foot,
+      inPlay:
+        flag.state === "dropped" ||
+        (flag.state === "carried" && typeof flag.carrier_presentation_key !== "string"),
+    });
+  }
+  return out;
 }
 
 /**

@@ -126,6 +126,41 @@ export async function exportRedZoneReplayArtifacts() {
   return { outputDirectory, redZone: payload.red_zone };
 }
 
+/**
+ * Export the hand-built Capture the Flag story replays and return their paths.
+ *
+ * The Python exporter (`--capture-the-flag`) writes the story of
+ * tests/viewer/test_capture_the_flag_viewer.py as replay V5, once per
+ * observation mode: Team A's Mage and Warrior against Team B's Rogue on map 42,
+ * with a 2-tick return, where every flag state happens once (frame 1: Team A's
+ * flag grabbed and dropped at home, Team B's carried by the Mage; frame 2: Team
+ * A's returned, Team B's dropped; frame 4: Team B's home by its timer; frame 5:
+ * carried by the Warrior; frame 6: the winning capture). The caller owns the
+ * returned temporary directory and removes it with `removeReplayArtifacts`. The
+ * export waits with no time limit.
+ *
+ * @returns {Promise<{ outputDirectory: string, noSharedObs: string, sharedObs: string }>}
+ * @throws {TypeError} When the exporter's manifest lacks either path; the
+ *   temporary directory is removed first.
+ */
+export async function exportCaptureTheFlagReplayArtifacts() {
+  const { outputDirectory, payload } = await exportReplayPaths(["--capture-the-flag"]);
+  if (
+    typeof payload.no_shared_obs !== "string" ||
+    typeof payload.shared_obs !== "string"
+  ) {
+    await removeReplayArtifacts(outputDirectory);
+    throw new TypeError(
+      "Capture the Flag replay exporter returned an invalid manifest.",
+    );
+  }
+  return {
+    outputDirectory,
+    noSharedObs: payload.no_shared_obs,
+    sharedObs: payload.shared_obs,
+  };
+}
+
 /** @param {string[]} args */
 async function exportReplayPaths(args = []) {
   const outputDirectory = await mkdtemp(

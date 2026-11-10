@@ -2593,6 +2593,7 @@
           "episode_id": "service-shared",
           "episode_limit": 2,
           "episode_seed": 2,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Map name unavailable",
             "map_id": null,
@@ -6794,6 +6795,7 @@
           "episode_id": "service-shared",
           "episode_limit": 2,
           "episode_seed": 2,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Map name unavailable",
             "map_id": null,
@@ -10028,6 +10030,7 @@
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
           "episode_limit": 300,
           "episode_seed": 2120194100,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Custom Map",
             "map_id": null,
@@ -13020,6 +13023,7 @@
           "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
           "episode_limit": 300,
           "episode_seed": 2120194100,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Custom Map",
             "map_id": null,
@@ -17596,6 +17600,7 @@
           "episode_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e",
           "episode_limit": 300,
           "episode_seed": 2120194100,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Custom Map",
             "map_id": null,
@@ -21152,6 +21157,7 @@
           "episode_id": "service-complete",
           "episode_limit": 2,
           "episode_seed": 2,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Map name unavailable",
             "map_id": null,
@@ -23865,6 +23871,7 @@
           "episode_id": "service-complete",
           "episode_limit": 2,
           "episode_seed": 2,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Map name unavailable",
             "map_id": null,
@@ -27837,6 +27844,7 @@
           "episode_id": "service-shared",
           "episode_limit": 2,
           "episode_seed": 2,
+          "flag_return_steps": null,
           "map": {
             "display_name": "Map name unavailable",
             "map_id": null,
@@ -35862,6 +35870,7 @@
         "episode_id": "debugger-episode:b7e1cf3d6a448bc29c9a91a9ee0da4e283c645ca6bfe7222ecb59b0b478ed62e",
         "episode_limit": 300,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -40516,6 +40525,7 @@
         "episode_id": "episode-001",
         "episode_limit": 3,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -44138,6 +44148,7 @@
         "episode_id": "debugger-episode:b274df166df96a6611a3e1b2079e443f76166f24feebe035c6713d419657761a",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -45301,6 +45312,7 @@
         "episode_id": "debugger-episode:83a50d2cca5d19cd27dba32964aca8a0e23e0b258ed026403f101a37fe61d593",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -46454,6 +46466,7 @@
         "episode_id": "debugger-episode:227843c5c2bfc06a4d31adb2afcebc4c44b13f2faf4374060214dbc701e0b95b",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -47617,6 +47630,7 @@
         "episode_id": "debugger-episode:c9b6872091ffd5ad66c1efd2ceac2ffe25048bcc77837afd0d00da4eb6170ae9",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -48780,6 +48794,7 @@
         "episode_id": "debugger-episode:602cc75561a67c52ad0d3e8eb1f5f25479f684a06ad0e8ee06189ccac373ea22",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -49943,6 +49958,7 @@
         "episode_id": "debugger-episode:1b03d07a43b717c7d83b8ae8aa9da6c14657146c6996f563bea23e32e7f31bbe",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -51106,6 +51122,7 @@
         "episode_id": "debugger-episode:27a5dbae4cddebe0906a5d58781f127aeb9b18a73a32f15520eaffa6e4152fce",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -52269,6 +52286,7 @@
         "episode_id": "debugger-episode:29123366bbed07eed1205bc15b3f5c530316168541ac2091f6500b798ec4b536",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -53432,6 +53450,7 @@
         "episode_id": "debugger-episode:4fd9577afdb11a6f6b2d0cb67855e4dfd9223cce08e92e90f4a96c530f24a95c",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -54620,6 +54639,7 @@
         "episode_id": "debugger-episode:8b7be34962a57a2597a7af51dd599d543945925b8de9cf04c825b74fd4f4aa52",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -55783,6 +55803,7 @@
         "episode_id": "debugger-episode:ec37347c2e616c64ece80f79034691b6e7fc3808bfe167e64af973e1894ccbb4",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -56946,6 +56967,7 @@
         "episode_id": "debugger-episode:6265bef9df469fa000e965cb21b16d309a1ac5c210815b66bd154de460197478",
         "episode_limit": 1,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -59222,6 +59244,7 @@
         "episode_id": "episode-001",
         "episode_limit": 2,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -61384,6 +61407,7 @@
         "episode_id": "episode-001",
         "episode_limit": 2,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -64468,6 +64492,7 @@
         "episode_id": "episode-001",
         "episode_limit": 2,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -67921,6 +67946,7 @@
         "episode_id": "debugger-episode:753e6285008fe633735b371ac2ee1583e9de674eb6a6f9c023c5eb416cacfba2",
         "episode_limit": 300,
         "episode_seed": 2120194100,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Custom Map",
           "map_id": null,
@@ -76348,6 +76374,7 @@
         "episode_id": "browser-corpse-overlay-no_shared_obs",
         "episode_limit": 2,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -82681,6 +82708,7 @@
         "episode_id": "browser-corpse-overlay-no_shared_obs",
         "episode_limit": 2,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -84587,6 +84615,7 @@
         "episode_id": "episode-001",
         "episode_limit": 3,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -85693,6 +85722,7 @@
         "episode_id": "episode-001",
         "episode_limit": 3,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,
@@ -86560,6 +86590,7 @@
         "episode_id": "episode-001",
         "episode_limit": 3,
         "episode_seed": 2,
+        "flag_return_steps": null,
         "map": {
           "display_name": "Map name unavailable",
           "map_id": null,

@@ -75,6 +75,7 @@
  * Open the launcher URL; this module is not a standalone Node program.
  */
 
+import { taskModeName } from "./agent-identity.js";
 import {
   acquireCapabilityToken,
   acquireClientId,
@@ -158,6 +159,7 @@ import { createHud } from "./looks/hud.js";
 import * as requiems from "./looks/requiems.js";
 import {
   controllerRosterFromFrame,
+  hasMatchSummarySheet,
   hudSourcesFromFrame,
   matchSummaryView,
   renderMatchSummary,
@@ -5928,7 +5930,7 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
       filters,
       leftTeamId,
       mapTitle: summary.map ?? "",
-      mapLabel: summary.taskMode === 1 ? "Team Deathmatch" : "Combat Diagnostic",
+      mapLabel: taskModeName(summary.taskMode),
       pointsToWin,
       tickLimit,
       redZoneDoubles:
@@ -5991,6 +5993,7 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
         honours: heralds.verdictHonours(
           isRecord(presentation) ? presentation.match_honors : null,
         ),
+        summary: hasMatchSummarySheet(summary.taskMode),
       },
     });
   }
@@ -6055,7 +6058,11 @@ function renderMatchMomentCards(presentation) {
   // folded into its plate (Show Arena, or Full Cards off), which has no
   // buttons of its own (4 Oct 2026).
   const verdictFolded = records.some((row) => row.kind === "herald-verdict-plate");
-  elements.arenaMatchSummaryButton.hidden = !verdictFolded;
+  // A game with no Match Summary sheet (Capture the Flag until its own
+  // summary exists) never shows the key.
+  elements.arenaMatchSummaryButton.hidden =
+    !verdictFolded ||
+    !hasMatchSummarySheet(matchSummaryView(presentation)?.taskMode ?? null);
   if (!verdictShown && !verdictFolded) closeMatchSummarySheet();
   const painterCards = [
     ...surface.heraldLayer.querySelectorAll("[data-herald-moments]"),

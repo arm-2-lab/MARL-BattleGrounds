@@ -86,6 +86,15 @@ html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__fall--b
   fill: var(--team-b);
 }
 
+/* Capture the Flag: a capture's small pennant in the capturer's team row. */
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__capture--a {
+  fill: var(--team-a-light);
+}
+
+html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__capture--b {
+  fill: var(--team-b-light);
+}
+
 html[data-product-kind="replay_viewer"] #replay-timeline .rune-scrubber__pip {
   opacity: 0.7;
 }

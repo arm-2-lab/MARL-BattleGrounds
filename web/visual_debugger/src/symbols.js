@@ -1048,6 +1048,28 @@ export const SYMBOLS = Object.freeze([
     },
   ),
   symbol(
+    "flag",
+    "HUD Marks",
+    "Flag",
+    "Capture the Flag: a flag is home on its base, carried by an enemy, or dropped where its carrier fell. A dropped flag goes home when its team touches it or its ticks run out. In Agent POV a carried flag can move with no champion seen under it.",
+    {
+      aliases: ["flag_chip", "flag_base", "capture_the_flag"],
+      numberSources: [
+        source("AuthorizedCaptureTheFlagFlagV1", "state", "Where each flag is"),
+        source(
+          "AuthorizedCaptureTheFlagFlagV1",
+          "countdown_steps",
+          "Ticks a dropped flag has left",
+        ),
+        source(
+          "MatchSummaryV1",
+          "flag_return_steps",
+          "Ticks a dropped flag waits before it goes home",
+        ),
+      ],
+    },
+  ),
+  symbol(
     "tick_clock",
     "HUD Marks",
     "Tick",

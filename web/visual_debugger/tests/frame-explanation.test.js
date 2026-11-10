@@ -4,7 +4,12 @@
  * total and life, each new status its own item in the Champion Card row's
  * words with its source by class only, broken ice, falls with 1 or 2 points
  * from home_fall only, the score after the falls, returns and Ultimates
- * ready); Agent POV event lines name only champions in the POV scene ("a
+ * ready); in Capture the Flag, falls with no points, a carrier's drop inside
+ * its fall line, a champion's fall listed after its pickup on the same tick,
+ * Oracle lines naming whose flag, Agent POV lines saying "your flag" or "their
+ * flag" with a champion named only when seen and no ticks in a drop line, the
+ * two grab-and-fall lines, and "Captures:" after the capture; Agent POV event
+ * lines name only champions in the POV scene ("a
  * hidden source", "a champion out of sight", no callout) while its status
  * items read exactly as in Oracle View, and it reads no researcher data;
  * Oracle -> Agent POV -> Oracle answers afresh;
@@ -478,6 +483,147 @@ test("real frames: Agent POV reads no researcher data and Oracle -> POV -> Oracl
   assert.equal(explainTick(null), null);
   assert.equal(explainTick(/** @type {any} */ ({ audience: "nobody" })), null);
   assert.deepEqual(records({}), []);
+});
+
+const FLAGS_AFTER = Object.freeze({
+  flags: [
+    { team_id: 1, state: "dropped", countdown_steps: 30 },
+    { team_id: 2, state: "home", countdown_steps: 0 },
+  ],
+});
+
+test("Capture the Flag in Oracle View: whose flag, no fall points, the grab and fall merged", () => {
+  const explanation = explained({
+    audience: "researcher",
+    agents: [agent(7, 4, 2), agent(2, 1, 1), agent(5, 3, 1)],
+    events: [
+      {
+        ordinal: 0,
+        event_kind: "agent_died",
+        recipient_anchor: anchor(7),
+        home_fall: false,
+      },
+      {
+        ordinal: 1,
+        event_kind: "agent_died",
+        recipient_anchor: anchor(5),
+        home_fall: false,
+      },
+      {
+        ordinal: 2,
+        event_kind: "flag_picked_up",
+        agent_anchor: anchor(7),
+        flag_team_id: 1,
+      },
+      {
+        ordinal: 3,
+        event_kind: "flag_captured",
+        agent_anchor: anchor(2),
+        flag_team_id: 2,
+      },
+      {
+        ordinal: 4,
+        event_kind: "flag_dropped",
+        agent_anchor: anchor(7),
+        flag_team_id: 1,
+      },
+      { ordinal: 5, event_kind: "capture_the_flag_completed" },
+    ],
+    score: { changed: true, after: [1, 0] },
+    tick: 40,
+    flags: FLAGS_AFTER,
+    taskMode: 3,
+  });
+  assert.deepEqual(
+    explanation.items.map((item) => [item.kind, item.text, item.anchorKey]),
+    [
+      ["fall", "Hunter ID 5 fell.", "key_5"],
+      ["flag", "Rogue ID 7 picked up Team A's flag.", "key_7"],
+      ["fall", "Rogue ID 7 fell; Team A's flag dropped (30 ticks).", "key_7"],
+      ["flag", "Mage ID 2 captured Team B's flag.", "key_2"],
+      ["score", "Captures: Team A 1, Team B 0.", null],
+    ],
+  );
+  /** @param {Record<string, any>} event */
+  const line = (event) =>
+    explained({
+      audience: "researcher",
+      agents: [agent(2, 1, 1)],
+      events: [{ ordinal: 0, ...event }],
+      score: null,
+      tick: 41,
+      flags: FLAGS_AFTER,
+      taskMode: 3,
+    }).items.map((item) => item.text);
+  assert.deepEqual(
+    line({ event_kind: "flag_returned", agent_anchor: anchor(2), flag_team_id: 1 }),
+    ["Mage ID 2 returned Team A's flag."],
+  );
+  assert.deepEqual(
+    line({ event_kind: "flag_automatically_returned", flag_team_id: 2 }),
+    ["Team B's flag went home."],
+  );
+});
+
+test("Capture the Flag in Agent POV: your flag and their flag, a champion named only when seen", () => {
+  /** @param {ReadonlyArray<Record<string, any>>} events */
+  const lines = (events) =>
+    explained({
+      audience: "agent_pov",
+      agents: [agent(2, 1, 1)],
+      events: events.map((event, ordinal) => ({ ordinal, ...event })),
+      score: null,
+      tick: 41,
+      flags: FLAGS_AFTER,
+      taskMode: 3,
+      teamId: 1,
+      returnTicks: 30,
+    }).items.map((item) => item.text);
+  /** @param {1 | 2} team @param {string} before @param {string} after @param {number | null} [slot] */
+  const changed = (team, before, after, slot = null) => ({
+    event_kind: "flag_changed",
+    flag_team_id: team,
+    state_before: before,
+    state_after: after,
+    agent_anchor: slot === null ? null : anchor(slot),
+  });
+  assert.deepEqual(
+    [
+      changed(1, "home", "carried"),
+      changed(2, "home", "carried"),
+      changed(2, "dropped", "carried", 2),
+      changed(1, "carried", "home"),
+      changed(2, "carried", "home"),
+      changed(2, "carried", "home", 2),
+      changed(1, "dropped", "home"),
+      changed(1, "carried", "dropped"),
+      changed(1, "home", "dropped"),
+      changed(2, "dropped", "dropped"),
+    ].map((event) => lines([event])[0]),
+    [
+      "Your flag was picked up.",
+      "Your team picked up their flag.",
+      "Mage ID 2 picked up their flag.",
+      "Your flag was captured.",
+      "Their flag was captured.",
+      "Mage ID 2 captured their flag.",
+      "Your flag went home.",
+      "Your flag was dropped.",
+      "Your flag was picked up and dropped.",
+      "Their flag was picked up and dropped again. Its 30 ticks start over.",
+    ],
+  );
+  // A seen carrier's fall carries the drop; a hidden one's is never named.
+  assert.deepEqual(
+    lines([
+      { event_kind: "agent_died", recipient_anchor: anchor(2), home_fall: false },
+      changed(2, "carried", "dropped", 2),
+    ]),
+    ["Mage ID 2 fell; their flag dropped."],
+  );
+  assert.deepEqual(lines([changed(2, "carried", "dropped", 9)]), [
+    "Their flag was dropped.",
+  ]);
 });
 
 test("callouts sit beside seen champions as export-safe numbered discs", () => {

@@ -750,7 +750,8 @@ class RecentFallV1(BaseModel):
         summary only for the shown tick).
     points : {1, 2} or None
         2 for a home fall (in the fallen champion's own Red Zone), else 1;
-        None when unknown.
+        None when unknown, and in Capture the Flag, where a fall scores
+        nothing.
     ultimate_public_agent_id : str or None
         The caster of the first damaging Ultimate that struck the fallen
         champion on that tick (one of the killers), or None when only Basics
@@ -811,7 +812,8 @@ def recent_falls_v1(
     tuple of RecentFallV1
         One record per fall, by tick, then by the fallen champion's global
         slot. Killers are in global slot order. points come from
-        ``home_falls`` (None when it is None). Empty when no tick had a fall.
+        ``home_falls`` (None when it is None, and always None in Capture the
+        Flag, where a fall scores nothing). Empty when no tick had a fall.
 
     Notes
     -----
@@ -820,6 +822,8 @@ def recent_falls_v1(
     ``agent_pov_tick_takedowns_v1``), so this adds no rule of its own.
     """
     public_by_slot = {row.global_slot: row.public_agent_id for row in context.roster}
+    # A fall scores nothing in Capture the Flag (captures do), so it has no points.
+    flag_game = context.resolved_env_config.task_mode == 3
     rows: list[RecentFallV1] = []
     for tick, takedowns in ticks:
         caster_by_fallen = {fallen: caster for caster, fallen in takedowns.ultimates}
@@ -828,7 +832,7 @@ def recent_falls_v1(
                 source for source, victim in takedowns.takedowns if victim == fallen
             )
             caster = caster_by_fallen.get(fallen)
-            home = takedowns.home_falls
+            home = None if flag_game else takedowns.home_falls
             rows.append(
                 RecentFallV1(
                     tick=tick,

@@ -11,9 +11,9 @@
  * match moment cards (EXPORT_OMIT_SELECTOR: every herald plate, the Lineup and
  * the Verdict), which are never exported because a figure shows the game
  * (4 Oct 2026). New
- * exports write provenance version 5, which records those switches and the
+ * exports write provenance version 6, which records those switches and the
  * camera frame as a world rectangle (Whole Map when the caller gives none).
- * Versions 1 to 4 still read. The backdrop is locked to #111827 with its grid;
+ * Versions 1 to 5 still read. The backdrop is locked to #111827 with its grid;
  * the `--export-backdrop` token in styles.css owns `.battlefield-shell`'s
  * background, and capture refuses any other backdrop (a palette such as High
  * Contrast must not change it). The arena paints its own surround over the
@@ -39,8 +39,9 @@ const PROVENANCE_SCHEMA_ID = "marl_battlegrounds.replay_battlefield_png_provenan
 // New exports write this provenance version. Version 2 added red_zone_floors;
 // version 3 records the V5 battlefield switches and the camera frame; version 4
 // adds the Replay Viewer's Next Step Ghost and All Staged Orders; version 5
-// adds High Contrast, a Replay Viewer switch since 4 Oct 2026.
-const CURRENT_PROVENANCE_SCHEMA_VERSION = 5;
+// adds High Contrast, a Replay Viewer switch since 4 Oct 2026; version 6 adds
+// the Flags switch (Capture the Flag's flags and bases).
+const CURRENT_PROVENANCE_SCHEMA_VERSION = 6;
 // The 19 filter IDs of version-1 provenance, frozen so saved PNGs stay readable
 // when the live registry grows.
 const REPLAY_PNG_VISUAL_FILTER_IDS_V1 = Object.freeze([
@@ -166,6 +167,14 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_V5 = Object.freeze([
   "next_step_ghost",
   "all_staged_orders",
 ]);
+// The filter IDs of version-6 provenance: version 5's list with Flags (the
+// Capture the Flag flags and bases) right after Spawn Waystones, its registry
+// place. Frozen for the same reason as version 3.
+const REPLAY_PNG_VISUAL_FILTER_IDS_V6 = Object.freeze(
+  REPLAY_PNG_VISUAL_FILTER_IDS_V5.flatMap((id) =>
+    id === "spawn_waystones" ? [id, "flags"] : [id],
+  ),
+);
 // Exact filter IDs each provenance version records.
 const REPLAY_PNG_VISUAL_FILTER_IDS_BY_VERSION = Object.freeze(
   new Map([
@@ -174,17 +183,18 @@ const REPLAY_PNG_VISUAL_FILTER_IDS_BY_VERSION = Object.freeze(
     [3, REPLAY_PNG_VISUAL_FILTER_IDS_V3],
     [4, REPLAY_PNG_VISUAL_FILTER_IDS_V4],
     [5, REPLAY_PNG_VISUAL_FILTER_IDS_V5],
+    [6, REPLAY_PNG_VISUAL_FILTER_IDS_V6],
   ]),
 );
 // The camera names a camera frame (version 3 and later) may carry.
 const REPLAY_PNG_CAMERAS = new Set(["whole_map", "everyone_in_view", "battle_cam"]);
 
 /**
- * The switch IDs a new export records (provenance version 5), in registry
+ * The switch IDs a new export records (provenance version 6), in registry
  * order: every switch that can change the battlefield picture in the Replay
  * Viewer.
  */
-export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V5;
+export const REPLAY_PNG_RECORDED_FILTER_IDS = REPLAY_PNG_VISUAL_FILTER_IDS_V6;
 
 /**
  * Return the switch IDs the live registry would record today: surface
@@ -542,7 +552,7 @@ function projectCameraFrame(cameraFrame, paintedScene) {
 }
 
 /**
- * Validate a version-1, version-2, version-3, version-4 or version-5 Replay Viewer
+ * Validate a version-1 to version-6 Replay Viewer
  * provenance object and return a deeply frozen plain copy with the same
  * version. The versions differ only in the presentation record: version 1
  * holds the 19 filter IDs of REPLAY_PNG_VISUAL_FILTER_IDS_V1, version 2 the 20
@@ -551,8 +561,9 @@ function projectCameraFrame(cameraFrame, paintedScene) {
  * camera_frame (see normalizeStoredCameraFrame), and version 4 the switches of
  * REPLAY_PNG_VISUAL_FILTER_IDS_V4 (adding next_step_ghost and
  * all_staged_orders) plus a camera_frame, and version 5 the switches of
- * REPLAY_PNG_VISUAL_FILTER_IDS_V5 (adding high_contrast) plus a camera_frame.
- * A mixed form (wrong filter list for
+ * REPLAY_PNG_VISUAL_FILTER_IDS_V5 (adding high_contrast) plus a camera_frame,
+ * and version 6 the switches of REPLAY_PNG_VISUAL_FILTER_IDS_V6 (adding flags)
+ * plus a camera_frame. A mixed form (wrong filter list for
  * the version, a camera frame before version 3 or none from version 3 on) is
  * rejected.
  * Require exact root/nested fields, audience-specific
@@ -850,7 +861,7 @@ function exactKeysWithOptionalCamera(options, required, label) {
  * "battle_cam") and the world rectangle it shows, in world units with y up.
  * Resolve the painted selection through the authorized scene, then record 2x
  * pixel sizes. Oracle includes artifact references; Agent POV omits those
- * fields. Return deeply frozen validated provenance at the current version 5:
+ * fields. Return deeply frozen validated provenance at the current version 6:
  * it records only the battlefield switches (REPLAY_PNG_RECORDED_FILTER_IDS)
  * and the camera frame in snake_case (Whole Map is the painted map from
  * (0, 0) to (width, height)). Invalid or unresolved inputs throw TypeError.
@@ -928,7 +939,7 @@ export function projectReplayPngProvenanceV1(value) {
   const selectedPublicAgentId = selectedAgent?.public_agent_id ?? null;
   const cameraFrame = projectCameraFrame(options.cameraFrame, paintedScene);
   const recordedFilters = Object.fromEntries(
-    REPLAY_PNG_VISUAL_FILTER_IDS_V5.map((id) => [id, visualFilters[id]]),
+    REPLAY_PNG_RECORDED_FILTER_IDS.map((id) => [id, visualFilters[id]]),
   );
 
   const oracle = presentation.presentation_kind === "replay_oracle";
@@ -1351,8 +1362,9 @@ function provenanceItxtChunk(canonicalProvenanceJson) {
 /**
  * Inspect a PNG with exactly one provenance entry directly after IHDR.
  * Require an uncompressed, untranslated UTF-8 iTXt entry with canonical
- * version-1 to version-5 provenance (version 3 adds the camera frame, version
- * 4 two more switches, version 5 High Contrast), matching PNG dimensions and no duplicate keyword
+ * version-1 to version-6 provenance (version 3 adds the camera frame, version
+ * 4 two more switches, version 5 High Contrast, version 6 Flags), matching PNG
+ * dimensions and no duplicate keyword
  * in text chunks. Return frozen metadata, chunk types and provenance. Invalid
  * bytes/metadata throw TypeError. This verifies container consistency, not
  * the truth of the picture or the referenced simulator artifacts.

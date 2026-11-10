@@ -8,10 +8,12 @@ this service returns checked models or encoded bytes and runs no simulator.
 
 It also owns the per-audience timeline marks of the Rune Scrubber, the
 Replay Viewer's transport dock (``ReplayViewerService.timeline_marks``, served
-at ``/api/replay/timeline-marks``): falls, Ultimates and returns per tick.
-Oracle View marks come from the recorded events. Agent POV marks come only
-from the Agent POV visual events of the current recipient, so an event the
-team never saw is never marked. Launchers call
+at ``/api/replay/timeline-marks``): falls, Ultimates and returns per tick,
+and Capture the Flag's captures. Oracle View marks come from the recorded
+events. Agent POV marks come only from the Agent POV visual events of the
+current recipient, so an event the team never saw is never marked; a capture
+is public (the score shows it), so every view marks it, naming the capturer
+only when the team saw it. Launchers call
 ``ReplayViewerService.prepare_agent_pov`` before the page opens, the way the
 BattleClient compiles its first turn first: it builds every agent's Agent POV
 work (source rows or projection, marks, Champion Streaks and Herald Cards
@@ -50,7 +52,7 @@ from secrets import token_urlsafe
 from threading import Lock, RLock
 from typing import TYPE_CHECKING, Annotated, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.events import (
@@ -557,6 +559,39 @@ class ReplayTimelineUltimateMarkV1(ReplayTimelineAgentMarkV1):
     damaging: bool
 
 
+class ReplayTimelineCaptureMarkV1(_TimelineMarkModel):
+    """One Capture the Flag capture on a timeline tick.
+
+    A capture is public (the score steps up and the flag goes home in every
+    view), so every view marks every capture; only the capturer's name depends
+    on what the view saw.
+
+    Attributes
+    ----------
+    team_id : {1, 2}
+        The team that captured: Team A (1) or Team B (2).
+    capturer : ReplayTimelineAgentMarkV1 or None
+        The champion that carried the flag home, on team_id. Always set in
+        Oracle View; in Agent POV, None when the recipient's team did not see
+        the carrier.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        The capturer is on the other team.
+    """
+
+    team_id: Literal[1, 2]
+    capturer: ReplayTimelineAgentMarkV1 | None
+
+    @model_validator(mode="after")
+    def _validate_capturer_team(self) -> ReplayTimelineCaptureMarkV1:
+        """Return this mark, or raise ValueError when the capturer is not on team_id."""
+        if self.capturer is not None and self.capturer.team_id != self.team_id:
+            raise ValueError("a capture's capturer must be on the capturing team")
+        return self
+
+
 class ReplayTimelineTickMarksV1(_TimelineMarkModel):
     """Everything one audience may mark on one tick of the Rune Scrubber.
 
@@ -571,12 +606,17 @@ class ReplayTimelineTickMarksV1(_TimelineMarkModel):
         Ultimate casters, in event order.
     returns : tuple of ReplayTimelineAgentMarkV1
         Champions that returned (respawned), in global slot order.
+    captures : tuple of ReplayTimelineCaptureMarkV1
+        Capture the Flag: the captures, at most one per team, Team A's first;
+        empty in every other mode. Every view has every capture; in Agent POV
+        a capturer the team did not see is None.
     """
 
     frame_index: Annotated[int, Field(ge=1)]
     falls: tuple[ReplayTimelineFallMarkV1, ...]
     ultimates: tuple[ReplayTimelineUltimateMarkV1, ...]
     returns: tuple[ReplayTimelineAgentMarkV1, ...]
+    captures: tuple[ReplayTimelineCaptureMarkV1, ...]
 
 
 class ReplayTimelineMarksV1(_TimelineMarkModel):
@@ -1193,9 +1233,11 @@ class ReplayViewerService:
         -------
         bytes
             Canonical JSON of one ReplayTimelineMarksV1. In Oracle View it holds
-            every recorded fall, Ultimate and return. In Agent POV it holds only
-            the falls, Ultimates and returns found in the current recipient's
-            Agent POV visual events (the same filter the arena uses).
+            every recorded fall, Ultimate, return and Capture the Flag capture.
+            In Agent POV it holds only the falls, Ultimates and returns found in
+            the current recipient's Agent POV visual events (the same filter
+            the arena uses), and every capture (public through the score), with
+            its capturer only when the recipient's flag line names the carrier.
 
         Raises
         ------
@@ -1376,9 +1418,14 @@ class ReplayViewerService:
         home_fall_slots: frozenset[int],
         ultimate_slots: tuple[int, ...],
         return_slots: tuple[int, ...],
+        captures: tuple[ReplayTimelineCaptureMarkV1, ...],
     ) -> ReplayTimelineTickMarksV1 | None:
-        """Build one tick's marks from global slots, or None when nothing happened."""
-        if not (fall_slots or ultimate_slots or return_slots):
+        """Build one tick's marks from global slots, or None when nothing happened.
+
+        captures are the Capture the Flag captures, in any order (empty in
+        other modes); the tick lists them by team, Team A's first.
+        """
+        if not (fall_slots or ultimate_slots or return_slots or captures):
             return None
         falls = tuple(
             ReplayTimelineFallMarkV1(
@@ -1403,12 +1450,17 @@ class ReplayViewerService:
             falls=falls,
             ultimates=ultimates,
             returns=returns,
+            captures=tuple(sorted(captures, key=lambda mark: mark.team_id)),
         )
 
     def _recorded_mark_slots(
         self, frame_index: int
-    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-        """Read recorded fall, Ultimate-caster and return slots entering a frame."""
+    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Read recorded fall, Ultimate, return and capture slots entering a frame.
+
+        The fourth tuple holds the Capture the Flag capturers (flag_captured
+        events); it is empty in every other mode.
+        """
         events = self._replay.transitions[frame_index - 1].events
         falls = tuple(
             event.recipient_global_slot
@@ -1426,13 +1478,18 @@ class ReplayViewerService:
             for event in events
             if event.event_type == "agent_respawned"
         )
-        return falls, ultimates, returns
+        captures = tuple(
+            event.agent_global_slot
+            for event in events
+            if event.event_type == "flag_captured"
+        )
+        return falls, ultimates, returns, captures
 
     def _oracle_timeline_ticks(self) -> tuple[ReplayTimelineTickMarksV1, ...]:
         """Build every marked tick from the recorded evaluation events."""
         ticks: list[ReplayTimelineTickMarksV1] = []
         for frame_index in range(1, len(self._replay.frames)):
-            falls, ultimates, returns = self._recorded_mark_slots(frame_index)
+            falls, ultimates, returns, captures = self._recorded_mark_slots(frame_index)
             home_falls: frozenset[int] = (
                 team_deathmatch_home_fall_slots_v1(
                     self._context,
@@ -1448,6 +1505,10 @@ class ReplayViewerService:
                 home_fall_slots=home_falls,
                 ultimate_slots=ultimates,
                 return_slots=returns,
+                captures=tuple(
+                    ReplayTimelineCaptureMarkV1(team_id=agent.team_id, capturer=agent)
+                    for agent in map(self._timeline_agent, captures)
+                ),
             )
             if tick is not None:
                 ticks.append(tick)
@@ -1488,16 +1549,20 @@ class ReplayViewerService:
 
         Notes
         -----
-        Only ticks whose recorded events hold a fall, an Ultimate or a return
-        are checked; other ticks cannot produce a mark and are skipped. For
-        each, the recipient's Agent POV visual events
+        Only ticks whose recorded events hold a fall, an Ultimate, a return or
+        a capture are checked; other ticks cannot produce a mark and are
+        skipped. For each, the recipient's Agent POV visual events
         (_agent_pov_tick_visual_events, the same filter the arena uses) give
-        the marks: only its agent_died, Ultimate ability_activated
-        and agent_respawned rows, so an agent's marks hold only what its team
-        may see. On a tick with a recorded fall it also stores the recipient's
-        seen takedowns in _pov_tick_takedowns, so a later Champion Streaks
-        count reuses them. The caller holds the marks lock. Host-only; no file
-        or simulator work.
+        the marks: only its agent_died, Ultimate ability_activated and
+        agent_respawned rows, and its flag_changed carried-to-home rows (every
+        capture, since the score and the flags are public, with the capturer
+        only when the row names the carrier), so an agent's marks hold only
+        what its team may see. Carried to home is always a capture: Core
+        returns only a flag that lay dropped at the start of the tick. On a
+        tick with a recorded fall it also stores the recipient's seen
+        takedowns in _pov_tick_takedowns, so a later Champion Streaks count
+        reuses them. The caller holds the marks lock. Host-only; no file or
+        simulator work.
         """
         context = self._context
         slot_by_public_id = {
@@ -1525,6 +1590,7 @@ class ReplayViewerService:
             home_falls: set[int] = set()
             ultimates: list[int] = []
             returns: list[int] = []
+            captures: list[ReplayTimelineCaptureMarkV1] = []
             for event in visual.events:
                 if event.event_kind == "agent_died":
                     slot = slot_by_public_id[event.recipient_anchor.public_agent_id]
@@ -1542,12 +1608,33 @@ class ReplayViewerService:
                     returns.append(
                         slot_by_public_id[event.agent_anchor.public_agent_id]
                     )
+                elif (
+                    event.event_kind == "flag_changed"
+                    and event.state_before == "carried"
+                    and event.state_after == "home"
+                ):
+                    # A capture: the capturing team owns the other flag. The
+                    # line names the carrier only when this team saw it.
+                    anchor = event.agent_anchor
+                    captures.append(
+                        ReplayTimelineCaptureMarkV1(
+                            team_id=cast("Literal[1, 2]", 3 - event.flag_team_id),
+                            capturer=(
+                                None
+                                if anchor is None
+                                else self._timeline_agent(
+                                    slot_by_public_id[anchor.public_agent_id]
+                                )
+                            ),
+                        )
+                    )
             tick = self._timeline_tick(
                 frame_index,
                 fall_slots=tuple(falls),
                 home_fall_slots=frozenset(home_falls),
                 ultimate_slots=tuple(ultimates),
                 return_slots=tuple(returns),
+                captures=tuple(captures),
             )
             if tick is not None:
                 build.ticks.append(tick)
@@ -1558,7 +1645,7 @@ class ReplayViewerService:
         """Return the first frame at or after frame_index that a mark can enter on.
 
         That is the first frame (1 to the last) whose entering tick has a
-        recorded fall, Ultimate or return (_recorded_mark_slots); every other
+        recorded fall, Ultimate, return or capture (_recorded_mark_slots); every other
         tick cannot produce a mark in any view. Returns the frame count when
         no such frame is left. frame_index is 1 or more. Host-only; no lock.
         """
@@ -3394,6 +3481,7 @@ __all__ = [
     "ReplayServiceCommandResultV1",
     "ReplayServiceOutcomeV1",
     "ReplayTimelineAgentMarkV1",
+    "ReplayTimelineCaptureMarkV1",
     "ReplayTimelineFallMarkV1",
     "ReplayTimelineMarksV1",
     "ReplayTimelineTickMarksV1",
