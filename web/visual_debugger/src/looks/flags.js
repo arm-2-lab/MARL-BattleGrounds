@@ -169,10 +169,11 @@ function usableFlag(flag) {
  * Team A's pennant is a triangle and Team B's a swallowtail. foot is where the
  * pole stands (screen px); height is the pole's length in px. The pennant is
  * 0.625 of the height wide and fills the top 38% of the pole. side (default 1)
- * is the way it flies: 1 to the right, -1 to the left. The arena flies every
- * flag toward the middle of the map from its own home's side (flagDrawing), so
- * a flag at home never hangs over its end wall and a moving flag never flips
- * at the middle. The scorebug's flag chip draws the same shape at its own size.
+ * is the way it flies: 1 to the right, -1 to the left. The arena points every
+ * flag toward its own home's end wall (flagDrawing), so a carried flag trails
+ * behind its carrier and never flips at the middle, and it moves a pole in when
+ * the cloth would pass the floor's edge. The scorebug's flag chip draws the same
+ * shape at its own size.
  *
  * @param {number} teamId 1 or 2.
  * @param {Pair} foot
@@ -426,19 +427,38 @@ function flagDrawing(flag, part, view, flagHold, glideFrom = null) {
   const countdown = Math.max(0, Math.trunc(finiteNumber(flag.countdown_steps)));
   /** @type {LookRecord[]} */
   const result = [];
-  // Every flag flies toward the middle of the map (the world x middle) from its
-  // own home's side, so the two ends mirror each other whichever team spawns
-  // where, and a carried or dropped flag never flips as it crosses the middle.
+  // Every pennant points toward its own home's end wall: only the enemy carries
+  // a flag, always toward its own base, so a carried pennant trails behind its
+  // carrier, and it never flips as it crosses the middle. The two ends mirror
+  // each other whichever team spawns where.
   const side =
     finiteNumber(worldPair(flag.home_position)?.[0]) > view.transform.worldWidth / 2
-      ? -1
-      : 1;
+      ? 1
+      : -1;
+  const height = FOOTPRINT.pennantUnits * view.scale;
+  const cloth = FOOTPRINT.pennantWidth * height;
+  const floorEdge = view.transform.worldToScreen([
+    side > 0 ? view.transform.worldWidth : 0,
+    0,
+  ]).x;
   const pennant = (/** @type {Pair} */ foot, /** @type {boolean} */ outlined) =>
     Object.freeze({
       kind: "flag-pennant",
       teamId,
       state: flag.state,
-      ...pennantGeometry(teamId, foot, FOOTPRINT.pennantUnits * view.scale, side),
+      // At or near its home the cloth would pass the floor's edge, so the pole
+      // moves in just far enough to keep it on the floor.
+      ...pennantGeometry(
+        teamId,
+        [
+          side > 0
+            ? Math.min(foot[0], floorEdge - cloth)
+            : Math.max(foot[0], floorEdge + cloth),
+          foot[1],
+        ],
+        height,
+        side,
+      ),
       outlined,
       follow: flag.state === "carried" ? carrier : null,
       glideFrom: flag.state === "carried" && carrier === null ? glideFrom : null,
@@ -464,8 +484,8 @@ function flagDrawing(flag, part, view, flagHold, glideFrom = null) {
     return result;
   }
   if (flag.state === "carried") {
-    // The pole stands just behind the carrier's center, away from where the
-    // pennant flies.
+    // The pole stands just ahead of the carrier's center in its run (the side
+    // away from where the pennant flies), so the cloth lies back over it.
     const offset = FOOTPRINT.carriedOffsetUnits * view.ppu;
     result.push(
       pennant([at[0] - side * offset, at[1] - offset], view.marks && carrier !== null),

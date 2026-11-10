@@ -7,7 +7,9 @@
  * policy keeps its own name), the lead line only on a horizon draw with a
  * lead, an Honors cell per honor with every tied leader's medallion, and the
  * Match Summary and Show Arena buttons, centred over the arena and scaled to
- * fit (Show Arena alone, centred, for a game with no Match Summary sheet); verdictButtons gives the buttons' boxes in arena px and
+ * fit (Show Arena alone, centred, for a game with no Match Summary sheet), with
+ * a title line that names the target's unit ("Team A Reached 20 Points",
+ * "Reached 3 Captures", "Reached 1 Capture"); verdictButtons gives the buttons' boxes in arena px and
  * buildVerdictActions makes them real buttons that report their id. Tucked
  * (Show Arena) or with full cards off it is the band plate in the top band.
  * A herald plate lives only in the top band, keeps the spot it was first given
@@ -115,6 +117,34 @@ const DRAW = {
   ],
 };
 
+test("the title line names the target's unit: Points, Captures, and 1 Capture", () => {
+  /** @param {Record<string, any>} verdict */
+  const eyebrow = (verdict) =>
+    heralds.records({
+      part: "verdict",
+      product: "replay_viewer",
+      verdict: { ...DRAW, ...verdict },
+      bounds,
+    })[0].eyebrow;
+  const won = { basis: "threshold", winnerTeamId: 1, tick: 6 };
+  assert.equal(
+    eyebrow({ ...won, scores: { 1: 3, 2: 1 }, pointsToWin: 3, taskMode: 3 }),
+    "Tick 6 · Team A Reached 3 Captures",
+  );
+  assert.equal(
+    eyebrow({ ...won, scores: { 1: 1, 2: 0 }, pointsToWin: 1, taskMode: 3 }),
+    "Tick 6 · Team A Reached 1 Capture",
+  );
+  assert.equal(
+    eyebrow({ ...won, scores: { 1: 20, 2: 4 }, pointsToWin: 20, taskMode: 1 }),
+    "Tick 6 · Team A Reached 20 Points",
+  );
+  assert.equal(
+    eyebrow({ basis: "tie", scores: { 1: 3, 2: 3 }, pointsToWin: 3, taskMode: 3 }),
+    "Tick 300 · Both Reached 3 Captures · Tied",
+  );
+});
+
 test("a game with no Match Summary sheet shows Show Arena alone, centred", () => {
   const [card] = heralds.records({
     part: "verdict",
@@ -140,7 +170,7 @@ test("the full verdict follows the home ends, names controllers, honors ties and
     leftTeamId: 2,
   });
   assert.equal(card.kind, "herald-verdict");
-  assert.equal(card.eyebrow, "Tick 300 · No Team Reached 20");
+  assert.equal(card.eyebrow, "Tick 300 · No Team Reached 20 Points");
   assert.equal(card.lead, "A Lead at Tick 300 Wins Nothing");
   assert.deepEqual(
     card.columns.map((/** @type {any} */ column) => [

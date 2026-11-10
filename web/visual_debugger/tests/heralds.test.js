@@ -375,7 +375,7 @@ test("the verdict shows in the Replay Viewer and at live game over, with the Hon
     verdict,
     bounds,
   });
-  assert.equal(oracle.eyebrow, "Tick 245 · Team A Reached 20");
+  assert.equal(oracle.eyebrow, "Tick 245 · Team A Reached 20 Points");
   assert.equal(oracle.title, "Team A Victory");
   assert.deepEqual(
     oracle.columns.map((/** @type {any} */ column) => column.result),
@@ -402,7 +402,7 @@ test("the verdict shows in the Replay Viewer and at live game over, with the Hon
     },
     bounds,
   });
-  assert.equal(draw.eyebrow, "Tick 300 · No Team Reached 20");
+  assert.equal(draw.eyebrow, "Tick 300 · No Team Reached 20 Points");
   assert.equal(draw.lead, "A Lead at Tick 300 Wins Nothing");
 });
 

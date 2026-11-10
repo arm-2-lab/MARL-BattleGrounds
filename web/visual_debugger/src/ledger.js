@@ -39,6 +39,7 @@
 import {
   canonicalAgentIdentity,
   fullRecordChipWords,
+  scoreCountText,
   teamLabelFromId,
 } from "./agent-identity.js";
 import {
@@ -398,7 +399,8 @@ const MATCH_SUMMARY_STEMS = Object.freeze(["score", "kills", "deaths", "return"]
  *
  * heading: on the completion frame a verdict, for example "Team B Wins · 17 –
  * 20 · Score Limit Reached · Tick 204" or "Draw · 19 – 16 · No Team Reached
- * 20 · A Lead at Tick 300 Wins Nothing"; before it "Match in Progress · Up to
+ * 20 Points · A Lead at Tick 300 Wins Nothing" (the unit from scoreCountText);
+ * before it "Match in Progress · Up to
  * Tick 118". teams: Team A first, then Team B; each lists Score, Total Kills,
  * Total Deaths and Return with the catalog's own labels, values and CSV names
  * from the Episode Results rows. The summary never shows the ending early:
@@ -438,7 +440,7 @@ export function ledgerMatchSummary(presentation, metricSummary) {
       !both && scoreA !== scoreB && match.episode_limit
         ? ` · A Lead at Tick ${match.episode_limit} Wins Nothing`
         : "";
-    heading = `Draw · ${scoreA} – ${scoreB} · ${both ? "Both Teams Reached" : "No Team Reached"} ${threshold}${lead}`;
+    heading = `Draw · ${scoreA} – ${scoreB} · ${both ? "Both Teams Reached" : "No Team Reached"} ${scoreCountText(match.task_mode, threshold)}${lead}`;
   } else {
     heading =
       tick === null ? "Match in Progress" : `Match in Progress · Up to Tick ${tick}`;

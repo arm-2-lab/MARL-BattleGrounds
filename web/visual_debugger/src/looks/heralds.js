@@ -137,7 +137,11 @@
  * champion never moves a card. Nothing here imports a researcher helper or
  * reads a researcher view or match summary.
  */
-import { classIdentityFromId, teamLabelFromId } from "../agent-identity.js";
+import {
+  classIdentityFromId,
+  scoreCountText,
+  teamLabelFromId,
+} from "../agent-identity.js";
 import { classAbilityNameV1 } from "../class-documentation.js";
 import { createSvgIcon } from "../icons.js";
 import { createSemanticDescriptor } from "../tooltip.js";
@@ -409,7 +413,8 @@ export function textWidth(text, size, caps = false) {
  *   "combat_debugger" (the BattleClient and DevClient at game over); any
  *   other value gives []. verdict is {scores: {1: number, 2: number},
  *   winnerTeamId: 1 | 2 | null, tick, basis: "threshold" | "horizon" |
- *   "tie", pointsToWin, teams?: {1?: {name, short?}, 2?: {name, short?}}
+ *   "tie", pointsToWin, taskMode? (the game's task mode, which names the
+ *   target's unit: Points, or Captures for 3; absent reads as Points), teams?: {1?: {name, short?}, 2?: {name, short?}}
  *   (each team's controller line, shown under its team word: the full line
  *   name ("You + Recurrent MAPPO") when it fits the column at 15 px, else
  *   the short line ("You + 4 Policies") when given, else the full line at 13
@@ -1778,12 +1783,18 @@ function lineupRecord(input, bounds, full) {
 /**
  * Return the verdict's words: {eyebrow, results {1, 2}, lead (or null)}.
  *
- * verdict is the caller's final facts (see records). Pure.
+ * verdict is the caller's final facts (see records). The eyebrow names the
+ * target with its unit from scoreCountText: "Tick 204 · Team A Reached 20
+ * Points", "Tick 6 · Team A Reached 3 Captures", "Tick 300 · No Team Reached 20
+ * Points", "Tick 300 · Both Reached 20 Points · Tied". Pure.
  *
  * @param {JsonRecord} verdict
  */
 function verdictWords(verdict) {
-  const target = Number(verdict.pointsToWin);
+  const goal = Number(verdict.pointsToWin);
+  // The target with its unit: "20 Points" in Team Deathmatch, "3 Captures" in
+  // Capture the Flag (verdict.taskMode).
+  const target = scoreCountText(verdict.taskMode, goal);
   const tick = Number(verdict.tick);
   const scores = isRecord(verdict.scores) ? verdict.scores : {};
   const winner =
@@ -1805,7 +1816,7 @@ function verdictWords(verdict) {
           : null,
     };
   }
-  const both = Number(scores[1]) >= target && Number(scores[2]) >= target;
+  const both = Number(scores[1]) >= goal && Number(scores[2]) >= goal;
   return {
     eyebrow: both
       ? `Tick ${tick} · Both Reached ${target} · ${teamLabelFromId(winner)} Scored More`

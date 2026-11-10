@@ -696,10 +696,13 @@ def _draw_v2_capture_the_flag(
 
     Notes
     -----
-    A pennant stands on a 0.92-unit pole from the flag's position and flies
-    toward the middle of the map from its own home's side, so a carried or
-    dropped flag never flips as it crosses the middle: Team A's a triangle,
-    Team B's a swallowtail (Team B's second cue, as its two rims are).
+    A pennant stands on a 0.92-unit pole from the flag's position and points
+    toward its own home's end wall, so a carried flag trails behind its
+    carrier (only the enemy carries it, always toward the enemy's base) and
+    never flips as it crosses the middle. When the 0.575-unit cloth would pass
+    the floor's edge (a flag at or near its home), the pole moves in just far
+    enough to keep it on the floor. Team A's is a triangle, Team B's a
+    swallowtail (Team B's second cue, as its two rims are).
     Mutates axes and returns None.
     """
     ctf = scene.capture_the_flag
@@ -734,11 +737,15 @@ def _draw_v2_capture_the_flag(
             axes.add_patch(_tag(ring, f"{tag}:capture-ring"))
         if (flag.state == "carried") != carried:
             continue
-        x, y = flag.position
-        # Every pennant flies toward the middle from its home's side, as in
-        # the browser (looks/flags.js), so it never flips at the middle.
-        side = -1.0 if flag.home_position[0] > scene.map.width / 2 else 1.0
-        top, low, width = y + 0.92, y + 0.92 * 0.38, side * 0.575
+        flag_x, y = flag.position
+        # Every pennant points toward its own home's wall, as in the browser
+        # (looks/flags.js); the pole moves in only when the cloth would pass
+        # the floor's edge on that side.
+        side = 1.0 if flag.home_position[0] > scene.map.width / 2 else -1.0
+        cloth = 0.575  # the pennant's width in world units
+        width = side * cloth
+        x = min(flag_x, scene.map.width - cloth) if side > 0 else max(flag_x, cloth)
+        top, low = y + 0.92, y + 0.92 * 0.38
         shape = (
             [(x, top), (x + width, (top + low) / 2), (x, low)]
             if flag.team_id == 1
@@ -767,7 +774,7 @@ def _draw_v2_capture_the_flag(
         axes.add_patch(_tag(pennant, f"{tag}:pennant"))
         if flag.state == "dropped":
             ticks = axes.text(
-                x + ctf.interaction_distance,
+                flag_x + ctf.interaction_distance,
                 y + ctf.interaction_distance,
                 str(flag.countdown_steps),
                 color=color,

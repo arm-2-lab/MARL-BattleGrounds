@@ -18,8 +18,9 @@ transition's own or the visual batch's. Every view's summary carries the
 recorded flag return ticks, a public rule setting. A fall scores no points in
 Capture the Flag, so the Fallen panel's recent falls carry none. The static
 Matplotlib view opens a Capture the Flag replay V5 and draws both bases (Team B
-double-lined), the capture rings, the ground and carried pennants (each flying
-from its home's side, even at the other end) and a dropped flag's ticks left.
+double-lined), the capture rings, the ground and carried pennants (each pointing
+toward its own home's wall, even at the other end, with its cloth on the floor
+at home) and a dropped flag's ticks left.
 The Rune Scrubber marks every capture at its tick, by the capturing team, in
 Oracle View and in every Agent POV, and names the capturer only where the view
 saw the carrier. The frames,
@@ -566,14 +567,27 @@ def test_the_static_view_opens_a_capture_the_flag_replay_and_draws_its_flags(
     # carried, rides over them and their selection rings (up to 32).
     order = dict(drawn)
     assert order["scene:v2:flag:1:pennant"] < 24 < 32 < order["scene:v2:flag:2:pennant"]
-    # Each pennant flies from its home's side, as in the browser: Team B's,
-    # carried at Team A's end, still flies left (its second point is the tip).
+    # Each pennant points toward its own home's wall, as in the browser: Team
+    # A's left, and Team B's right even where it is carried at Team A's end
+    # (its second point is the tip).
     team_a, team_b = (
         pennants["scene:v2:flag:1:pennant"],
         pennants["scene:v2:flag:2:pennant"],
     )
-    assert team_a[1][0] > team_a[0][0]
-    assert team_b[1][0] < team_b[0][0]
+    assert team_a[1][0] < team_a[0][0]
+    assert team_b[1][0] > team_b[0][0]
+    # Frame 0: both flags at home point at their own walls, and every cloth
+    # stays on the 20-unit floor.
+    pennants.clear()
+    assert (
+        static.run_static_replay_artifact_renderer(
+            replay=replay, frame_index=0, show_ranges=False
+        )
+        == 0
+    )
+    assert len(pennants) == 2
+    for points in pennants.values():
+        assert all(0.0 <= x <= 20.0 for x, _ in points)
 
 
 @pytest.mark.parametrize("execution_information_mode", _MODES)

@@ -17,9 +17,10 @@
  *   "2 ticks" inside sentences).
  * - The Full Record chip words ("Full Record · Not Limited to Agent 3's View").
  * - The scoring rules each mode's words follow, one owner each: which modes
- *   keep score (isScoredTaskMode), what a fall gives (fallPoints) and what a
- *   score counts ("Score" or "Captures", scoreLabel). The arena looks import
- *   them from here, since match-summary.js is outside their import walk.
+ *   keep score (isScoredTaskMode), what a fall gives (fallPoints), what a
+ *   score counts ("Score" or "Captures", scoreLabel) and a count with its unit
+ *   ("20 Points", "1 Capture", scoreCountText). The arena looks import them
+ *   from here, since match-summary.js is outside their import walk.
  *
  * `vocabulary.js` builds its class and team display tokens from the two tables
  * here, and `class-documentation.js` reads the class names, so each name has one
@@ -221,6 +222,22 @@ export function fallPoints(taskMode, homeFall) {
  */
 export function scoreLabel(taskMode) {
   return taskMode === 3 ? "Captures" : "Score";
+}
+
+/**
+ * Write a score count with its unit, for a line that names a target or a
+ * total: "20 Points" or "1 Point" in Team Deathmatch and every mode but Capture
+ * the Flag, "3 Captures" or "1 Capture" in Capture the Flag (3). Only exactly 1
+ * is singular. The one owner of that unit for the Verdict's title line and the
+ * Ledger's draw heading. Pure.
+ *
+ * @param {unknown} taskMode
+ * @param {number} count
+ * @returns {string}
+ */
+export function scoreCountText(taskMode, count) {
+  const unit = taskMode === 3 ? "Capture" : "Point";
+  return `${count} ${count === 1 ? unit : `${unit}s`}`;
 }
 
 /**

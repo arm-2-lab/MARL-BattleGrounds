@@ -765,7 +765,7 @@ test("the Match Summary gives the verdict at the end and never shows the ending 
     [
       "draw",
       [19, 16],
-      "Draw · 19 – 16 · No Team Reached 20 · A Lead at Tick 3 Wins Nothing",
+      "Draw · 19 – 16 · No Team Reached 20 Points · A Lead at Tick 3 Wins Nothing",
     ],
   ]) {
     Object.assign(raw.match_summary, { outcome, scores });

@@ -17,8 +17,9 @@
  * see slides between its public spots in a played tick with normal motion and
  * Body Glide on, along the bodies' glide window (animationSpecs), and snaps
  * otherwise, also when its carrier has just left sight (a flag carried at both
- * ends is no change); a carried or dropped pennant flies toward the middle from
- * its own home's side, so it never flips at the middle; and the carrier words ("Carrying Team B's
+ * ends is no change); every pennant points toward its own home's wall, so a
+ * carried one trails behind its carrier and never flips at the middle, and at
+ * home its cloth ends on the floor's edge; and the carrier words ("Carrying Team B's
  * flag", carryingWords and carriedFlagTeam) only for a carrier the scene names,
  * with the agent inspector's Carrying row from them.
  */
@@ -175,7 +176,7 @@ test("bases show their flag's state by strength, and Team B is double-lined", ()
   );
 });
 
-test("every pennant flies toward the middle, so the two ends mirror", () => {
+test("at home each pennant points at its own wall, its cloth ending on the floor's edge", () => {
   const xs = (/** @type {string} */ path) =>
     [...path.matchAll(/[ML](-?\d+(?:\.\d+)?) /gu)].map((match) => Number(match[1]));
   const pennants = ofKind(
@@ -183,14 +184,21 @@ test("every pennant flies toward the middle, so the two ends mirror", () => {
     "flag-pennant",
   );
   const [poleA, poleB] = pennants.map((record) => xs(record.pole)[0]);
+  const left = transform.worldToScreen([0, 0]).x;
+  const right = transform.worldToScreen([transform.worldWidth, 0]).x;
+  const [clothA, clothB] = pennants.map((record) => xs(record.shape));
   assert.ok(
-    xs(pennants[0].shape).every((x) => x >= poleA - 0.001),
-    "Team A's, by the left wall, flies right",
+    clothA.every((x) => x <= poleA + 0.001),
+    "Team A's points left",
   );
   assert.ok(
-    xs(pennants[1].shape).every((x) => x <= poleB + 0.001),
-    "Team B's, by the right wall, flies left",
+    clothB.every((x) => x >= poleB - 0.001),
+    "Team B's points right",
   );
+  // The homes sit 0.5 units from the walls, closer than the cloth is wide, so
+  // each pole moves in until its cloth ends exactly on the floor's edge.
+  assert.ok(Math.abs(Math.min(...clothA) - left) < 0.01, String(Math.min(...clothA)));
+  assert.ok(Math.abs(Math.max(...clothB) - right) < 0.01, String(Math.max(...clothB)));
 });
 
 test("the capture ring is cut at the end wall, never past the floor", () => {
@@ -468,7 +476,7 @@ test("a pennant whose carrier the view cannot see slides with the bodies", () =>
   assert.equal(seen[0].glideFrom, null);
 });
 
-test("a carried pennant flies from its home's side on both halves of the map", () => {
+test("a carried pennant trails toward its own home on both halves of the map", () => {
   for (const x of [4.7, 15.3]) {
     for (const team of /** @type {const} */ ([1, 2])) {
       const carried = flag(team, "carried", { ...CARRIED_BY_KEY, position: [x, 6] });
@@ -481,7 +489,7 @@ test("a carried pennant flies from its home's side on both halves of the map", (
       );
       assert.equal(
         Math.sign(tip - pole),
-        team === 1 ? 1 : -1,
+        team === 1 ? -1 : 1,
         `team ${team} at x ${x}`,
       );
     }

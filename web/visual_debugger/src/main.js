@@ -5983,6 +5983,7 @@ function matchMomentCardRecords(presentation, bounds, _plan, filters, options = 
         winnerTeamId,
         tick,
         pointsToWin,
+        taskMode: summary.taskMode,
         basis:
           winnerTeamId !== null
             ? "threshold"

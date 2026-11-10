@@ -1642,7 +1642,8 @@ function drawnSpots(bodies, scene) {
       if (spot !== null) spots.push(spot);
     }
   }
-  // A pennant flies toward the middle, to either side of its pole.
+  // A pennant flies to one side of its pole (toward its own home's wall), so
+  // both sides are kept in frame.
   for (const { foot } of sceneFlags(scene)) {
     spots.push(
       foot,
