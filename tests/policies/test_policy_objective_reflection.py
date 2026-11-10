@@ -54,8 +54,8 @@ def _team_b_input(task: str) -> tuple[ActorInput, ActionMask]:
     return actors, ActionMask(*(field[5:10] for field in mask))
 
 
+# Rows 0-3 become active objective rows at x 1.5, 2.5, 3.5 and 4.5.
 def _placed(rows: Array) -> Array:
-    """Make rows 0-3 active objective rows at x 1.5, 2.5, 3.5 and 4.5."""
     for row in range(4):
         rows = rows.at[..., row, OBJECTIVE_FEATURE_IS_ACTIVE].set(1.0)
         rows = rows.at[..., row, OBJECTIVE_FEATURE_X].set(1.5 + row)
