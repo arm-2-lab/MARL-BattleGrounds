@@ -1,7 +1,9 @@
 """Check one-shot debugger images built from scene records.
 
 The static replay renderer opens a current replay V4 file (which records the
-Red Zone rule) without a metric sidecar.
+Red Zone rule) without a metric sidecar. Without a display (a file-only
+Matplotlib backend) it refuses with a message naming the browser Replay Viewer,
+instead of returning without showing anything.
 """
 
 from pathlib import Path
@@ -113,3 +115,17 @@ def test_static_renderer_opens_current_replay_without_a_metric_sidecar(
     assert len(scenes) == 1
     assert scenes[0].frame_index == 1
     assert scenes[0].audience == "researcher"
+
+
+def test_static_display_without_a_display_names_the_browser_viewer() -> None:
+    import matplotlib
+
+    import marl_battlegrounds.viewer.static as static_viewer
+
+    backend = matplotlib.get_backend()
+    matplotlib.use("agg")
+    try:
+        with pytest.raises(OSError, match="python -m marl_battlegrounds replay FILE"):
+            static_viewer._load_pyplot()  # pyright: ignore[reportPrivateUsage]
+    finally:
+        matplotlib.use(backend)

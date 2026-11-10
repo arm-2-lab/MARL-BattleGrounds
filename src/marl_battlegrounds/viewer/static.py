@@ -2,6 +2,8 @@
 
 The debugger and replay launchers call these helpers for static mode. They open
 one figure and wait for the display window; they do not start an HTTP server.
+Without a display they refuse with a message naming the browser Replay Viewer,
+instead of returning without showing anything.
 Replay rendering reads saved evidence and never advances the simulator.
 Matplotlib is imported only when a static display is requested.
 """
@@ -32,9 +34,16 @@ class _PyplotLike(Protocol):
 
 
 def _load_pyplot() -> _PyplotLike:
-    """Import Matplotlib on demand and explain the optional install when unavailable."""
+    """Import Matplotlib on demand and check that it can open a window.
+
+    Raises ImportError, naming the optional install, when Matplotlib is
+    missing. Raises OSError when the session has no display: Matplotlib then
+    falls back to a backend that only writes files (such as "agg"), and
+    ``show`` would return at once and show nothing. The message points to the
+    browser Replay Viewer instead.
+    """
     try:
-        return cast(_PyplotLike, import_module("matplotlib.pyplot"))
+        pyplot = import_module("matplotlib.pyplot")
     except ImportError as exc:
         msg = (
             "Matplotlib is required for static Visual Debugger and Analyzer "
@@ -42,6 +51,21 @@ def _load_pyplot() -> _PyplotLike:
             "Run pip install 'marl-battlegrounds[viz]'."
         )
         raise ImportError(msg) from exc
+    backends = import_module("matplotlib.backends")
+    backend = str(import_module("matplotlib").get_backend()).lower()
+    file_only = backends.backend_registry.list_builtin(
+        backends.BackendFilter.NON_INTERACTIVE
+    )
+    if backend in file_only:
+        msg = (
+            f"--static opens a desktop window, and this session has no display "
+            f"(Matplotlib is using its {backend!r} backend). Open the browser "
+            "Replay Viewer instead: python -m marl_battlegrounds replay FILE. On "
+            "a remote machine, add --no-open --port 8765, forward the port with "
+            "ssh -L 8765:127.0.0.1:8765 and open the printed 127.0.0.1 link."
+        )
+        raise OSError(msg)
+    return cast(_PyplotLike, pyplot)
 
 
 def run_static_replay_renderer(
@@ -72,6 +96,9 @@ def run_static_replay_renderer(
         If the replay cannot be loaded or the frame index is invalid.
     ImportError
         If Matplotlib is unavailable.
+    OSError
+        If the session has no display, so no window can open; the message
+        points to the browser Replay Viewer.
 
     Notes
     -----
@@ -127,6 +154,9 @@ def run_static_replay_artifact_renderer(
         If the frame index is not a Python integer in range.
     ImportError
         If Matplotlib is unavailable.
+    OSError
+        If the session has no display, so no window can open; the message
+        points to the browser Replay Viewer.
 
     Notes
     -----
