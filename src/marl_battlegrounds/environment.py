@@ -1822,7 +1822,9 @@ def make(
     ValueError
         An unsupported task name (the message lists the supported ones), an
         env_config in another mode than the task's, invalid batch or selection
-        IDs, conflicting setup inputs, red_zone_depth with ``"ctf"``, invalid
+        IDs (a map with spawn balance on needs an even num_envs; the message
+        for one game shows the call with balance_spawn_locations=False),
+        conflicting setup inputs, red_zone_depth with ``"ctf"``, invalid
         map/roster/config values, or an env_config batch that mixes task modes.
     TypeError
         Unsupported config/roster structure or a non-Boolean balance/facts
@@ -1895,7 +1897,10 @@ def make(
         if balance_spawn_locations:
             if num_envs is None:
                 raise ValueError(
-                    "automatic spawn balance requires a positive even batch"
+                    "make balances spawn ends across an even num_envs by "
+                    "default, so one game (num_envs=None) needs "
+                    "balance_spawn_locations=False, for example "
+                    f"make({task!r}, map_id={map_id}, balance_spawn_locations=False)"
                 )
             defaults = balanced_spawn_configs(source, num_envs=num_envs)
         else:

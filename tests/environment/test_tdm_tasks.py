@@ -9,7 +9,8 @@ rebuilt from the loaded config. A tampered, unsealed or version-1 scenario
 configuration is refused.
 Both map factories use DEFAULT_TDM_RED_ZONE_DEPTH (5.0) unless given a depth,
 and forward an explicit one. A custom map narrower than the default depth is
-refused rather than given a smaller depth.
+refused rather than given a smaller depth. One game made from a map with the
+default spawn balance is refused with a message that shows the working call.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+import marl_battlegrounds as marl_bgs
 from marl_battlegrounds.core.config import (
     resolve_agent_profile,
     validate_env_config,
@@ -387,6 +389,12 @@ def test_balanced_configs_reject_invalid_native_batch_sizes(size: object) -> Non
     config = make_canonical_team_deathmatch_evaluation_config(map_id=47)
     with pytest.raises(ValueError, match="positive even integer"):
         balanced_spawn_configs(config, num_envs=cast(int, size))
+
+
+def test_one_game_from_a_map_shows_the_call_without_spawn_balance() -> None:
+    with pytest.raises(ValueError, match=re.escape("balance_spawn_locations=False)")):
+        marl_bgs.make("tdm", map_id=0)
+    assert marl_bgs.make("tdm", map_id=0, balance_spawn_locations=False) is not None
 
 
 @pytest.mark.parametrize("size", (None, 1, 3))
