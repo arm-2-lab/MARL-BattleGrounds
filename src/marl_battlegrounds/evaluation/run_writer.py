@@ -505,17 +505,36 @@ def _new_run_directory(
     """Reserve a readable new run name without replacing an existing directory.
 
     root is the caller's output parent. phase and optional Team A/B names affect
-    only the bounded display prefix. The full random token remains in run_id;
+    only the bounded display prefix: each becomes a snake_case label of at most
+    40 characters, cut at an underscore and never inside a number, such as a
+    checkpoint's step. The full random token remains in run_id;
     the displayed token starts at 12 characters and grows on a name collision.
     Exclusive mkdir is the final authority. Existing runs and their IDs remain
     unchanged. Exhausting the full token raises FileExistsError.
     """
 
-    def label(value: object, limit: int = 24) -> str:
-        """Keep a short ASCII snake_case label separate from saved identity."""
-        return (re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_") or "unknown")[
-            :limit
-        ].rstrip("_")
+    def label(value: object, limit: int = 40) -> str:
+        """Return a short ASCII snake_case label, separate from saved identity.
+
+        "unknown" when nothing is left. A label longer than limit characters
+        is cut at an underscore, and a number split by underscores (219_103_232
+        from 219,103,232) is kept whole or left out, never cut partway, so the
+        folder never shows a different number. A single word longer than
+        limit is cut at limit.
+        """
+        text = re.sub(r"[^a-z0-9]+", "_", str(value).lower()).strip("_") or "unknown"
+        if len(text) <= limit:
+            return text
+        words = text.split("_")
+        kept: list[str] = []
+        for word in words:
+            if len("_".join([*kept, word])) > limit:
+                break
+            kept.append(word)
+        if kept and kept[-1].isdigit() and words[len(kept)].isdigit():
+            while kept and kept[-1].isdigit():
+                kept.pop()
+        return "_".join(kept) or text[:limit]
 
     names: list[str] = []
     for team_name in ("team_a", "team_b"):

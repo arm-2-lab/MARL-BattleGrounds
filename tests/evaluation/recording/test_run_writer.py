@@ -2,6 +2,8 @@
 
 Cases include interrupted writes and recovery through the existing writer,
 sampling facts, LLM summaries and links from model decisions to durable games.
+Generated run folder names keep each name to 40 characters, cut at an
+underscore and never inside a number such as a checkpoint's step.
 """
 
 import csv
@@ -869,6 +871,24 @@ def test_generated_run_names_are_readable_and_extend_colliding_suffixes(
             assert first.paths["run_details"].read_bytes() == original
     with RunWriter(resume_from=first.run_dir, policies=policies) as resumed:
         assert resumed.run_id == first.run_id
+
+
+@pytest.mark.parametrize(
+    ("name", "shown"),
+    [
+        ("FF IPPO at step 219,103,232", "ff_ippo_at_step_219_103_232"),
+        (
+            "Recurrent MAPPO team reward at step 250,675,200",
+            "recurrent_mappo_team_reward_at_step",
+        ),
+    ],
+    ids=["fits", "number-left-out-whole"],
+)
+def test_generated_run_names_never_cut_a_number(
+    tmp_path: Path, name: str, shown: str
+) -> None:
+    with RunWriter(tmp_path, policies={"team_a": name, "team_b": "tdm-alpha"}) as run:
+        assert run.run_dir.name.startswith(f"evaluation_{shown}_vs_tdm_alpha_")
 
 
 def test_exhausted_generated_run_name_never_overwrites_existing_paths(
