@@ -28,6 +28,8 @@ from marl_battlegrounds.core.types import (
     AGENT_FEATURE_ALIVE,
     AGENT_FEATURE_X,
     CONTEXT_FEATURE_MAP_WIDTH,
+    OBJECTIVE_FEATURE_IS_ACTIVE,
+    OBJECTIVE_FEATURE_X,
     OBSTACLE_FEATURE_ACTIVE,
     OBSTACLE_FEATURE_HEIGHT,
     OBSTACLE_FEATURE_RADIUS,
@@ -326,14 +328,27 @@ def _historical_team_on_right(  # pyright: ignore[reportUnusedFunction]
     return own_x > width / 2
 
 
-def _reflect_unit_rows(rows: Array, width: Array, flag: Array) -> Array:
-    """Reflect the x column of active 58-wide unit rows in flagged actors' views."""
-    x = rows[..., AGENT_FEATURE_X]
-    present = rows[..., AGENT_FEATURE_ACTIVE] > 0
+def _reflect_rows(
+    rows: Array,
+    width: Array,
+    flag: Array,
+    *,
+    active: int = AGENT_FEATURE_ACTIVE,
+    x_column: int = AGENT_FEATURE_X,
+) -> Array:
+    """Reflect the x column of active rows in flagged actors' views.
+
+    rows has the actors' leading shape plus any row axes and a feature axis;
+    active and x_column name its active-flag and x columns, the 58-wide unit
+    rows' by default (objective rows pass OBJECTIVE_FEATURE_IS_ACTIVE and
+    OBJECTIVE_FEATURE_X). A row is reflected, x becoming width minus x, when
+    its actor is flagged and its active column is above 0; every other value
+    is kept, so inactive and all-zero rows stay as they are.
+    """
+    x = rows[..., x_column]
+    present = rows[..., active] > 0
     select = _trail(flag, x.ndim) & present
-    return rows.at[..., AGENT_FEATURE_X].set(
-        jnp.where(select, _trail(width, x.ndim) - x, x)
-    )
+    return rows.at[..., x_column].set(jnp.where(select, _trail(width, x.ndim) - x, x))
 
 
 _OBSTACLE_MATCH_TOLERANCE = 1e-3
@@ -472,7 +487,7 @@ def mirror_team_view(
     *,
     obstacle_partners: Array | None = None,
 ) -> tuple[ActorInput, ActionMask]:
-    """Reflect flagged actors' Team Deathmatch view and move mask about the centerline.
+    """Reflect flagged actors' view and move mask about the map's centerline.
 
     Parameters
     ----------
@@ -497,8 +512,10 @@ def mirror_team_view(
     -------
     tuple[ActorInput, ActionMask]
         Reflected copies. In flagged rows the x column of every active unit row
-        (self, allies, enemies and shared-sensor rows) becomes map width minus
-        x, every spawn pad's x is reflected, an active obstacle row whose
+        (self, allies, enemies and shared-sensor rows) and of every active
+        objective row (flags, flag homes and hills, in the actor's own rows and
+        the shared sources') becomes map width minus x, every spawn pad's x is
+        reflected, an active obstacle row whose
         mirror image is not already in the table has x reflected and its angle
         negated while a row whose mirror image is present (itself included)
         stays as authored, and the ally and enemy previous-move one-hots and
@@ -507,9 +524,11 @@ def mirror_team_view(
         mirror images, the obstacle table is therefore unchanged and both
         spawn ends encode identically. Every other field is returned
         by reference: targets and Ultimates are roster relations, the joint
-        combat mask is frame-free, context and lifecycle fields carry no x, and
-        objective features are zero in Team Deathmatch. All-zero hidden rows,
-        unavailable sources and unused obstacles stay zero.
+        combat mask is frame-free, and context and lifecycle fields carry no x.
+        Objective rows keep their order: hill rows are already by side, and a
+        flag carrier's one-hot names unit rows, which keep their slots. All-zero
+        hidden rows, inactive objective rows (every objective row in Team
+        Deathmatch), unavailable sources and unused obstacles stay zero.
 
     Raises
     ------
@@ -549,14 +568,17 @@ def mirror_team_view(
         partners = obstacle_partners
     previous = observation.previous_timestep_actions
     observation = observation._replace(
-        self_features=_reflect_unit_rows(observation.self_features, width, flag),
-        ally_unit_features=_reflect_unit_rows(
-            observation.ally_unit_features, width, flag
-        ),
-        enemy_unit_features=_reflect_unit_rows(
-            observation.enemy_unit_features, width, flag
-        ),
+        self_features=_reflect_rows(observation.self_features, width, flag),
+        ally_unit_features=_reflect_rows(observation.ally_unit_features, width, flag),
+        enemy_unit_features=_reflect_rows(observation.enemy_unit_features, width, flag),
         map_obstacle_features=_reflect_obstacles(table, width, flag, partners),
+        objective_features=_reflect_rows(
+            observation.objective_features,
+            width,
+            flag,
+            active=OBJECTIVE_FEATURE_IS_ACTIVE,
+            x_column=OBJECTIVE_FEATURE_X,
+        ),
         previous_timestep_actions=previous._replace(
             ally_previous_timestep_move_actions_one_hot=_permute_moves(
                 previous.ally_previous_timestep_move_actions_one_hot, flag
@@ -574,9 +596,16 @@ def mirror_team_view(
         ),
     )
     bank = actors.source_bank._replace(
-        unit_features_by_source_and_candidate=_reflect_unit_rows(
+        unit_features_by_source_and_candidate=_reflect_rows(
             actors.source_bank.unit_features_by_source_and_candidate, width, flag
-        )
+        ),
+        objective_features_by_source=_reflect_rows(
+            actors.source_bank.objective_features_by_source,
+            width,
+            flag,
+            active=OBJECTIVE_FEATURE_IS_ACTIVE,
+            x_column=OBJECTIVE_FEATURE_X,
+        ),
     )
     reflected = ActorInput(observation, bank, actors.source_availability)
     return reflected, mask._replace(move_mask=_permute_moves(mask.move_mask, flag))
