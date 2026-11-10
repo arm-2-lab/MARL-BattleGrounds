@@ -22,8 +22,8 @@ from jax import Array
 
 from marl_battlegrounds._task_settings import (
     DEFAULT_SCORE_THRESHOLDS,
-    TASK_NAMES,
     TaskName,
+    check_task_name,
 )
 from marl_battlegrounds.environment import (
     EnvironmentState,
@@ -343,10 +343,7 @@ def make_training_schedule(
             raise TypeError(f"{name} must be bool")
     if curriculum and score_threshold_curriculum:
         raise ValueError("Choose team/map curriculum or score-threshold curriculum")
-    if task not in TASK_NAMES:
-        raise ValueError(
-            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-        )
+    check_task_name(task)
     if score_threshold_curriculum and task != "tdm":
         raise ValueError(
             f"score_threshold_curriculum is Team Deathmatch's; task {task!r} "

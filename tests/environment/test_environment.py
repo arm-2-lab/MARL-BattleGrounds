@@ -8,7 +8,8 @@ facts through AutoReset while using neutral values for padding. make refuses
 any supplied Red Zone depth, even the
 default 5.0 or 0.0, when an exact env_config owns the rules, and refuses one
 with neither map_id nor env_config. make refuses a task name that is not
-supported, and its message lists the supported names. Each handle plays one
+supported, and its message lists the supported names (for "koth" it also
+says King of the Hills arrives in v1.2.0). Each handle plays one
 task mode: its task's, or neutral for "tdm" given a neutral env_config. reset
 refuses a host config of another mode, make refuses a batch that mixes modes,
 and inside vmap Core receives the handle's mode as one unbatched value, so a
@@ -395,7 +396,9 @@ def test_make_refuses_a_supplied_red_zone_depth_without_a_map_or_with_env_config
 
 def test_make_refuses_an_unsupported_task_and_names_the_supported_ones() -> None:
     with pytest.raises(
-        ValueError, match=r"^task must be one of 'tdm', 'ctf', not 'koth'$"
+        ValueError,
+        match=r"^task must be one of 'tdm', 'ctf', not 'koth' "
+        r"\(King of the Hills arrives in v1\.2\.0\)$",
     ):
         make("koth")
 

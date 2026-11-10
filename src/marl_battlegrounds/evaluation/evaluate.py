@@ -32,8 +32,8 @@ from numpy.typing import NDArray
 from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._task_settings import (
     DEFAULT_SCORE_THRESHOLDS,
-    TASK_NAMES,
     TaskName,
+    check_task_name,
 )
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.config import (
@@ -2678,11 +2678,7 @@ def _generated_evaluation_request(
         if details is None
         else (old_contract["options"] if old_contract else details)
     )
-    task = cast(TaskName, option(task, old, "task", "tdm", missing="tdm"))
-    if task not in TASK_NAMES:
-        raise ValueError(
-            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-        )
+    task = check_task_name(option(task, old, "task", "tdm", missing="tdm"))
     supplied = {
         "spawn_mode": spawn_mode,
         "system_roster": system_roster,

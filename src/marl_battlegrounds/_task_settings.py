@@ -11,7 +11,8 @@ from typing import Literal, cast, get_args
 type AgentClassName = Literal["mage", "warrior", "hunter", "rogue", "priest"]
 
 # Task names that make() accepts, one per mode: "tdm" (Team Deathmatch) and
-# "ctf" (Capture the Flag). Training configs check against the same list.
+# "ctf" (Capture the Flag). make, evaluate and training refuse any other value
+# through check_task_name below.
 type TaskName = Literal["tdm", "ctf"]
 TASK_NAMES: tuple[TaskName, ...] = get_args(TaskName.__value__)
 
@@ -73,6 +74,41 @@ def task_for_mode(task_mode: int) -> TaskName | None:
         of the Hills (2) and any other value. Host-only; imports no JAX.
     """
     return next((name for name, mode in TASK_MODES.items() if mode == task_mode), None)
+
+
+def check_task_name(task: object) -> TaskName:
+    """Return a task name unchanged, or refuse a value that is not one.
+
+    Parameters
+    ----------
+    task : object
+        The value a caller passed as a task name, for example ``"ctf"``.
+
+    Returns
+    -------
+    TaskName
+        ``task`` itself, typed as a task name.
+
+    Raises
+    ------
+    ValueError
+        If ``task`` is not in TASK_NAMES. The message lists the task names, for
+        example "task must be one of 'tdm', 'ctf', not 'dm'". For ``"koth"`` it
+        also says King of the Hills arrives in v1.2.0: Core plays that mode
+        already, but it has no task name, maps or bots yet.
+
+    Notes
+    -----
+    The one owner of the refusal shared by make, evaluate, the training config,
+    the training schedule, validation and the task dispatchers. Host-only;
+    imports no JAX.
+    """
+    if task in TASK_NAMES:
+        return task
+    message = f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+    if task == "koth":
+        message += " (King of the Hills arrives in v1.2.0)"
+    raise ValueError(message)
 
 
 # Each task's defaults, read by every caller that serves more than one mode:

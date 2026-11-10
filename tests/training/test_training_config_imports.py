@@ -12,9 +12,10 @@ module aliases are checked separately, since those modules require training.
 TrainConfig.task defaults to "tdm" and is left out of the saved config when it
 is "tdm", so saved bytes stay unchanged; a saved config without it reads back
 as "tdm"; a name that make() does not accept is refused with the accepted
-names. The Red Zone depth defaults to the task's: a default config saves 5.0,
-and a "ctf" config resolves to 0.0, saves its task and depth and reads back
-equal, while a "ctf" depth of 5.0 or the score-threshold curriculum is refused.
+names, and "koth" is told King of the Hills arrives in v1.2.0. The Red Zone
+depth defaults to the task's: a default config saves 5.0, and a "ctf" config
+resolves to 0.0, saves its task and depth and reads back equal, while a "ctf"
+depth of 5.0 or the score-threshold curriculum is refused.
 """
 
 import json
@@ -189,7 +190,9 @@ def test_task_defaults_to_tdm_and_is_left_out_of_the_saved_config() -> None:
     assert "task" not in saved
     assert config_from_dict(saved).task == "tdm"
     with pytest.raises(
-        ValueError, match=r"^task must be one of 'tdm', 'ctf', not 'koth'$"
+        ValueError,
+        match=r"^task must be one of 'tdm', 'ctf', not 'koth' "
+        r"\(King of the Hills arrives in v1\.2\.0\)$",
     ):
         TrainConfig(task="koth")  # pyright: ignore[reportArgumentType]
     assert (

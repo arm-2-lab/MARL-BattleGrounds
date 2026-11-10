@@ -23,7 +23,7 @@ from jax import Array
 from jax.core import Tracer
 from numpy.typing import NDArray
 
-from marl_battlegrounds._task_settings import TASK_NAMES, TaskName
+from marl_battlegrounds._task_settings import TaskName, check_task_name
 from marl_battlegrounds.core import env as core
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
@@ -1820,7 +1820,8 @@ def make(
     Raises
     ------
     ValueError
-        An unsupported task name (the message lists the supported ones), an
+        An unsupported task name (the message lists the supported ones; for
+        ``"koth"`` it says King of the Hills arrives in v1.2.0), an
         env_config in another mode than the task's, invalid batch or selection
         IDs (a map with spawn balance on needs an even num_envs; the message
         for one game shows the call with balance_spawn_locations=False),
@@ -1848,10 +1849,7 @@ def make(
     >>> actions = env.sample_actions(jax.random.key(1), state)
     >>> obs, state, reward, done, info = env.step(jax.random.key(2), state, actions)
     """
-    if task not in TASK_NAMES:
-        raise ValueError(
-            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-        )
+    task = check_task_name(task)
     if num_envs is not None and (
         type(num_envs) is not int or not 1 <= num_envs <= np.iinfo(np.int32).max
     ):

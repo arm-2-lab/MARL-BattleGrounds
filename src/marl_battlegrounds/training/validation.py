@@ -38,9 +38,9 @@ from typing import TYPE_CHECKING, Any, cast
 from marl_battlegrounds._task_settings import (
     DEFAULT_SCORE_THRESHOLDS,
     DEFAULT_TDM_RED_ZONE_DEPTH,
-    TASK_NAMES,
     AgentClassName,
     TaskName,
+    check_task_name,
 )
 from marl_battlegrounds.evaluation._recording.sampling_evidence import (
     combine_sampling_facts,
@@ -161,10 +161,7 @@ def _task_field(task: object, depth: float | None) -> Record:
     other than 0.0 (only Team Deathmatch has a Red Zone), before any file is
     written. Host-only.
     """
-    if task not in TASK_NAMES:
-        raise ValueError(
-            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-        )
+    check_task_name(task)
     if task == "tdm":
         return {}
     if depth != 0.0:

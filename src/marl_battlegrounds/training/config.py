@@ -22,10 +22,10 @@ from typing import Any, Literal, cast
 from marl_battlegrounds._method_loading import validate_saved_method_reference
 from marl_battlegrounds._task_settings import (
     DEFAULT_RED_ZONE_DEPTHS,
-    TASK_NAMES,
     AgentClassName,
     TaskName,
     _validate_roster,  # pyright: ignore[reportPrivateUsage]
+    check_task_name,
 )
 from marl_battlegrounds.baselines.config import (
     DEFAULT_PQN_CONFIG,
@@ -476,11 +476,7 @@ class TrainConfig:
         when train prepares the content.
         """
         method = validate_training_method(self.method)
-        if self.task not in TASK_NAMES:
-            raise ValueError(
-                f"task must be one of {', '.join(map(repr, TASK_NAMES))}, "
-                f"not {self.task!r}"
-            )
+        check_task_name(self.task)
         if not isinstance(cast(object, self.ppo), PPOConfig):
             raise TypeError("ppo must be PPOConfig")
         if method == "qmix":

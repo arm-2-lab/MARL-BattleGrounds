@@ -7,7 +7,8 @@ plays the mode its exact configs hold and records it the same way. A Team
 Deathmatch pass records no task key, so an explicit task="tdm" gives the same
 options as an omitted one. Before any game or file: a schedule mixing modes, a
 neutral or King of the Hills config, an exact config of another mode (the error
-names the task to pass), an unknown task, a Capture the Flag depth other than
+names the task to pass), an unknown task ("koth" is told King of the Hills
+arrives in v1.2.0), a Capture the Flag depth other than
 exactly 0.0, an exact source whose winning score conflicts with
 score_threshold, and replays in a Capture the Flag pass are refused. These run
 in memory on CPU; saved Capture the Flag passes need captures and outcomes in
@@ -92,7 +93,11 @@ def test_a_team_deathmatch_pass_records_no_task() -> None:
     ("options", "message"),
     [
         ({"maps": [_CTF]}, r"which task 'tdm' does not play; pass task='ctf'$"),
-        ({"task": "koth"}, r"^task must be one of 'tdm', 'ctf', not 'koth'$"),
+        (
+            {"task": "koth"},
+            r"^task must be one of 'tdm', 'ctf', not 'koth' "
+            r"\(King of the Hills arrives in v1\.2\.0\)$",
+        ),
         ({"task": "ctf", "red_zone_depth": 5.0}, r"ctf takes only 0.0$"),
         ({"task": "ctf", "red_zone_depth": -0.0}, r"ctf takes only 0.0$"),
         (

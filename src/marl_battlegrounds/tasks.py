@@ -45,8 +45,8 @@ from marl_battlegrounds._task_settings import (
     DEFAULT_ONE_HILL_KOTH_SCORE_THRESHOLD,
     DEFAULT_SCORE_THRESHOLDS,
     DEFAULT_TDM_SCORE_THRESHOLD,
-    TASK_NAMES,
     TaskName,
+    check_task_name,
 )
 from marl_battlegrounds._task_settings import (
     DEFAULT_TDM_RED_ZONE_DEPTH as DEFAULT_TDM_RED_ZONE_DEPTH,
@@ -232,13 +232,11 @@ def maps_for_task(task: TaskName) -> tuple[TDMMapInfo, ...]:
     -----
     The one place that knows which listing belongs to which mode. Host-only.
     """
+    check_task_name(task)
     if task == "tdm":
         return list_tdm_maps()
     if task == "ctf":
         return list_ctf_maps()
-    raise ValueError(
-        f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-    )
 
 
 def check_config_task(
@@ -321,13 +319,11 @@ def scenarios_for_task(task: TaskName) -> tuple[TDMScenarioInfo, ...]:
     maps_for_task. Training keeps every scenario listed here out of its
     content, so a mode's protected starts are never trained on. Host-only.
     """
+    check_task_name(task)
     if task == "tdm":
         return list_tdm_scenarios()
     if task == "ctf":
         return ()
-    raise ValueError(
-        f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-    )
 
 
 def _config_has_batch(env_config: EnvConfig, num_envs: int | None) -> bool:
@@ -1295,10 +1291,7 @@ def make_standard_config(
     The one dispatcher from a task name to its factory, shared by make and
     evaluation. Host-only.
     """
-    if task not in TASK_MODES:
-        raise ValueError(
-            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
-        )
+    check_task_name(task)
     threshold = (
         DEFAULT_SCORE_THRESHOLDS[task] if score_threshold is None else score_threshold
     )
