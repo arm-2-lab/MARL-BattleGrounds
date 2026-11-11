@@ -81,8 +81,8 @@ from marl_battlegrounds.core.geometry import (
     project_movement_with_geometry,
 )
 from marl_battlegrounds.core.objectives import (
-    CaptureTheFlagFlagStateAggregationResult,
-    build_flag_state_aggregation_result,
+    CaptureTheFlagFlagUpdate,
+    update_capture_the_flag_flags,
 )
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_IS_ENEMY,
@@ -3583,13 +3583,66 @@ def _handle_no_task_outcome_and_rewards(
 def _handle_capture_the_flag_outcome_and_rewards(
     next_state: EnvState, config: EnvConfig
 ) -> tuple[Reward, DoneFlags, Array]:
-    """Return Capture the Flag's rewards, done flags and outcomes for one transition.
+    """Resolve Capture the Flag completion from successor scores and step count.
 
-    next_state and config are passed to the shared neutral-output helper.
-    Return its zero Reward, horizon-only DoneFlags and zero outcomes (4,):
-    captures and the Capture the Flag outcome are not scored yet.
+    next_state and config describe one game after this tick's flag rules.
+    Return Reward with float32 (10,) values, DoneFlags with bool scalars, then
+    int32 outcomes (4,) with only the Capture the Flag entry set. A team whose
+    capture count reaches capture_the_flag_score_threshold wins and terminates
+    the game. The horizon truncates on the tick where next_state.step_count
+    reaches max_steps, and a truncated game without a winner draws. A capture
+    on the last tick wins, with both done flags True. Configured winner/loser
+    slots receive +1/-1 even when dead; ongoing, draw and unused slots get
+    zero. The caller must stop at done; this helper does not suppress repeated
+    calls on an already-complete state or latch a one-time reward.
     """
-    return _canonical_no_outcome_and_rewards(next_state, config)
+
+    # Each team's capture count after this tick, [Team A, Team B].
+    capture_the_flag_scores_by_team = next_state.capture_the_flag_scores
+
+    # A team wins on reaching the threshold. Scores never pass it: a tick adds
+    # at most 1, the state validators keep scores at or below it, and the
+    # caller stops the game at done (Core itself does not stop it).
+    victory_by_team = (
+        capture_the_flag_scores_by_team == config.capture_the_flag_score_threshold
+    )
+    terminated = victory_by_team.any()
+
+    # The time limit: true on the last tick, when the count of ticks played
+    # reaches max_steps.
+    truncated = next_state.step_count >= config.max_steps
+    done_flags = DoneFlags(terminated, truncated)
+
+    # At most one team wins on a tick: a capture needs the capturing team's own
+    # flag home, so the other team cannot be carrying it to capture too. A draw
+    # is a timeout without a winner, so exactly one of the four below is true.
+    team_a_wins = victory_by_team[TEAM_A_ID - 1]
+    team_b_wins = victory_by_team[TEAM_B_ID - 1]
+    task_is_ongoing = ~(terminated | truncated)
+    draw = truncated & ~(team_a_wins | team_b_wins)
+
+    # In outcome-code order: ongoing 0, Team A win 1, Team B win 2, draw 3.
+    branches = [
+        _handle_task_rewards_ongoing,
+        _handle_task_rewards_team_a_win,
+        _handle_task_rewards_team_b_win,
+        _handle_task_rewards_draw,
+    ]
+
+    # argmax gives the index of the one true entry, which is its outcome code.
+    capture_the_flag_outcomes = jnp.array(
+        (task_is_ongoing, team_a_wins, team_b_wins, draw)
+    )
+    outcome_index = jnp.argmax(capture_the_flag_outcomes)
+
+    rewards = cast(Reward, jax.lax.switch(outcome_index, branches, config))
+
+    # One entry per mode; only Capture the Flag's is set.
+    outcomes_by_task = (
+        jnp.zeros(NUM_TASKS + 1, dtype=jnp.int32).at[TASK_MODE_CTF].set(outcome_index)
+    )
+
+    return (rewards, done_flags, outcomes_by_task)
 
 
 def _handle_king_of_the_hill_outcome_and_rewards(
@@ -3727,20 +3780,21 @@ def _not_capture_the_flag(
     config: EnvConfig,
     next_agent_positions: Array,
     is_newly_dead_by_recipient: Array,
-) -> CaptureTheFlagFlagStateAggregationResult:
+) -> CaptureTheFlagFlagUpdate:
     """Keep the flags as they are, for every mode but Capture the Flag.
 
-    Returns current_state's three flag fields unchanged and neutral flag facts
-    (build_reset_capture_the_flag_facts). The four operands match
-    build_flag_state_aggregation_result, the other branch of step's mode
-    branch; only current_state is read.
+    Returns current_state's three flag fields and Capture the Flag scores
+    unchanged, with neutral flag facts (build_reset_capture_the_flag_facts).
+    The four operands match update_capture_the_flag_flags, the other branch of
+    step's mode branch; only current_state is read.
     """
     del config, next_agent_positions, is_newly_dead_by_recipient
 
-    return CaptureTheFlagFlagStateAggregationResult(
+    return CaptureTheFlagFlagUpdate(
         next_capture_the_flag_flag_positions_by_flag=current_state.capture_the_flag_flag_positions,
         next_capture_the_flag_flag_carrier_slots_by_flag=current_state.capture_the_flag_flag_carrier_slots,
         next_capture_the_flag_dropped_flag_countdowns_by_flag=current_state.capture_the_flag_dropped_flag_countdowns,
+        next_capture_the_flag_scores_by_team=current_state.capture_the_flag_scores,
         capture_the_flag_facts=build_reset_capture_the_flag_facts(),
     )
 
@@ -4001,9 +4055,10 @@ def step(
     vmap for games. Stop or reset when DoneFlags.done becomes True: Core does
     not auto-reset, absorb terminal states or suppress rewards if called again.
     In Capture the Flag, the flag rules
-    (objectives.build_flag_state_aggregation_result) run after this tick's
-    deaths and before the respawn wave, from end-of-movement positions; every
-    other mode passes its flags and flag facts through unchanged.
+    (objectives.update_capture_the_flag_flags) run after this tick's
+    deaths and before the respawn wave, from end-of-movement positions, and
+    update the flags, the Capture the Flag scores and the flag facts; every
+    other mode passes all three through unchanged.
     Team Deathmatch can terminate and truncate together. Threshold ties draw;
     horizon expiry without a threshold winner also draws. Each new configured
     death gives the other team 1 point, or 2 when the victim's center at the
@@ -4187,11 +4242,11 @@ def step(
 
     # Capture the Flag's flag rules run here: after this tick's deaths, before the
     # respawn wave moves anyone. Every other mode keeps its flags unchanged.
-    capture_the_flag_flag_state_aggregation_result = cast(
-        CaptureTheFlagFlagStateAggregationResult,
+    capture_the_flag_flag_update = cast(
+        CaptureTheFlagFlagUpdate,
         jax.lax.cond(
             config.task_mode == TASK_MODE_CTF,
-            build_flag_state_aggregation_result,
+            update_capture_the_flag_flags,
             _not_capture_the_flag,
             current_state,
             config,
@@ -4251,13 +4306,13 @@ def step(
 
     next_state = EnvState(
         team_deathmatch_scores=next_team_deathmatch_scores,
-        # Capture the Flag scores and every King of the Hills field stay unchanged
-        # until their rules exist.
-        capture_the_flag_scores=current_state.capture_the_flag_scores,
+        # Capture the Flag scores come from the flag update. Every King of the
+        # Hills field stays unchanged until its rules exist.
+        capture_the_flag_scores=capture_the_flag_flag_update.next_capture_the_flag_scores_by_team,
         king_of_the_hills_scores=current_state.king_of_the_hills_scores,
-        capture_the_flag_flag_positions=capture_the_flag_flag_state_aggregation_result.next_capture_the_flag_flag_positions_by_flag,
-        capture_the_flag_flag_carrier_slots=capture_the_flag_flag_state_aggregation_result.next_capture_the_flag_flag_carrier_slots_by_flag,
-        capture_the_flag_dropped_flag_countdowns=capture_the_flag_flag_state_aggregation_result.next_capture_the_flag_dropped_flag_countdowns_by_flag,
+        capture_the_flag_flag_positions=capture_the_flag_flag_update.next_capture_the_flag_flag_positions_by_flag,
+        capture_the_flag_flag_carrier_slots=capture_the_flag_flag_update.next_capture_the_flag_flag_carrier_slots_by_flag,
+        capture_the_flag_dropped_flag_countdowns=capture_the_flag_flag_update.next_capture_the_flag_dropped_flag_countdowns_by_flag,
         king_of_the_hills_hill_is_contested=current_state.king_of_the_hills_hill_is_contested,
         king_of_the_hills_hill_owners=current_state.king_of_the_hills_hill_owners,
         king_of_the_hills_empty_hill_ownership_countdowns=current_state.king_of_the_hills_empty_hill_ownership_countdowns,
@@ -4317,7 +4372,9 @@ def step(
         team_deathmatch_facts=TeamDeathmatchTransitionFacts(
             outcome=task_outcomes[TASK_MODE_TDM]
         ),
-        capture_the_flag_facts=capture_the_flag_flag_state_aggregation_result.capture_the_flag_facts,
+        capture_the_flag_facts=capture_the_flag_flag_update.capture_the_flag_facts._replace(
+            outcome=task_outcomes[TASK_MODE_CTF]
+        ),
         # Neutral until King of the Hills has its rules.
         king_of_the_hills_facts=build_reset_king_of_the_hills_facts(),
     )

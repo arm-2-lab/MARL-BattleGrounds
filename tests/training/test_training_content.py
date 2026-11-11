@@ -83,7 +83,7 @@ from marl_battlegrounds.training import (
 )
 
 # The simulator-rules fingerprint of the committed Core (every core/*.py).
-_SIMULATOR_RULES = "5f3adbfd49c1580fb88b31a60917e7a0769600d49d9a0331e11f9100577701bb"
+_SIMULATOR_RULES = "11017963813c699c49e9597f0805dc2c2236b03fc506d0a5e9ca4c30410de4f7"
 
 _V1_FIXTURE = (
     Path(__file__).parents[1] / "fixtures" / "training_content_binding_v1.json"

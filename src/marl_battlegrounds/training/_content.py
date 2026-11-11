@@ -99,15 +99,17 @@ _SAVED_BEFORE_RED_ZONE = (
 # Deathmatch's entries are Season 0's Core, the last before the Capture the
 # Flag and King of the Hills fields, under which its goldens were recorded
 # (tests/environment/test_tdm_goldens.py), and each later Core that plays the
-# same goldens: the one with those fields but no flag rules yet, and the one
-# with the flag rules but before the King of the Hills checks. Capture the Flag has
-# none: the flag rules changed its play.
+# same goldens: the one with those fields but no flag rules yet, the one with
+# the flag rules but before the King of the Hills checks, and the one with those
+# checks but before captures. Capture the Flag has none: the flag rules and then
+# captures changed its play.
 _EQUIVALENT_SIMULATOR_RULES: Mapping[TaskName, frozenset[str]] = {
     "tdm": frozenset(
         {
             "a6854eb7721cfbeb027dacca1aa9205ff64a9502cca71ab4458b1b655ca1f893",
             "6081c1fc85c3f1f231faddb04ac53e52f347b8998cd91bc40434d2ba1c5f2d74",
             "1439a5f293e6ea97a4727c46c2ab3ee9efd95e964aabcf0dbcaea2bf7c3fc201",
+            "5f3adbfd49c1580fb88b31a60917e7a0769600d49d9a0331e11f9100577701bb",
         }
     ),
     "ctf": frozenset(),
