@@ -12,7 +12,10 @@ Deathmatch run, whose checkpoints record task "tdm" and training-state schema
 task "ctf" and training-state schema 3 again; every run records actor input
 schema 2. For MAPPO the second start goes through a portable
 model file, so the portable-file route is covered too. The resumed runs are
-made once per method and shared by both tests.
+made once per method and shared by both tests. A MAPPO run's Random checks
+play Capture the Flag (task "ctf", depth 0.0, winning score 3 in the saved
+pass) and pass the resume checks, and its saved status records the mode and
+its validation winning score.
 """
 
 import json
@@ -149,3 +152,25 @@ def test_an_actor_continues_training_in_the_other_mode_both_ways(
     forward = replace(_config(method), initial_actor=source)
     runner.train(forward, output_dir=tmp_path / "ctf")
     assert _modes(tmp_path / "ctf") == {("ctf", 2, 3)}
+
+
+def test_capture_the_flag_random_checks_play_the_mode_and_resume(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "run"
+    config = replace(_config("mappo"), random_diagnostic_seed_pairs=1)
+    with pytest.raises(RuntimeError, match="on_update failed"):
+        runner.train(config, output_dir=root, on_update=_stop_at(2))
+    runner.train(resume_from=root)
+    records = json.loads((root / "random_diagnostics.json").read_text())
+    assert [row["env_steps"] for row in records] == [0, 64]
+    for row in records:
+        assert (row["task"], row["red_zone_depth"], row["games"]) == ("ctf", 0.0, 10)
+        details = json.loads(
+            (Path(row["pass_paths"][0]) / "run_details.json").read_text()
+        )
+        (entry,) = details["passes"].values()
+        options = entry["details"]["evaluation_contract"]["options"]
+        assert (options["task"], options["score_threshold"]) == ("ctf", 3)
+    status = json.loads((root / "status.json").read_text())
+    assert (status["task"], status["validation_score_threshold"]) == ("ctf", 3)
