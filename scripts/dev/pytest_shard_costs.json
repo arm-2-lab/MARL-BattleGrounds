@@ -243,6 +243,7 @@
     "tests/modes/team_deathmatch/test_scenario_7_witness.py": 23,
     "tests/modes/team_deathmatch/test_scenario_8_witness.py": 18,
     "tests/modes/team_deathmatch/test_scenario_witnesses.py": 16,
+    "tests/modes/team_deathmatch/test_tdm_bots_unchanged.py": 202,
     "tests/modes/team_deathmatch/test_tdm_gamma_integration.py": 30,
     "tests/modes/team_deathmatch/test_tdm_gamma_rules.py": 22,
     "tests/modes/team_deathmatch/test_tdm_gamma_trajectories.py": 55,
