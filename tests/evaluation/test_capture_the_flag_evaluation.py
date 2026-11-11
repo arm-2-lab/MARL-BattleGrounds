@@ -11,8 +11,8 @@ names the task to pass), an unknown task ("koth" is told King of the Hills
 arrives in v1.2.0), a Capture the Flag depth other than
 exactly 0.0, an exact source whose winning score conflicts with
 score_threshold, and replays in a Capture the Flag pass are refused. These run
-in memory on CPU; saved Capture the Flag passes need captures and outcomes in
-Core first.
+in memory on CPU; saving and resuming Capture the Flag passes is checked in
+test_capture_the_flag_saved_evaluation.py.
 """
 
 from pathlib import Path
