@@ -143,7 +143,8 @@ def _with_c1c_rows(
     context: EvaluationEpisodeContextV5, frame: EvaluationFrameV4
 ) -> EvaluationFrameV4:
     # Fill each active actor's context columns 6-18 and flag rows 0-3 from the
-    # snapshot, the way C1.C defines them and Core will from C1.4 on.
+    # hand-set snapshot, the way Core fills them from a real one (C1.C, with
+    # each home's owner in columns 4-5).
     config = context.resolved_env_config
     homes = config.capture_the_flag_flag_home_positions
     capture = config.capture_the_flag_flag_capture_distance
@@ -175,8 +176,8 @@ def _with_c1c_rows(
             *(0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 0.0),
             *(float(scores[own]), float(scores[enemy]), 0.0, 0.0, threshold),
         ]
-        objectives[slot][0] = [1.0, *homes[own], capture, *[0.0] * 8]
-        objectives[slot][1] = [1.0, *homes[enemy], capture, *[0.0] * 8]
+        objectives[slot][0] = [1.0, *homes[own], capture, 1.0, *[0.0] * 7]
+        objectives[slot][1] = [1.0, *homes[enemy], capture, 0.0, 1.0, *[0.0] * 6]
         for objective_row, flag in ((2, own), (3, enemy)):
             carrier = snapshot.capture_the_flag_flag_carrier_slots[flag]
             countdown = snapshot.capture_the_flag_dropped_flag_countdowns[flag]

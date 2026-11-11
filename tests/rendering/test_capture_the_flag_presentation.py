@@ -12,17 +12,17 @@ without flag trajectories. The rendering layer's flag-row columns equal Core's.
 A NoSharedObs Agent POV scene reads both flags from the recipient's own
 objective rows only (decision 139's state bits): it names a carrier it sees by
 POV key, leaves an unseen carrier unnamed, has no return ticks (None), and
-refuses rows Core has not filled yet, a named carrier the view does not hold
-and bits that break decision 139. Its event summary gets one flag_changed line
+refuses inactive flag rows, a home row without its owner (your home 1, 0, the
+enemy home 0, 1), a named carrier the view does not hold and bits that break
+decision 139. Its event summary gets one flag_changed line
 per flag whose state changed between its two scenes (a pickup names the
 teammate it sees, at successor), and one for a dropped flag grabbed and
 dropped again (a new spot or a restarted countdown, decision 169), which a
 whole summary accepts, never for a dropped flag that only counts down; never
 one of the six Oracle flag events; and refuses flag lines without flag
-trajectories. Real games come once Core
-scores Capture the Flag (his C1.3 and C1.4); these frames and rows are
-hand-set, and the scene test uses frame 1 because today's Core leaves frame
-0's Capture the Flag context rows at zero. Host only, on CPU.
+trajectories. The POV scene test first reads Core's own rows from one real
+tick (both flags at home); every other flag state is hand-set on that frame.
+Host only, on CPU.
 """
 
 import dataclasses
@@ -439,7 +439,12 @@ def _flag_rows(
     config = _CONTEXT.resolved_env_config
     homes = config.capture_the_flag_flag_home_positions
     capture = config.capture_the_flag_flag_capture_distance
-    return [_row(homes[0], capture), _row(homes[1], capture), own, enemy]
+    return [
+        _row(homes[0], capture, ally=1.0),
+        _row(homes[1], capture, enemy=1.0),
+        own,
+        enemy,
+    ]
 
 
 def test_agent_pov_reads_both_flags_from_its_own_rows(
@@ -457,8 +462,19 @@ def test_agent_pov_reads_both_flags_from_its_own_rows(
         rows = _flag_rows(own=own, enemy=enemy)
         return _pov_scene(start, transition, _with_rows(successor, rows), 1)
 
+    # Core's own rows: both flags at home.
+    from_core = _pov_scene(start, transition, successor, 1).capture_the_flag
+    assert from_core is not None
+    assert [flag.state for flag in from_core.flags] == ["home", "home"]
+    blank = (0.0,) * len(_row(homes[0], touch))
     with pytest.raises(ValueError, match="no flag rows"):
-        _pov_scene(start, transition, successor, 1)
+        _pov_scene(start, transition, _with_rows(successor, [blank] * 4), 1)
+    ownerless_home = _flag_rows(
+        own=_row(homes[0], touch, ally=1.0), enemy=_row(homes[1], touch, enemy=1.0)
+    )
+    ownerless_home[0] = _row(homes[0], config.capture_the_flag_flag_capture_distance)
+    with pytest.raises(ValueError, match="names its owner"):
+        _pov_scene(start, transition, _with_rows(successor, ownerless_home), 1)
     # Its own flag is home; its teammate in ally row 1 carries the enemy flag.
     seen = scene(
         _row(homes[0], touch, ally=1.0), _row(positions[1], touch, ally=1.0, carrier=1)

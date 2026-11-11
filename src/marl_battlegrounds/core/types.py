@@ -89,8 +89,10 @@ TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH = 2
 
 # Context exposes raw simulator and task facts. Canonical learner-facing
 # normalization belongs to the later versioned observation-preprocessing layer.
-# Mode-specific score and threshold fields are temporary schema reservations;
-# their final semantics remain owned by the corresponding battleground modes.
+# Each mode fills only its own objective-count, score and threshold columns and
+# leaves every other mode's at 0: Team Deathmatch 10, 11 and 16 (and the Red
+# Zone depth, 19), Capture the Flag 9, 14, 15 and 18. King of the Hills' 9, 12,
+# 13 and 17 stay 0 until its rules exist.
 CONTEXT_FEATURE_CURRENT_TIMESTEP = 0
 CONTEXT_FEATURE_EPISODE_HORIZON = 1
 CONTEXT_FEATURE_MAP_WIDTH = 2
@@ -1032,18 +1034,38 @@ class Observation(NamedTuple):
     keep the configuration schema and world coordinates.
     """
     objective_features: Array
-    """Reserved objective features for every observer.
+    """Each observer's objective rows, from its own team's side.
 
-    Float32 (10, 8, 12): reserved objective rows. The current neutral and Team
-    Deathmatch implementations emit zeros.
+    Float32 (10, 8, 12), world coordinates in map units. One fixed row per
+    objective in every mode (OBJECTIVE_SLOT_*): 0 your flag's home, 1 the
+    enemy flag's home, 2 your flag, 3 the enemy flag, 4-6 the Spawn Side,
+    Center and Far Side Hills, 7 unused. Columns 0-5 mean the same in every
+    row: active, x, y, interaction distance, controlled by your team,
+    controlled by the enemy team (OBJECTIVE_FEATURE_*).
+
+    In Capture the Flag rows 0-3 are filled. A home is its team's (yours 1, 0;
+    the enemy's 0, 1), and its distance is the capture distance. A flag is
+    controlled by its own team at home, by the carrier's team while carried
+    and by nobody while dropped; column 6 counts the ticks until a dropped
+    flag goes home, and columns 7-11 one-hot the carrier's unit row (an enemy
+    row for your flag, an ally row for theirs, self at self_ally_index), only
+    when the observer sees the carrier. A flag's position is public, carried
+    or not. A dead observer keeps its rows and sees no carrier. Every other
+    row, every row in the neutral mode and Team Deathmatch, and unused
+    observers' rows are zero; King of the Hills' rows 4-6 stay zero until its
+    rules exist.
     """
     context_features: Array  # Meta/Config features.
     """Raw current context and episode rules for every observer.
 
     Float32 (10, 20): raw current step, episode rules, relative team sizes,
-    task flags, scores, thresholds and the Team Deathmatch Red Zone depth.
-    CONTEXT_FEATURE_* constants name the columns. Reserved task/objective
-    values and unused observer rows are zero.
+    task flags, the active objective-row count, scores, thresholds and the
+    Team Deathmatch Red Zone depth, your team before the enemy.
+    CONTEXT_FEATURE_* constants name the columns. Each mode fills only its own
+    count, score and threshold columns (Team Deathmatch 10, 11 and 16; Capture
+    the Flag 9 = 4, 14 and 15 the captures and 18 the threshold); the other
+    modes' columns and unused observers' rows are zero. A dead observer keeps
+    its context.
     """
     ally_visibility_mask: Array
     """Current visibility of each stable own-team row.

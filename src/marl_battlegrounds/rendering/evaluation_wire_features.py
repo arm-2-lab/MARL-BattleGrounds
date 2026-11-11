@@ -680,7 +680,8 @@ def decode_capture_the_flag_objective_rows_v1(
         A flag row is inactive (Core fills these rows from his C1.4 on, so an
         earlier Capture the Flag recording has none); a value is not an exact
         wire float; the two homes or the two flags disagree about their reach,
-        or a reach is not positive; a home row claims an owner; or a flag's
+        or a reach is not positive; a home row names the wrong owner (columns
+        4-5 are the actor's own home 1, 0 and the enemy home 0, 1); or a flag's
         bits break decision 139: its own flag is home (1, 0), carried by an
         enemy (0, 1) or dropped (0, 0), and the enemy flag home (0, 1), carried
         by a teammate (1, 0) or dropped (0, 0). A dropped flag counts down from
@@ -759,9 +760,13 @@ def decode_capture_the_flag_objective_rows_v1(
             carrier_row=carrier_bits.index(True) if any(carrier_bits) else None,
         )
 
-    for slot in (OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1, OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1):
-        if any(bits(slot)):
-            raise ValueError("a flag home row cannot have an owner.")
+    if (
+        bits(OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1),
+        bits(OBJECTIVE_SLOT_ENEMY_FLAG_HOME_V1),
+    ) != ((True, False), (False, True)):
+        raise ValueError(
+            "a flag home row names its owner: your home 1, 0, the enemy home 0, 1."
+        )
     capture_distance = reach(OBJECTIVE_SLOT_ALLY_FLAG_HOME_V1)
     interaction_distance = reach(OBJECTIVE_SLOT_ALLY_FLAG_V1)
     if (

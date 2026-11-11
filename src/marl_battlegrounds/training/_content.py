@@ -100,9 +100,10 @@ _SAVED_BEFORE_RED_ZONE = (
 # Flag and King of the Hills fields, under which its goldens were recorded
 # (tests/environment/test_tdm_goldens.py), and each later Core that plays the
 # same goldens: the one with those fields but no flag rules yet, the one with
-# the flag rules but before the King of the Hills checks, and the one with those
-# checks but before captures. Capture the Flag has none: the flag rules and then
-# captures changed its play.
+# the flag rules but before the King of the Hills checks, the one with those
+# checks but before captures, and the one with captures but before Capture the
+# Flag's objective rows. Capture the Flag has none: the flag rules and captures
+# changed its play, and the objective rows its agents' inputs.
 _EQUIVALENT_SIMULATOR_RULES: Mapping[TaskName, frozenset[str]] = {
     "tdm": frozenset(
         {
@@ -110,6 +111,7 @@ _EQUIVALENT_SIMULATOR_RULES: Mapping[TaskName, frozenset[str]] = {
             "6081c1fc85c3f1f231faddb04ac53e52f347b8998cd91bc40434d2ba1c5f2d74",
             "1439a5f293e6ea97a4727c46c2ab3ee9efd95e964aabcf0dbcaea2bf7c3fc201",
             "5f3adbfd49c1580fb88b31a60917e7a0769600d49d9a0331e11f9100577701bb",
+            "11017963813c699c49e9597f0805dc2c2236b03fc506d0a5e9ca4c30410de4f7",
         }
     ),
     "ctf": frozenset(),

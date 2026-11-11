@@ -86,7 +86,11 @@ from marl_battlegrounds.core.objectives import (
 )
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_IS_ENEMY,
+    CONTEXT_FEATURE_ACTIVE_OBJECTIVE_COUNT,
     CONTEXT_FEATURE_ALLY_TEAM_SIZE,
+    CONTEXT_FEATURE_CTF_ALLY_SCORE,
+    CONTEXT_FEATURE_CTF_ENEMY_SCORE,
+    CONTEXT_FEATURE_CTF_SCORE_THRESHOLD,
     CONTEXT_FEATURE_CURRENT_TIMESTEP,
     CONTEXT_FEATURE_ENEMY_TEAM_SIZE,
     CONTEXT_FEATURE_IS_CTF,
@@ -114,7 +118,18 @@ from marl_battlegrounds.core.types import (
     NUM_TASKS,
     NUM_TEAMS,
     NUM_ULTIMATE_ACTIONS,
+    OBJECTIVE_FEATURE_INTERACTION_DISTANCE,
+    OBJECTIVE_FEATURE_IS_ACTIVE,
+    OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM,
+    OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM,
+    OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_AUTO_RETURNS,
+    OBJECTIVE_FEATURE_UNIT_ROW_0_IS_FLAG_CARRIER,
+    OBJECTIVE_FEATURE_UNIT_ROW_4_IS_FLAG_CARRIER,
     OBJECTIVE_FEATURES,
+    OBJECTIVE_SLOT_ALLY_FLAG,
+    OBJECTIVE_SLOT_ALLY_FLAG_HOME,
+    OBJECTIVE_SLOT_ENEMY_FLAG,
+    OBJECTIVE_SLOT_ENEMY_FLAG_HOME,
     OBSTACLE_FEATURES,
     PRIEST_CLASS_ID,
     REWARD_FOR_LOSING,
@@ -738,8 +753,11 @@ def _build_context_features(state: EnvState, config: EnvConfig) -> Array:
     CONTEXT_FEATURE_* columns. Scores and sizes use own team before opponent;
     map coordinates are not reflected. Column 19 is the configured Team
     Deathmatch Red Zone depth, the same for every configured row (0 when the
-    rule is off or outside Team Deathmatch). Reserved task/objective fields are
-    zero, as are unused observer rows. Configured dead observers retain context.
+    rule is off or outside Team Deathmatch). The objective count (column 9) and
+    the King of the Hills and Capture the Flag scores and thresholds (12-15,
+    17 and 18) are 0 here; the observation's mode branch fills its own mode's
+    (_handle_ctf_task_mode_features). Unused observer rows are zero.
+    Configured dead observers retain context.
     """
 
     team_a_ally_team_size = jnp.sum(
@@ -1291,6 +1309,327 @@ def _build_spawn_lifecycle_observation(
     )
 
 
+def _handle_neutral_task_mode_features(
+    state: EnvState,
+    config: EnvConfig,
+    context_features: Array,
+    ally_visibility_mask: Array,
+    enemy_visibility_mask: Array,
+) -> tuple[Array, Array]:
+    """Return no objective rows and the context unchanged, for modes without objectives.
+
+    The neutral and Team Deathmatch entries of the observation's mode branch
+    (and King of the Hills' until its rows exist). The operands match
+    _handle_ctf_task_mode_features, the other branches of that switch; only
+    context_features is read.
+
+    Parameters
+    ----------
+    state, config : EnvState, EnvConfig
+        Unused; present so every branch takes the same operands.
+    context_features : Array
+        Float32 (10, 20), from _build_context_features; returned unchanged.
+    ally_visibility_mask, enemy_visibility_mask : Array
+        Bool (10, 5) each; unused.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        Float32 zeros (10, 8, 12) for objective_features, then
+        context_features as given.
+    """
+    del state, config, ally_visibility_mask, enemy_visibility_mask
+    objective_features = jnp.zeros(
+        shape=(MAX_AGENT_SLOTS, MAX_OBJECTIVE_SLOTS, OBJECTIVE_FEATURES),
+        dtype=jnp.float32,
+    )
+
+    return objective_features, context_features
+
+
+def _handle_koth_task_mode_features(
+    state: EnvState,
+    config: EnvConfig,
+    context_features: Array,
+    ally_visibility_mask: Array,
+    enemy_visibility_mask: Array,
+) -> tuple[Array, Array]:
+    """Return King of the Hills' objective rows and context (no hill rows yet).
+
+    For now this returns _handle_neutral_task_mode_features' output: zero
+    objective rows and the context unchanged. The hill rows 4-6 and context
+    columns 9, 12, 13 and 17 come with King of the Hills' rules. The operands
+    match the other branches of the observation's mode switch.
+
+    Parameters
+    ----------
+    state, config, context_features, ally_visibility_mask, enemy_visibility_mask
+        As _handle_neutral_task_mode_features.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        As _handle_neutral_task_mode_features.
+    """
+    return _handle_neutral_task_mode_features(
+        state, config, context_features, ally_visibility_mask, enemy_visibility_mask
+    )
+
+
+def _handle_ctf_task_mode_features(
+    state: EnvState,
+    config: EnvConfig,
+    context_features: Array,
+    ally_visibility_mask: Array,
+    enemy_visibility_mask: Array,
+) -> tuple[Array, Array]:
+    """Build Capture the Flag's objective rows 0-3 and its four context columns.
+
+    Every value is from the observer's side: Team A's observers (slots 0-4)
+    see Team A's home and flag in slots 0 and 2, and Team B's observers (slots
+    5-9) see Team B's there. Coordinates stay in the world frame. Slots 4-7
+    stay zero.
+
+    Parameters
+    ----------
+    state : EnvState
+        The snapshot being observed: flag positions, carriers, dropped
+        countdowns and scores, each ordered [Team A's, Team B's].
+    config : EnvConfig
+        Flag homes, the capture and interaction distances, the capture
+        threshold and the configured slots (agent_profile.active_mask).
+    context_features : Array
+        Float32 (10, 20) from _build_context_features. Columns 9, 14, 15 and
+        18 are written here; the rest pass through.
+    ally_visibility_mask, enemy_visibility_mask : Array
+        Bool (10, 5) each, [observer, unit row]: which teammates and enemies
+        each observer sees this tick. A live observer sees itself; a dead one
+        sees nobody.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        objective_features, float32 (10, 8, 12), then context_features, float32
+        (10, 20).
+
+    Notes
+    -----
+    - Slots 0-1, the homes: active 1, x, y, the capture distance, and the
+      owner in features 4-5 (your home 1, 0; the enemy home 0, 1).
+    - Slots 2-3, the flags: active 1, x, y (a carried flag is at its
+      carrier), the interaction distance; features 4-5, who holds it (at its
+      home, its own team; carried, the carrier's team; dropped, nobody);
+      feature 6, the dropped countdown; features 7-11, a one-hot of the
+      carrier's unit row, set only when the flag is carried and the observer
+      sees the carrier. Your flag's carrier is an enemy, so slot 2 uses the
+      enemy mask; the enemy flag's carrier is a teammate, so slot 3 uses the
+      ally mask. A carrier slot of -1 gives an empty one-hot.
+    - Context: column 9 = 4 slots in use, 14 and 15 = your and their
+      captures, 18 = the capture threshold.
+    - Unused observers (active_mask False) get all-zero rows and context. A
+      dead observer keeps its rows; its one-hot is empty.
+    """
+    objective_features = jnp.zeros(
+        shape=(MAX_AGENT_SLOTS, MAX_OBJECTIVE_SLOTS, OBJECTIVE_FEATURES),
+        dtype=jnp.float32,
+    )
+
+    # Homes (slots 0-1), features 0-3: built once per flag, [Team A's, Team
+    # B's]; Team B's observers take the pair reversed.
+    flag_home_positions_by_flag = config.capture_the_flag_flag_home_positions  # (2,2)
+    is_active_by_flag = jnp.ones((2, 1), dtype=jnp.bool_)
+    flag_capture_distance_by_flag = jnp.full(
+        (2, 1),
+        fill_value=config.capture_the_flag_flag_capture_distance,
+        dtype=jnp.float32,
+    )
+
+    flag_home_objective_features_0_to_3_by_flag = jnp.concat(
+        [is_active_by_flag, flag_home_positions_by_flag, flag_capture_distance_by_flag],
+        axis=-1,
+    )
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_ALLY_FLAG_HOME : OBJECTIVE_SLOT_ENEMY_FLAG_HOME + 1,
+        OBJECTIVE_FEATURE_IS_ACTIVE : OBJECTIVE_FEATURE_INTERACTION_DISTANCE + 1,
+    ].set(flag_home_objective_features_0_to_3_by_flag)
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_ALLY_FLAG_HOME : OBJECTIVE_SLOT_ENEMY_FLAG_HOME + 1,
+        OBJECTIVE_FEATURE_IS_ACTIVE : OBJECTIVE_FEATURE_INTERACTION_DISTANCE + 1,
+    ].set(flag_home_objective_features_0_to_3_by_flag[::-1])
+
+    # Home owners (slots 0-1, features 4-5), the same for every observer: your
+    # home is your team's (1, 0), the enemy home theirs (0, 1).
+    objective_features = objective_features.at[
+        :,
+        OBJECTIVE_SLOT_ALLY_FLAG_HOME : OBJECTIVE_SLOT_ENEMY_FLAG_HOME + 1,
+        OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM : OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM  # noqa: E501
+        + 1,
+    ].set(jnp.asarray(([True, False], [False, True]), dtype=jnp.bool_))
+
+    # Flags (slots 2-3), features 0-3: where each flag is now, the same pattern
+    # as the homes.
+    flag_positions_by_flag = state.capture_the_flag_flag_positions  # (2,2)
+    flag_interaction_distance_by_flag = jnp.full(
+        (2, 1),
+        fill_value=config.capture_the_flag_flag_interaction_distance,
+        dtype=jnp.float32,
+    )
+
+    flag_objective_features_0_to_3_by_flag = jnp.concat(
+        [is_active_by_flag, flag_positions_by_flag, flag_interaction_distance_by_flag],
+        axis=-1,
+    )
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_IS_ACTIVE : OBJECTIVE_FEATURE_INTERACTION_DISTANCE + 1,
+    ].set(flag_objective_features_0_to_3_by_flag)
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_IS_ACTIVE : OBJECTIVE_FEATURE_INTERACTION_DISTANCE + 1,
+    ].set(flag_objective_features_0_to_3_by_flag[::-1])
+
+    # Who holds each flag (slots 2-3, features 4-5). A flag at its home is its
+    # own team's; a carried flag is the other team's, since only enemies pick
+    # a flag up; a dropped flag is nobody's. From Team A's seat, the box below
+    # is [[A's flag: Team A holds it, Team B holds it], [B's flag: the same]].
+    flag_is_at_home_base_by_flag = (
+        state.capture_the_flag_dropped_flag_countdowns == 0
+    ) & (state.capture_the_flag_flag_carrier_slots == -1)
+
+    flag_is_carried_by_flag = ~(state.capture_the_flag_flag_carrier_slots == -1)
+
+    flag_objective_features_4_to_5_by_flag = jnp.array(  # (2, 2)
+        (
+            [
+                flag_is_at_home_base_by_flag[TEAM_A_ID - 1],
+                flag_is_carried_by_flag[TEAM_A_ID - 1],
+            ],
+            [
+                flag_is_carried_by_flag[TEAM_B_ID - 1],
+                flag_is_at_home_base_by_flag[TEAM_B_ID - 1],
+            ],
+        )
+    )
+
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM : OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM  # noqa: E501
+        + 1,
+    ].set(flag_objective_features_4_to_5_by_flag)
+
+    # Team B's observers swap both the flags (rows) and which team is "ally"
+    # (columns).
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM : OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM  # noqa: E501
+        + 1,
+    ].set(flag_objective_features_4_to_5_by_flag[::-1, ::-1])
+
+    # Ticks until a dropped flag goes home (slots 2-3, feature 6); 0 unless
+    # dropped.
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_AUTO_RETURNS,
+    ].set(state.capture_the_flag_dropped_flag_countdowns)
+
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_STEPS_UNTIL_DROPPED_FLAG_AUTO_RETURNS,
+    ].set(state.capture_the_flag_dropped_flag_countdowns[::-1])
+
+    # The carrier (slots 2-3, features 7-11). First the truth for every
+    # observer: a one-hot of each flag's carrier unit row (the slot modulo 5,
+    # the rows per team), kept only if the flag is carried, since -1 % 5 is 4.
+    flag_objective_candidate_features_7_to_11_by_flag = jax.nn.one_hot(
+        state.capture_the_flag_flag_carrier_slots % MAX_AGENTS_PER_TEAM,
+        MAX_AGENTS_PER_TEAM,
+    )
+
+    flag_objective_features_7_to_11_by_flag = (  # (2, 5)
+        flag_is_carried_by_flag[:, None]
+        * flag_objective_candidate_features_7_to_11_by_flag
+    )
+
+    # Then each observer keeps only the carriers it sees. Slot 2 (your flag,
+    # carried by an enemy) takes the enemy mask, slot 3 (the enemy flag,
+    # carried by a teammate) the ally mask, stacked on a slot axis: (5, 2, 5)
+    # per team. The masks are already per observer, so only the truth flips
+    # for Team B.
+    team_a_ally_visibility_mask = ally_visibility_mask[
+        TEAM_A_START:TEAM_A_END
+    ]  # (5, 5)
+    team_a_enemy_visibility_mask = enemy_visibility_mask[
+        TEAM_A_START:TEAM_A_END
+    ]  # (5, 5)
+
+    team_a_visibility_mask = jnp.stack(
+        (team_a_enemy_visibility_mask, team_a_ally_visibility_mask), axis=1
+    )
+
+    team_b_ally_visibility_mask = ally_visibility_mask[TEAM_B_START:TEAM_B_END]
+    team_b_enemy_visibility_mask = enemy_visibility_mask[TEAM_B_START:TEAM_B_END]
+
+    team_b_visibility_mask = jnp.stack(
+        (team_b_enemy_visibility_mask, team_b_ally_visibility_mask), axis=1
+    )
+
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_UNIT_ROW_0_IS_FLAG_CARRIER : OBJECTIVE_FEATURE_UNIT_ROW_4_IS_FLAG_CARRIER  # noqa: E501
+        + 1,
+    ].set(flag_objective_features_7_to_11_by_flag * team_a_visibility_mask)
+
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_ALLY_FLAG : OBJECTIVE_SLOT_ENEMY_FLAG + 1,
+        OBJECTIVE_FEATURE_UNIT_ROW_0_IS_FLAG_CARRIER : OBJECTIVE_FEATURE_UNIT_ROW_4_IS_FLAG_CARRIER  # noqa: E501
+        + 1,
+    ].set(flag_objective_features_7_to_11_by_flag[::-1] * team_b_visibility_mask)
+
+    # Context: 4 objective slots in use, the captures (yours first) and the
+    # capture threshold.
+    context_features = context_features.at[
+        :, CONTEXT_FEATURE_ACTIVE_OBJECTIVE_COUNT
+    ].set(4)
+
+    scores_by_team = state.capture_the_flag_scores
+    context_features = context_features.at[
+        TEAM_A_START:TEAM_A_END,
+        CONTEXT_FEATURE_CTF_ALLY_SCORE : CONTEXT_FEATURE_CTF_ENEMY_SCORE + 1,
+    ].set(scores_by_team)
+
+    context_features = context_features.at[
+        TEAM_B_START:TEAM_B_END,
+        CONTEXT_FEATURE_CTF_ALLY_SCORE : CONTEXT_FEATURE_CTF_ENEMY_SCORE + 1,
+    ].set(scores_by_team[::-1])
+
+    context_features = context_features.at[:, CONTEXT_FEATURE_CTF_SCORE_THRESHOLD].set(
+        config.capture_the_flag_score_threshold
+    )
+
+    # Unused observers (empty slots) carry nothing. A dead observer is still
+    # configured and keeps its rows.
+
+    objective_features = jnp.where(
+        config.agent_profile.active_mask[:, None, None], objective_features, 0
+    )
+
+    context_features = jnp.where(
+        config.agent_profile.active_mask[:, None], context_features, 0
+    )
+
+    return objective_features, context_features
+
+
 def _build_observation_and_action_mask(
     state: EnvState, config: EnvConfig
 ) -> tuple[Observation, ActionMask]:
@@ -1302,6 +1641,11 @@ def _build_observation_and_action_mask(
     is broadcast to every observer. Previous actions remain a separate family
     and use current actor visibility. Reuse pair distances and aura values
     within this construction so the returned input and mask agree in time.
+    The objective rows and each mode's own context columns come from one
+    branch per task mode (lax.switch on config.task_mode), given the same
+    visibility masks: Capture the Flag's fills rows 0-3 and columns 9, 14, 15
+    and 18, and the neutral and Team Deathmatch branch adds nothing, so Team
+    Deathmatch's compiled program does not contain Capture the Flag's work.
     """
     global_visibility_mask, global_pairwise_distances = (
         _build_global_visibility_mask_and_distances(state, config)
@@ -1362,15 +1706,33 @@ def _build_observation_and_action_mask(
 
     spawn_lifecycle_observation = _build_spawn_lifecycle_observation(state, config)
 
+    # Handle objective features and update context features based on task mode
+    branches = [
+        _handle_neutral_task_mode_features,
+        _handle_neutral_task_mode_features,  # TDM
+        _handle_koth_task_mode_features,  # No hill rows yet (K1.1)
+        _handle_ctf_task_mode_features,
+    ]
+
+    objective_features, context_features = cast(
+        tuple[Array, Array],
+        jax.lax.switch(
+            config.task_mode,
+            branches,
+            state,
+            config,
+            context_features,
+            ally_visibility_mask,
+            enemy_visibility_mask,
+        ),
+    )
+
     current_observation = Observation(
         self_features=self_features,
         ally_unit_features=ally_features,
         enemy_unit_features=enemy_features,
         map_obstacle_features=map_obstacle_features,
-        objective_features=jnp.zeros(
-            shape=(MAX_AGENT_SLOTS, MAX_OBJECTIVE_SLOTS, OBJECTIVE_FEATURES),
-            dtype=jnp.float32,
-        ),
+        objective_features=objective_features,
         context_features=context_features,
         ally_visibility_mask=ally_visibility_mask,
         enemy_visibility_mask=enemy_visibility_mask,
