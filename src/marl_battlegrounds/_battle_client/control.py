@@ -73,6 +73,8 @@ from marl_battlegrounds._battle_client.model import (
     DebuggerSession,
     Lane,
     LaneAvailability,
+    LiveEvaluationContext,
+    LiveEvaluationFrame,
     PendingAction,
     ScenarioFrame,
     SubmissionKind,
@@ -82,6 +84,7 @@ from marl_battlegrounds._battle_client.model import (
     is_team_controller,
     normalize_slot_ownership,
 )
+from marl_battlegrounds._task_settings import task_for_mode
 from marl_battlegrounds.core import env as core_env
 from marl_battlegrounds.core.config import validate_product_env_config
 from marl_battlegrounds.core.env import initialize_scenario_state, step
@@ -111,13 +114,11 @@ from marl_battlegrounds.environment import (
 from marl_battlegrounds.evaluation import policy_execution
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.capture import (
-    capture_evaluation_transition_unit_v3,
-    capture_initial_evaluation_frame_v3,
+    capture_evaluation_transition_unit,
+    capture_initial_evaluation_frame,
 )
 from marl_battlegrounds.evaluation.models import (
     ActionMaskV1,
-    EvaluationEpisodeContextV4,
-    EvaluationFrameV3,
     ExecutionInformationMode,
 )
 from marl_battlegrounds.evaluation.policy_execution import (
@@ -305,7 +306,7 @@ def make_neutral_joint_action() -> Action:
 
 
 def _validate_active_context_slot(
-    context: EvaluationEpisodeContextV4,
+    context: LiveEvaluationContext,
     global_slot: int,
     *,
     name: str,
@@ -327,7 +328,7 @@ def _active_context_slots(session: DebuggerSession) -> tuple[int, ...]:
 
 
 def _target_action_from_context(
-    context: EvaluationEpisodeContextV4,
+    context: LiveEvaluationContext,
     actor_global_slot: int,
     target_global_slot: int | None,
 ) -> int:
@@ -412,7 +413,7 @@ def lane_availability(
 
 
 def _default_pending_actions(
-    context: EvaluationEpisodeContextV4,
+    context: LiveEvaluationContext,
     action_mask: ActionMask | ActionMaskV1,
 ) -> tuple[PendingAction, ...]:
     """Build one exact fixed-slot draft tuple for a fresh decision epoch."""
@@ -452,7 +453,7 @@ def _replace_controlled_pending_action(
 
 
 def build_interactive_joint_action(
-    context: EvaluationEpisodeContextV4,
+    context: LiveEvaluationContext,
     pending_actions: tuple[PendingAction, ...],
     *,
     actor_global_slots: tuple[int, ...],
@@ -461,7 +462,7 @@ def build_interactive_joint_action(
 
     Parameters
     ----------
-    context : EvaluationEpisodeContextV4
+    context : LiveEvaluationContext
         Recorded episode roster and target-action mapping.
     pending_actions : tuple[PendingAction, ...]
         Exactly ten fixed-slot pending rows from the current decision.
@@ -752,7 +753,7 @@ def _initial_system_state(
     observation: Observation,
     action_mask: ActionMask,
     availability: Array | None,
-    context: EvaluationEpisodeContextV4,
+    context: LiveEvaluationContext,
     registrations: tuple[tuple[str, dict[str, object]], tuple[str, dict[str, object]]]
     | None,
     *,
@@ -771,8 +772,11 @@ def _initial_system_state(
         return None, None, None
     if availability is None:
         raise ValueError("Systems require SharedObs source permissions")
-    # The handle plays the snapshot config's own mode, neutral for lab scenes.
-    env = make("tdm", env_config=config, metrics="none")
+    # The handle plays the snapshot config's own mode: "tdm" also plays the
+    # neutral mode of lab scenes, as in evaluate.
+    env = make(
+        task_for_mode(int(config.task_mode)) or "tdm", env_config=config, metrics="none"
+    )
     if context.seed_protocol.seed_protocol.identifier == "episode-fold-in-v1":
         from marl_battlegrounds.evaluation.evaluate import episode_keys
 
@@ -980,14 +984,14 @@ def _build_configured_joint_action(session: DebuggerSession) -> Action:
 
 
 def build_scripted_joint_action(
-    context: EvaluationEpisodeContextV4,
+    context: LiveEvaluationContext,
     frame: ScenarioFrame,
 ) -> Action:
     """Build a potentially multi-actor scripted request from neutral defaults.
 
     Parameters
     ----------
-    context : EvaluationEpisodeContextV4
+    context : LiveEvaluationContext
         Recorded episode roster and target-action mapping.
     frame : ScenarioFrame
         One script frame containing distinct actor commands; omitted actors
@@ -1178,7 +1182,7 @@ def _validate_fixed_setup(
 
 
 def _validate_fixed_initial_frame(
-    scenario: DebuggerScenario, frame: EvaluationFrameV3
+    scenario: DebuggerScenario, frame: LiveEvaluationFrame
 ) -> None:
     """Check the exact authored start before initializing any supplied method."""
     specification = scenario.scenario_specification
@@ -1383,12 +1387,15 @@ def create_session(
         config,
         execution_information_mode,
     )
-    initial_frame = capture_initial_evaluation_frame_v3(
-        evaluation_context,
-        state,
-        observation,
-        action_mask,
-        information_availability,
+    initial_frame = cast(
+        LiveEvaluationFrame,
+        capture_initial_evaluation_frame(
+            evaluation_context,
+            state,
+            observation,
+            action_mask,
+            information_availability,
+        ),
     )
     _validate_fixed_initial_frame(scenario, initial_frame)
     status_source_evidence_state = initialize_status_source_evidence_v2(
@@ -1954,7 +1961,7 @@ def submit_joint_action(
             error,
         ) from error
     try:
-        transition, successor_frame = capture_evaluation_transition_unit_v3(
+        transition, successor_frame = capture_evaluation_transition_unit(
             session.evaluation_context,
             session.current_evaluation_frame,
             next_state,
@@ -2458,12 +2465,15 @@ def _restart_session(
         config,
         next_information_mode,
     )
-    initial_frame = capture_initial_evaluation_frame_v3(
-        evaluation_context,
-        state,
-        observation,
-        action_mask,
-        information_availability,
+    initial_frame = cast(
+        LiveEvaluationFrame,
+        capture_initial_evaluation_frame(
+            evaluation_context,
+            state,
+            observation,
+            action_mask,
+            information_availability,
+        ),
     )
     _validate_fixed_initial_frame(scenario, initial_frame)
     status_source_evidence_state = initialize_status_source_evidence_v2(

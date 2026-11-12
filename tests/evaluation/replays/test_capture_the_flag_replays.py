@@ -26,8 +26,8 @@ from tests.helpers.evaluation_fixtures import (
 from marl_battlegrounds.core.env import reset, step
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.capture import (
-    _capture_evaluation_transition_unit,  # pyright: ignore[reportPrivateUsage]
-    _capture_initial_evaluation_frame,  # pyright: ignore[reportPrivateUsage]
+    capture_evaluation_transition_unit,
+    capture_initial_evaluation_frame,
 )
 from marl_battlegrounds.evaluation._recording.map_identity import recorded_map
 from marl_battlegrounds.evaluation._recording.recording_context import (
@@ -115,13 +115,13 @@ def test_a_capture_the_flag_recording_context_names_its_task() -> None:
 def replay() -> ReplayArtifactV5:
     context = _context(map_id=42)
     state, observation, mask, _ = reset(_CONFIG, jax.random.PRNGKey(0))
-    frames = [_capture_initial_evaluation_frame(context, state, observation, mask)]
+    frames = [capture_initial_evaluation_frame(context, state, observation, mask)]
     transitions: list[EvaluationTransition] = []
     for index in range(3):
         state, observation, reward, done, mask, info = step(
             _CONFIG, state, mask, neutral_action(), jax.random.PRNGKey(index + 1)
         )
-        transition, frame = _capture_evaluation_transition_unit(
+        transition, frame = capture_evaluation_transition_unit(
             context,
             frames[-1],
             state,

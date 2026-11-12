@@ -306,15 +306,15 @@ def replay_from_packets(
     context. It does not edit inputs, calculate metrics or publish files.
     """
     from marl_battlegrounds.evaluation._recording.capture import (
-        _capture_evaluation_transition_unit,  # pyright: ignore[reportPrivateUsage]
-        _capture_initial_evaluation_frame,  # pyright: ignore[reportPrivateUsage]
+        capture_evaluation_transition_unit,
+        capture_initial_evaluation_frame,
     )
 
     frames, transitions = _frames_from_packets(
         context,
         packets,
-        capture_initial=_capture_initial_evaluation_frame,
-        capture_transition=_capture_evaluation_transition_unit,
+        capture_initial=capture_initial_evaluation_frame,
+        capture_transition=capture_evaluation_transition_unit,
     )
     return build_replay_v5(
         context,

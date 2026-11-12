@@ -22,6 +22,7 @@ from pydantic import Field, StringConstraints, model_validator
 
 from marl_battlegrounds._battle_client.model import (
     DebuggerScenario,
+    LiveEvaluationContext,
     ScenarioMode,
     TeamBController,
     TeamController,
@@ -30,9 +31,11 @@ from marl_battlegrounds._battle_client.model import (
     is_team_controller,
     team_controller_action_source,
 )
+from marl_battlegrounds._task_settings import task_for_mode
 from marl_battlegrounds.core.config import validate_env_config
 from marl_battlegrounds.core.types import (
     MAX_AGENT_SLOTS,
+    TASK_MODE_CTF,
     TASK_MODE_TDM,
     TEAM_A_ID,
     EnvConfig,
@@ -49,9 +52,9 @@ from marl_battlegrounds.evaluation._replays.controller_names import (
     team_controller_name_key,
 )
 from marl_battlegrounds.evaluation.catalog import (
-    build_evaluation_episode_context_v4,
+    build_evaluation_episode_context,
     build_evaluation_seed_protocol_v1,
-    build_resolved_env_config_v2,
+    build_resolved_env_config,
 )
 from marl_battlegrounds.evaluation.models import (
     AggregationKeyV1,
@@ -59,13 +62,13 @@ from marl_battlegrounds.evaluation.models import (
     CodeRevisionV1,
     CodeRevisionV2,
     ContentAddressedIdentityV1,
-    EvaluationEpisodeContextV4,
     EvaluationEpisodeIdentityV1,
     EvaluationModel,
     EvaluationRole,
     ExecutionInformationMode,
     NotApplicablePolicySlotV1,
     PolicyAssignmentSlotV2,
+    ResolvedEnvConfigCaptureTheFlagV3,
     ResolvedEnvConfigV2,
     VersionedIdentityV1,
     canonical_digest_sha256,
@@ -242,7 +245,7 @@ def _scenario_contract_payload(scenario: DebuggerScenario) -> dict[str, object]:
 def _packaged_map_keys(
     scenario: DebuggerScenario,
     config: EnvConfig,
-    resolved_config: ResolvedEnvConfigV2,
+    resolved_config: ResolvedEnvConfigV2 | ResolvedEnvConfigCaptureTheFlagV3,
 ) -> tuple[AggregationKeyV1, ...] | None:
     """Check a packaged map's geometry and return its recording keys.
 
@@ -252,8 +255,9 @@ def _packaged_map_keys(
         A scenario whose packaged_map is set (the caller checks this).
     config : EnvConfig
         The exact scalar runtime config of the episode.
-    resolved_config : ResolvedEnvConfigV2
-        ``build_resolved_env_config_v2(config)``, already built by the caller.
+    resolved_config : ResolvedEnvConfigV2 | ResolvedEnvConfigCaptureTheFlagV3
+        ``build_resolved_env_config(config)``, already built by the caller: V2
+        for a Team Deathmatch map, V3 for a Capture the Flag map.
 
     Returns
     -------
@@ -311,7 +315,7 @@ def _packaged_map_keys(
     try:
         keys = registered_map_metadata(
             packaged_map.map_id,
-            build_resolved_env_config_v2(source),  # pyright: ignore[reportArgumentType]
+            build_resolved_env_config(source),  # pyright: ignore[reportArgumentType]
         )
     except ValueError:
         return None
@@ -641,7 +645,7 @@ def build_debugger_evaluation_context_v1(
     | None = None,
     manual_slots: tuple[int, ...] | None = None,
     slot_labels: tuple[str | None, ...] | None = None,
-) -> EvaluationEpisodeContextV4:
+) -> LiveEvaluationContext:
     """Build the recorded custom-evaluation context for one live debugger episode.
 
     Parameters
@@ -695,8 +699,10 @@ def build_debugger_evaluation_context_v1(
 
     Returns
     -------
-    EvaluationEpisodeContextV4
-        Matching roster, config, task/scenario identity, controller assignments,
+    LiveEvaluationContext
+        Context V4 for a Team Deathmatch or neutral config and context V5 for
+        Capture the Flag (build_evaluation_episode_context picks it), with the
+        matching roster, config, task/scenario identity, controller assignments,
         named seed streams, capture choices and custom/nonofficial metadata.
         When the scenario provenance names an approved map ID, the layout
         identity is that map's approved source: its catalog asset ID, catalog
@@ -827,7 +833,7 @@ def build_debugger_evaluation_context_v1(
             )
         if scenario.mode != "interactive" and manual_slots:
             raise ValueError("Scripted playback cannot own Manual slots")
-    resolved_config = build_resolved_env_config_v2(config)
+    resolved_config = build_resolved_env_config(config)
     packaged_map_keys = (
         None
         if scenario.packaged_map is None
@@ -867,9 +873,10 @@ def build_debugger_evaluation_context_v1(
         layout_identity_digest = scenario.packaged_map.source.semantic_digest
     approved_source = None
     if scenario.packaged_map is not None and packaged_map_keys is not None:
-        from marl_battlegrounds.tasks import list_tdm_maps
+        from marl_battlegrounds.tasks import maps_for_task
 
-        if list_tdm_maps()[scenario.packaged_map.map_id] != scenario.packaged_map:
+        catalog = maps_for_task(task_for_mode(int(config.task_mode)) or "tdm")
+        if catalog[scenario.packaged_map.map_id] != scenario.packaged_map:
             raise ValueError("Packaged map metadata must match the installed catalog")
         approved_source = scenario.packaged_map.source
     if scenario.provenance is not None and scenario.provenance.map_id is not None:
@@ -1045,19 +1052,18 @@ def build_debugger_evaluation_context_v1(
         "visual-debugger-custom-manifest",
         evaluation_payload,
     )
+    # A neutral lab scene keeps its analysis name, as it always has.
+    task_name = {
+        TASK_MODE_TDM: "team_deathmatch",
+        TASK_MODE_CTF: "capture_the_flag",
+    }.get(int(config.task_mode))
     task = _content_identity(
-        "team_deathmatch"
-        if config.task_mode == TASK_MODE_TDM
-        else "visual-debugger-analysis-task",
+        task_name or "visual-debugger-analysis-task",
         {
             "schema_id": "marl_battlegrounds.visual_debugger.task",
             "schema_version": 1,
             "official": False,
-            "task_kind": (
-                "team_deathmatch"
-                if config.task_mode == TASK_MODE_TDM
-                else "interactive_visual_analysis"
-            ),
+            "task_kind": task_name or "interactive_visual_analysis",
         },
     )
     layout = ContentAddressedIdentityV1(
@@ -1304,7 +1310,7 @@ def build_debugger_evaluation_context_v1(
         )
     aggregation_keys.sort(key=lambda row: row.name)
 
-    return build_evaluation_episode_context_v4(
+    return build_evaluation_episode_context(
         identity=identity,
         scenario_name=scenario.name,
         aggregation_keys=tuple(aggregation_keys),

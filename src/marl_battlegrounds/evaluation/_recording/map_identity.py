@@ -204,12 +204,26 @@ def _registered_map_by_name(
 
 @lru_cache(maxsize=156)
 def _authored_map(
-    asset_id: str, revision: int, digest: str
+    asset_id: str, revision: int, digest: str, task: TaskName = "tdm"
 ) -> tuple[RecordedMap, MapGeometry] | None:
     """Match an explicit asset name, revision and digest to current or approved old
     sources. Return its recorded name and that exact revision's geometry, or None.
-    Check the current catalog first; load history only when it does not match.
+    task picks the catalog: Team Deathmatch checks its current catalog first and
+    loads history only when it does not match; Capture the Flag has only its
+    current catalog, with no history yet.
     """
+    if task == "ctf":
+        for info in ctf_assets.asset_manifest().maps:
+            source = info.source
+            if (
+                source.asset_id == asset_id
+                and source.revision == revision
+                and source.semantic_digest == digest
+            ):
+                return _registered_map(info.map_id, "ctf"), ctf_assets.map_geometry(
+                    info
+                )
+        return None
     map_id = approved_map_id(asset_id, digest)
     if map_id is not None and revision == asset_manifest().maps[map_id].source.revision:
         return _registered_map(map_id, "tdm"), map_geometry(
@@ -562,11 +576,11 @@ def recorded_map(context: EvaluationEpisodeContext) -> RecordedMap:
         # An explicit source selects one version. A conflicting source cannot
         # borrow another version merely because its geometry would match.
         authored = _authored_map(
-            layout.identifier, layout.version, layout.canonical_digest
+            layout.identifier, layout.version, layout.canonical_digest, task
         )
         if authored is None or authored[0] != result:
             raise ValueError("recorded source identity conflicts with its map metadata")
-        if not _geometry_matches(source_geometry, authored[1], mode=TASK_MODES["tdm"]):
+        if not _geometry_matches(source_geometry, authored[1], mode=TASK_MODES[task]):
             raise ValueError("recorded source does not match the episode geometry")
         return result
     _, map_id = _registered_map_by_name(result.technical_name, task)

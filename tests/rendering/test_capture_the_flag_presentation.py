@@ -39,8 +39,8 @@ from marl_battlegrounds.core import types as core_types
 from marl_battlegrounds.core.env import reset, step
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.capture import (
-    _capture_evaluation_transition_unit,  # pyright: ignore[reportPrivateUsage]
-    _capture_initial_evaluation_frame,  # pyright: ignore[reportPrivateUsage]
+    capture_evaluation_transition_unit,
+    capture_initial_evaluation_frame,
 )
 from marl_battlegrounds.evaluation._recording.events import (
     decode_evaluation_events_v1,
@@ -116,11 +116,11 @@ _CONTEXT = _context()
 @pytest.fixture(scope="module")
 def game() -> tuple[EvaluationFrameV4, EvaluationTransitionV2, EvaluationFrameV4]:
     state, observation, mask, _ = reset(_CONFIG, jax.random.PRNGKey(0))
-    start = _capture_initial_evaluation_frame(_CONTEXT, state, observation, mask)
+    start = capture_initial_evaluation_frame(_CONTEXT, state, observation, mask)
     state, observation, reward, done, mask, info = step(
         _CONFIG, state, mask, neutral_action(), jax.random.PRNGKey(1)
     )
-    transition, successor = _capture_evaluation_transition_unit(
+    transition, successor = capture_evaluation_transition_unit(
         _CONTEXT, start, state, observation, mask, info.transition_facts, reward, done
     )
     assert type(start) is EvaluationFrameV4 and type(successor) is EvaluationFrameV4

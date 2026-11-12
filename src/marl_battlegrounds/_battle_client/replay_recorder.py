@@ -9,8 +9,13 @@ serialize calls; this class does not own a lock or advance the simulator.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
+if TYPE_CHECKING:
+    from marl_battlegrounds._battle_client.model import (
+        LiveEvaluationContext,
+        LiveEvaluationFrame,
+    )
 from marl_battlegrounds._battle_client.protocol import (
     RecordingLifecycleV1,
     RecordingPersistenceErrorCodeV1,
@@ -32,13 +37,21 @@ from marl_battlegrounds.evaluation._replays.replay_v4 import (
     ReplayArtifactV4,
     build_replay_v4,
 )
+from marl_battlegrounds.evaluation._replays.replay_v5 import (
+    ReplayArtifactV5,
+    build_replay_v5,
+)
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV4,
+    EvaluationEpisodeContextV5,
     EvaluationFrame,
     EvaluationFrameV3,
+    EvaluationFrameV4,
     EvaluationTransition,
-    EvaluationTransitionV1,
+    EvaluationTransitionV2,
     canonical_digest_sha256,
+    evaluation_frame_type_for_context,
+    evaluation_transition_type_for_context,
 )
 from marl_battlegrounds.evaluation.replay_io import (
     REPLAY_FILE_SUFFIX_V1,
@@ -67,8 +80,8 @@ class DebuggerReplayRecorder:
         *,
         specification: DebuggerRecordingSpecificationV1,
         destination: ReplayDestination,
-        context: EvaluationEpisodeContextV4,
-        initial_frame: EvaluationFrameV3,
+        context: LiveEvaluationContext,
+        initial_frame: LiveEvaluationFrame,
         scenario_name: str | None = None,
     ) -> None:
         """Start an in-memory recording at its episode's initial frame.
@@ -79,10 +92,13 @@ class DebuggerReplayRecorder:
             Exact model declaring action source and runtime provenance.
         destination : ReplayDestination
             Exact preflighted destination for the eventual replay file.
-        context : EvaluationEpisodeContextV4
-            Exact metric-complete context with matching action source and provenance.
-        initial_frame : EvaluationFrameV3
-            Exact frame zero for the context's episode.
+        context : LiveEvaluationContext
+            Exact metric-complete context with matching action source and
+            provenance: context V4 (Team Deathmatch or neutral) or context V5
+            (Capture the Flag).
+        initial_frame : LiveEvaluationFrame
+            Exact frame zero for the context's episode, of the frame class that
+            pairs with it (frame V3 for context V4, frame V4 for context V5).
         scenario_name : str or None, optional
             Optional display name retained by replacement recordings. Defaults to None.
 
@@ -104,10 +120,10 @@ class DebuggerReplayRecorder:
             raise TypeError(
                 "recording requires an exact specification and replay destination"
             )
-        if (
-            type(context) is not EvaluationEpisodeContextV4
-            or type(initial_frame) is not EvaluationFrameV3
-        ):
+        if type(context) not in (
+            EvaluationEpisodeContextV4,
+            EvaluationEpisodeContextV5,
+        ) or type(initial_frame) is not evaluation_frame_type_for_context(context):
             raise TypeError(
                 "recording requires an exact live context and initial frame"
             )
@@ -139,12 +155,12 @@ class DebuggerReplayRecorder:
         self._original_destination = destination
         self._destination = destination
         self._frames = [initial_frame]
-        self._transitions: list[EvaluationTransitionV1] = []
+        self._transitions: list[EvaluationTransition] = []
         self.lifecycle: RecordingLifecycleV1 = "recording"
         self.close_cause: DebuggerRecordingCloseCauseV1 | None = None
         self._close_reason: str | None = None
         self._failed_append = False
-        self.replay: ReplayArtifactV4 | None = None
+        self.replay: ReplayArtifactV4 | ReplayArtifactV5 | None = None
         self.prepared_replay: PreparedReplay | None = None
         self.saved_bundle: SavedReplay | None = None
         self.verified_loaded_bundle: LoadedReplay | None = None
@@ -263,8 +279,8 @@ class DebuggerReplayRecorder:
         ----------
         transition : EvaluationTransition
             Exact transition model for this episode and the next contiguous
-            index. The BattleClient records Team Deathmatch only, so only an
-            EvaluationTransitionV1 is accepted.
+            index, of the class that pairs with the context: transition V1 for
+            context V4, transition V2 for context V5.
 
         Returns
         -------
@@ -286,7 +302,7 @@ class DebuggerReplayRecorder:
         -----
         This method changes no recorder state and does not validate successor data.
         """
-        if type(transition) is not EvaluationTransitionV1:
+        if type(transition) is not evaluation_transition_type_for_context(self.context):
             raise TypeError("recording append requires an exact transition")
         if self.lifecycle != "recording" or self._failed_append:
             raise RuntimeError("append requires an active recording")
@@ -313,17 +329,18 @@ class DebuggerReplayRecorder:
         )
 
     def append(
-        self, transition: EvaluationTransition, successor_frame: EvaluationFrameV3
+        self, transition: EvaluationTransition, successor_frame: LiveEvaluationFrame
     ) -> None:
         """Retain one transition and its adjacent successor frame.
 
         Parameters
         ----------
         transition : EvaluationTransition
-            Exact next transition for this episode; only an EvaluationTransitionV1
-            is accepted (Team Deathmatch).
-        successor_frame : EvaluationFrameV3
-            Exact next frame. Its IDs and simulator step must follow the current frame.
+            Exact next transition for this episode, of the class that pairs
+            with the context (transition V1 for context V4, V2 for context V5).
+        successor_frame : LiveEvaluationFrame
+            Exact next frame of the context's frame class. Its IDs and simulator
+            step must follow the current frame.
 
         Raises
         ------
@@ -341,7 +358,9 @@ class DebuggerReplayRecorder:
         """
         try:
             status = self.preview_status_after_append_v1(transition)
-            if type(successor_frame) is not EvaluationFrameV3:
+            if type(successor_frame) is not evaluation_frame_type_for_context(
+                self.context
+            ):
                 raise TypeError("recording append requires an exact successor frame")
             if (
                 transition.start_frame_id != self.current_frame.frame_id
@@ -357,8 +376,8 @@ class DebuggerReplayRecorder:
         except (TypeError, ValueError):
             self._failed_append = True
             raise
-        # The preview above refused anything but an exact V1 transition.
-        self._transitions.append(cast(EvaluationTransitionV1, transition))
+        # The preview above refused anything but the context's exact transition.
+        self._transitions.append(transition)
         self._frames.append(successor_frame)
         self.lifecycle = status.lifecycle
         if self.lifecycle == "sealed":
@@ -372,15 +391,15 @@ class DebuggerReplayRecorder:
             self._close_reason = status.completion_reason
 
     def replacement_for(
-        self, context: EvaluationEpisodeContextV4, initial_frame: EvaluationFrameV3
+        self, context: LiveEvaluationContext, initial_frame: LiveEvaluationFrame
     ) -> DebuggerReplayRecorder:
         """Build a new frame-zero recording while leaving this one unchanged.
 
         Parameters
         ----------
-        context : EvaluationEpisodeContextV4
+        context : LiveEvaluationContext
             Replacement episode context with a supported action source.
-        initial_frame : EvaluationFrameV3
+        initial_frame : LiveEvaluationFrame
             Replacement frame zero matching that context.
 
         Returns
@@ -445,10 +464,11 @@ class DebuggerReplayRecorder:
     def _prepare(self) -> None:
         """Build and cache immutable replay content once after capture has closed.
 
-        ``build_replay_v4`` already checks the whole replay model, so the bytes
-        are cached through ``PreparedReplay._from_capture``, the trusted
-        capture-to-publication path the evaluation run writer also uses. It
-        skips a second full model check and writes the same bytes: on a
+        The mode's builder (``build_replay_v4`` for context V4,
+        ``build_replay_v5`` for context V5) already checks the whole replay
+        model, so the bytes are cached through ``PreparedReplay._from_capture``,
+        the trusted capture-to-publication path the evaluation run writer also
+        uses. It skips a second full model check and writes the same bytes: on a
         300-tick, 27.9 MB replay it took 1.2 s instead of 4.8 s (measured 3 Oct
         2026, CPU). Publication still rereads the file and reloads it through
         the public loader before a save counts.
@@ -465,16 +485,31 @@ class DebuggerReplayRecorder:
                 and self.close_cause != "processing_failure"
                 else None,
             )
-            self.replay = build_replay_v4(
-                self.context,
-                self._frames,
-                self._transitions,
-                runtime_provenance=self.specification.runtime_provenance,
-                wrapper_stack=self.specification.wrapper_stack,
-                completion_state=state,
-                end_or_failure_reason=self._close_reason or reason,
-                failure_origin=origin,
-            )
+            provenance = self.specification.runtime_provenance
+            wrappers = self.specification.wrapper_stack
+            end = self._close_reason or reason
+            if type(self.context) is EvaluationEpisodeContextV5:
+                self.replay = build_replay_v5(
+                    self.context,
+                    cast(list[EvaluationFrameV4], self._frames),
+                    cast(list[EvaluationTransitionV2], self._transitions),
+                    runtime_provenance=provenance,
+                    wrapper_stack=wrappers,
+                    completion_state=state,
+                    end_or_failure_reason=end,
+                    failure_origin=origin,
+                )
+            else:
+                self.replay = build_replay_v4(
+                    cast(EvaluationEpisodeContextV4, self.context),
+                    cast(list[EvaluationFrameV3], self._frames),
+                    self._transitions,
+                    runtime_provenance=provenance,
+                    wrapper_stack=wrappers,
+                    completion_state=state,
+                    end_or_failure_reason=end,
+                    failure_origin=origin,
+                )
             self._close_reason = self.replay.completion.end_or_failure_reason
         self.prepared_replay = PreparedReplay._from_capture(self.replay)  # pyright: ignore[reportPrivateUsage]
 

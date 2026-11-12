@@ -173,7 +173,7 @@ def test_one_core_step_has_one_cp2_capture_and_ui_only_input_has_none(
 ) -> None:
     session = _session()
     real_step = control_module.step
-    real_capture = control_module.capture_evaluation_transition_unit_v3
+    real_capture = control_module.capture_evaluation_transition_unit
     calls = {"step": 0, "capture": 0}
 
     def counting_step(*args: object, **kwargs: object) -> object:
@@ -187,7 +187,7 @@ def test_one_core_step_has_one_cp2_capture_and_ui_only_input_has_none(
     monkeypatch.setattr(control_module, "step", counting_step)
     monkeypatch.setattr(
         control_module,
-        "capture_evaluation_transition_unit_v3",
+        "capture_evaluation_transition_unit",
         counting_capture,
     )
 

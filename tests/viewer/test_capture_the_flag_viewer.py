@@ -46,8 +46,8 @@ from tests.rendering.test_capture_the_flag_presentation import (
 
 from marl_battlegrounds.core.env import reset, step
 from marl_battlegrounds.evaluation._recording.capture import (
-    _capture_evaluation_transition_unit,  # pyright: ignore[reportPrivateUsage]
-    _capture_initial_evaluation_frame,  # pyright: ignore[reportPrivateUsage]
+    capture_evaluation_transition_unit,
+    capture_initial_evaluation_frame,
 )
 from marl_battlegrounds.evaluation._recording.recording_context import (
     build_recording_context,
@@ -262,7 +262,7 @@ def build_capture_the_flag_story() -> dict[
     frames: dict[str, list[EvaluationFrameV4]] = {}
     recorded: dict[str, list[EvaluationTransitionV2]] = {mode: [] for mode in _MODES}
     for mode in _MODES:
-        initial = _capture_initial_evaluation_frame(
+        initial = capture_initial_evaluation_frame(
             contexts[mode], state, observation, mask, availability[mode]
         )
         assert isinstance(initial, EvaluationFrameV4)
@@ -272,7 +272,7 @@ def build_capture_the_flag_story() -> dict[
             _STORY_CONFIG, state, mask, neutral_action(), jax.random.PRNGKey(index + 1)
         )
         for mode in _MODES:
-            transition, frame = _capture_evaluation_transition_unit(
+            transition, frame = capture_evaluation_transition_unit(
                 contexts[mode],
                 frames[mode][-1],
                 state,

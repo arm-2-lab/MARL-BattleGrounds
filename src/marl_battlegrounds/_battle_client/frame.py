@@ -54,7 +54,10 @@ from marl_battlegrounds.evaluation._replays.wire_shapes import (
     NUM_TARGET_ACTIONS_V1,
     NUM_ULTIMATE_ACTIONS_V1,
 )
-from marl_battlegrounds.evaluation.models import EvaluationEpisodeContext
+from marl_battlegrounds.evaluation.models import (
+    EvaluationEpisodeContext,
+    EvaluationEpisodeContextV5,
+)
 from marl_battlegrounds.rendering.evaluation_adapter import (
     EvaluationScenePresentationStateV1,
     build_researcher_analyzer_projection_v2,
@@ -164,14 +167,22 @@ def _terminal_state(session: DebuggerSession) -> TerminalStateV2:
 
 
 def _combat_configuration(session: DebuggerSession) -> CombatSetupV1:
-    """Expose the episode-replacing settings from their sole authorities."""
+    """Expose the episode-replacing settings from their sole authorities.
+
+    The Red Zone depth is Team Deathmatch's rule, so a Capture the Flag game
+    (context V5, whose resolved config has no Team Deathmatch field) shows
+    None, which the wire leaves out.
+    """
+    context = session.evaluation_context
     return CombatSetupV1(
         team_a_controller=session.team_a_controller,
         team_b_controller=session.team_b_controller,
         manual_slots=session.manual_slots,
         slot_labels=session.slot_labels,
         red_zone_depth=(
-            session.evaluation_context.resolved_env_config.team_deathmatch_red_zone_depth
+            None
+            if isinstance(context, EvaluationEpisodeContextV5)
+            else context.resolved_env_config.team_deathmatch_red_zone_depth
         ),
         execution_information_mode=(
             session.evaluation_context.execution_information_mode

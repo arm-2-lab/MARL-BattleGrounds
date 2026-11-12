@@ -7,6 +7,9 @@ transfer count. Reconstruction reads recorded values without running physics.
 Current context V4 uses frame V3 (20 context columns) for Team Deathmatch and
 neutral games, and context V5 uses frame V4 and transition V2 for Capture the
 Flag; context V3 uses frame V2 and older contexts keep frame V1.
+capture_initial_evaluation_frame and capture_evaluation_transition_unit pick
+those versions from the context, for every mode; the versioned functions are
+fixed wrappers around them.
 """
 
 from __future__ import annotations
@@ -1264,7 +1267,7 @@ def _build_evaluation_frame_from_host(
     return frame
 
 
-def _capture_initial_evaluation_frame(
+def capture_initial_evaluation_frame(
     context: EvaluationEpisodeContext,
     state: EnvState,
     observation: Observation,
@@ -1273,11 +1276,48 @@ def _capture_initial_evaluation_frame(
         object | None
     ) = None,
 ) -> EvaluationFrame:
-    """Copy one complete initial bundle, then build artifact frame zero.
+    """Capture frame zero in the frame version that pairs with the context.
 
-    Use one jax.device_get call for state, observation, masks, and optional
-    availability. Context V1 also receives full initial-frame validation here;
-    later contexts are fully checked by the enclosing replay admission path.
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        Exact context of any supported version, for example context V4 for a
+        Team Deathmatch game or context V5 for a Capture the Flag game.
+    state : EnvState
+        Unbatched EnvState at the captured decision epoch. Its simulator tick
+        may be nonzero.
+    observation : Observation
+        Matching unbatched Core Observation for all ten global slots.
+    action_mask : ActionMask
+        Matching unbatched Core ActionMask with boolean leaves.
+    shared_obs_information_availability_by_recipient_and_sensor_source : object | None
+        Optional bool array shaped (10, 10), recipient then sensor source.
+        Required for SharedObs and omitted for NoSharedObs. Defaults to None.
+
+    Returns
+    -------
+    EvaluationFrame
+        Immutable frame with artifact index zero and the canonical episode and
+        frame IDs, of the class evaluation_frame_type_for_context names: frame
+        V3 for context V4, frame V4 for context V5.
+
+    Raises
+    ------
+    TypeError
+        The context root is unsupported, or Core records or leaf dtypes are
+        wrong after host transfer.
+    ValueError
+        Shapes, feature values, the class and roster mapping, or information
+        availability disagree with the context.
+
+    Notes
+    -----
+    The one capture of a first frame for every mode, so callers never choose
+    a version by mode; the versioned functions are fixed wrappers around it.
+    Runs outside JIT and synchronizes the bundle through one jax.device_get
+    call. It does not step or reset the environment. Context V1 also gets full
+    initial-frame validation here; later contexts are fully checked when the
+    replay is built or read.
     """
     evaluation_context_type(context)
     host_state, host_observation, host_action_mask, host_availability = cast(
@@ -1350,7 +1390,7 @@ def _normalize_done_flags_v1(source: DoneFlags) -> tuple[bool, bool]:
     return terminated, truncated
 
 
-def _capture_evaluation_transition_unit(
+def capture_evaluation_transition_unit(
     context: EvaluationEpisodeContext,
     start_frame: EvaluationFrame,
     successor_state: EnvState,
@@ -1364,15 +1404,62 @@ def _capture_evaluation_transition_unit(
         object | None
     ) = None,
 ) -> tuple[EvaluationTransition, EvaluationFrame]:
-    """Copy a successor/facts/reward bundle and build its joined transition record.
+    """Capture one transition and its successor frame in the context's versions.
 
-    One jax.device_get call transfers all supplied outputs. Normalize the successor,
-    require actual transition facts, check task rewards/completion, and decode
-    canonical events. The context picks the transition version
-    (evaluation_transition_type_for_context) and so the facts record. Context V1
-    additionally gets full transition-unit validation here; replay admission
-    validates later context versions. Return transition then successor frame
-    without modifying the previous frame.
+    Parameters
+    ----------
+    context : EvaluationEpisodeContext
+        Exact context of any supported version, for example context V4 for a
+        Team Deathmatch game or context V5 for a Capture the Flag game.
+    start_frame : EvaluationFrame
+        The frame already captured for this transition's decision epoch, of
+        the class that pairs with context.
+    successor_state : EnvState
+        Unbatched EnvState after exactly one simulator tick.
+    successor_observation : Observation
+        Matching successor Core Observation for ten global slots.
+    successor_action_mask : ActionMask
+        Matching successor Core ActionMask.
+    transition_facts : TransitionFacts
+        Actual unbatched Core TransitionFacts from this step; initialization
+        facts are rejected.
+    canonical_reward : Reward
+        Unbatched Reward with ten finite float32 task rewards.
+    done_flags : DoneFlags
+        Scalar bool terminated and truncated flags from this same step.
+    successor_shared_obs_information_availability_by_recipient_and_sensor_source
+        object or None. Optional successor bool array shaped (10, 10),
+        recipient then sensor source. Required for SharedObs, omitted for
+        NoSharedObs; defaults to None.
+
+    Returns
+    -------
+    tuple[EvaluationTransition, EvaluationFrame]
+        The transition, then the successor frame, of the classes that pair
+        with context (evaluation_transition_type_for_context and
+        evaluation_frame_type_for_context): transition V1 and frame V3 for
+        context V4; transition V2, with the Capture the Flag facts, and frame
+        V4 for context V5. The transition takes start_frame's artifact index
+        and the successor the next one.
+
+    Raises
+    ------
+    TypeError
+        A record root is unsupported, or Core record types or leaf dtypes are
+        wrong after host transfer.
+    ValueError
+        Adjacency, facts, rewards, completion, event joins or successor
+        information availability disagree with the context, or the facts are
+        initialization facts.
+
+    Notes
+    -----
+    The one transition capture for every mode; the versioned functions are
+    fixed wrappers around it. One jax.device_get call transfers all supplied
+    outputs; start_frame is reused without transfer or change. It checks the
+    task rewards and completion and decodes the canonical events. It does not
+    step the simulator. Context V1 also gets full transition-unit validation
+    here; later contexts are fully checked when the replay is built or read.
     """
     evaluation_context_type(context)
     evaluation_frame_type(start_frame)
@@ -1805,9 +1892,11 @@ reconstruct_transition_facts_v1 = _reconstruct_transition_facts
 
 
 __all__ = [
+    "capture_evaluation_transition_unit",
     "capture_evaluation_transition_unit_v1",
     "capture_evaluation_transition_unit_v2",
     "capture_evaluation_transition_unit_v3",
+    "capture_initial_evaluation_frame",
     "capture_initial_evaluation_frame_v1",
     "capture_initial_evaluation_frame_v2",
     "capture_initial_evaluation_frame_v3",
@@ -1868,7 +1957,7 @@ def capture_initial_evaluation_frame_v1(
         raise ValueError("capture V1 requires matching episode context")
     return cast(
         EvaluationFrameV1,
-        _capture_initial_evaluation_frame(
+        capture_initial_evaluation_frame(
             context,
             state,
             observation,
@@ -1929,7 +2018,7 @@ def capture_initial_evaluation_frame_v2(
         raise ValueError("capture V2 requires matching episode context")
     return cast(
         EvaluationFrameV2,
-        _capture_initial_evaluation_frame(
+        capture_initial_evaluation_frame(
             context,
             state,
             observation,
@@ -1990,7 +2079,7 @@ def capture_initial_evaluation_frame_v3(
         raise ValueError("capture V3 requires matching episode context")
     return cast(
         EvaluationFrameV3,
-        _capture_initial_evaluation_frame(
+        capture_initial_evaluation_frame(
             context,
             state,
             observation,
@@ -2067,7 +2156,7 @@ def capture_evaluation_transition_unit_v1(
         raise ValueError("capture V1 requires matching episode context and frame")
     return cast(
         tuple[EvaluationTransitionV1, EvaluationFrameV1],
-        _capture_evaluation_transition_unit(
+        capture_evaluation_transition_unit(
             context,
             start_frame,
             successor_state,
@@ -2148,7 +2237,7 @@ def capture_evaluation_transition_unit_v2(
         raise ValueError("capture V2 requires matching episode context and frame")
     return cast(
         tuple[EvaluationTransitionV1, EvaluationFrameV2],
-        _capture_evaluation_transition_unit(
+        capture_evaluation_transition_unit(
             context,
             start_frame,
             successor_state,
@@ -2229,7 +2318,7 @@ def capture_evaluation_transition_unit_v3(
         raise ValueError("capture V3 requires matching episode context and frame")
     return cast(
         tuple[EvaluationTransitionV1, EvaluationFrameV3],
-        _capture_evaluation_transition_unit(
+        capture_evaluation_transition_unit(
             context,
             start_frame,
             successor_state,

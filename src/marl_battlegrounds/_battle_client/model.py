@@ -46,7 +46,9 @@ if TYPE_CHECKING:
     )
     from marl_battlegrounds.evaluation.models import (
         EvaluationEpisodeContextV4,
+        EvaluationEpisodeContextV5,
         EvaluationFrameV3,
+        EvaluationFrameV4,
     )
     from marl_battlegrounds.evaluation.policy_execution import System, SystemState
     from marl_battlegrounds.evaluation.scenario import ResolvedScenarioSpecificationV3
@@ -75,6 +77,11 @@ type TeamController = str
 # Both teams accept the same controllers; the name is kept for existing callers.
 type TeamBController = TeamController
 type TeamControllerActionSource = Literal["manual", "scripted", "mixed", "policy"]
+# The records a live game keeps, by mode: context V4 with frame V3 for Team
+# Deathmatch and neutral games, context V5 with frame V4 for Capture the Flag
+# (evaluation.models.evaluation_frame_type_for_context pairs them).
+type LiveEvaluationContext = EvaluationEpisodeContextV4 | EvaluationEpisodeContextV5
+type LiveEvaluationFrame = EvaluationFrameV3 | EvaluationFrameV4
 type ScenarioSourceKind = Literal[
     "current_buffer",
     "saved_draft",
@@ -634,7 +641,7 @@ class RawContinuationIdentity:
     manual_slots: tuple[int, ...] = ()
     slot_labels: tuple[str | None, ...] = ()
     scenario: DebuggerScenario | None = None
-    evaluation_context: EvaluationEpisodeContextV4 | None = None
+    evaluation_context: LiveEvaluationContext | None = None
     local_step: int = 0
 
     def matches(
@@ -655,7 +662,7 @@ class RawContinuationIdentity:
         manual_slots: tuple[int, ...] = (),
         slot_labels: tuple[str | None, ...] = (),
         scenario: DebuggerScenario | None = None,
-        evaluation_context: EvaluationEpisodeContextV4 | None = None,
+        evaluation_context: LiveEvaluationContext | None = None,
         local_step: int = 0,
     ) -> bool:
         """Check that a continuation still uses the exact objects that were bound.
@@ -733,6 +740,10 @@ class DebuggerSession:
     numeric_episode_id defaults to
     1 for diagnostics; fixed scenarios retain their first qualification case ID.
     It is separate from the string recording ID and restart request generation.
+    evaluation_context and current_evaluation_frame are the game's mode's
+    current records (LiveEvaluationContext, LiveEvaluationFrame): context V4
+    with frame V3 for Team Deathmatch and neutral games, context V5 with frame
+    V4 for Capture the Flag.
     recent_scores is the live service's short score history for the Momentum
     switch (hud_momentum): the [Team A, Team B] scores of the frames before
     the current one, oldest first, at most viewer.match_summary.MOMENTUM_TICKS
@@ -770,8 +781,8 @@ class DebuggerSession:
     state: EnvState
     observation: Observation
     action_mask: ActionMask
-    evaluation_context: EvaluationEpisodeContextV4
-    current_evaluation_frame: EvaluationFrameV3
+    evaluation_context: LiveEvaluationContext
+    current_evaluation_frame: LiveEvaluationFrame
     incoming_evaluation_view: EvaluationTransitionViewV1 | None
     status_source_evidence_state: StatusSourceEvidenceStateV2
     last_submission_kind: SubmissionKind | None
@@ -815,10 +826,11 @@ class DebuggerSession:
         viewer.match_summary.build_match_summary_v1 for the Momentum switch.
         Pure; reads this session only.
         """
+        from marl_battlegrounds.evaluation.models import recorded_team_scores
+
         if self.recent_scores:
             return self.recent_scores[0]
-        scores = self.current_evaluation_frame.snapshot.team_deathmatch_scores
-        return (int(scores[0]), int(scores[1]))
+        return recorded_team_scores(self.current_evaluation_frame.snapshot)
 
     def next_recent_scores(self) -> tuple[tuple[int, int], ...]:
         """Return recent_scores for the session one transition later.
@@ -829,10 +841,11 @@ class DebuggerSession:
         stores it on the successor session; a new game or restart starts
         from an empty tuple instead. Pure; returns a new tuple.
         """
+        from marl_battlegrounds.evaluation.models import recorded_team_scores
         from marl_battlegrounds.viewer.match_summary import MOMENTUM_TICKS
 
-        scores = self.current_evaluation_frame.snapshot.team_deathmatch_scores
-        return (*self.recent_scores, (int(scores[0]), int(scores[1])))[-MOMENTUM_TICKS:]
+        scores = recorded_team_scores(self.current_evaluation_frame.snapshot)
+        return (*self.recent_scores, scores)[-MOMENTUM_TICKS:]
 
     def __post_init__(self) -> None:
         """Bind the exact continuation objects and validate the host endpoint
@@ -844,7 +857,9 @@ class DebuggerSession:
         from marl_battlegrounds.evaluation.models import (
             AssignedPolicySlotV2,
             EvaluationEpisodeContextV4,
-            EvaluationFrameV3,
+            EvaluationEpisodeContextV5,
+            evaluation_frame_type_for_context,
+            recorded_team_scores,
         )
         from marl_battlegrounds.rendering.scene import StatusSourceEvidenceStateV2
 
@@ -918,13 +933,21 @@ class DebuggerSession:
         if type(self.run_generation) is not int or self.run_generation < 0:
             msg = "run_generation must be a non-negative Python int."
             raise ValueError(msg)
-        if type(self.evaluation_context) is not EvaluationEpisodeContextV4:
+        if type(self.evaluation_context) not in (
+            EvaluationEpisodeContextV4,
+            EvaluationEpisodeContextV5,
+        ):
             raise TypeError(
-                "evaluation_context must be the exact EvaluationEpisodeContextV4 root."
+                "evaluation_context must be the exact EvaluationEpisodeContextV4 "
+                "or EvaluationEpisodeContextV5 root."
             )
-        if type(self.current_evaluation_frame) is not EvaluationFrameV3:
+        if type(self.current_evaluation_frame) is not (
+            evaluation_frame_type_for_context(self.evaluation_context)
+        ):
             raise TypeError(
-                "current_evaluation_frame must be the exact EvaluationFrameV3 root."
+                "current_evaluation_frame must be the exact frame root of its "
+                "context: EvaluationFrameV3 for context V4, EvaluationFrameV4 "
+                "for context V5."
             )
         if (
             type(self.scenario_default_movement_scale) is not float
@@ -1002,7 +1025,7 @@ class DebuggerSession:
         _validate_recent_scores(
             self.recent_scores,
             current_frame.frame_index,
-            current_frame.snapshot.team_deathmatch_scores,
+            recorded_team_scores(current_frame.snapshot),
         )
         from marl_battlegrounds.viewer.champion_streaks import ChampionTakedownsV1
 

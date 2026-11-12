@@ -1408,8 +1408,10 @@ def build_evaluation_episode_context_v5(
         critic_information_regime, canonical_reward_mode,
         shaping_configuration, code_revision and the optional scenario_name,
         with the same meanings and rules as in
-        build_evaluation_episode_context_v4. Capture the Flag's reward mode
-        is "core-ctf" version 1.
+        build_evaluation_episode_context_v4. evaluate records Capture the
+        Flag's reward mode as "core-ctf" version 1 and the BattleClient as
+        "canonical-task-reward" version 1, as it does in Team Deathmatch; this
+        builder does not check the value.
 
     Returns
     -------

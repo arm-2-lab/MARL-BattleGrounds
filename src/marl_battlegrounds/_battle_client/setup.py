@@ -1,7 +1,10 @@
 """Resolve public live-match inputs through the existing packaged task owners.
 
 Setup validates explicit fixed-scenario overrides before reading content or
-loading a method. It keeps all ten physical slots and the exact packaged start.
+loading a method. Its ``task`` choice is the BattleClient's private route to
+Capture the Flag: the public ``battle_client`` plays Team Deathmatch only until
+v1.1.0, while the DevClient and tests pass ``task="ctf"`` here. It keeps all
+ten physical slots and the exact packaged start.
 An ordinary map can start with the two teams' spawn ends swapped; the swap
 reuses ``tasks._swap_spawn_banks``, the owner that ``evaluate`` and the
 canonical tournament call. Nothing here starts a server, runs a controller or
@@ -24,6 +27,7 @@ from marl_battlegrounds._battle_client.model import (
     DebuggerScenario,
 )
 from marl_battlegrounds._config_checks import run_config_check
+from marl_battlegrounds._task_settings import TASK_MODES, TASK_NAMES, TaskName
 from marl_battlegrounds.core.config import validate_env_config
 from marl_battlegrounds.core.env import reset
 from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
@@ -35,14 +39,13 @@ from marl_battlegrounds.modes.team_deathmatch.scenarios import (
     build_tdm_qualification_seed_schedule,
 )
 from marl_battlegrounds.tasks import (
-    DEFAULT_TDM_RED_ZONE_DEPTH,
     AgentClassName,
     _load_tdm_scenario,
     _swap_spawn_banks,
     canonical_tournament_rosters,
-    list_tdm_maps,
     list_tdm_scenarios,
-    make_standard_team_deathmatch_config,
+    make_standard_config,
+    maps_for_task,
 )
 
 type Controller = str | Path | Policy | System
@@ -92,6 +95,7 @@ def _controllers(
 
 def prepare_battle_setup(
     *,
+    task: TaskName = "tdm",
     map_id: int | Omitted = OMITTED,
     scenario_id: int | Omitted = OMITTED,
     team_a: TeamControllers = "manual",
@@ -108,8 +112,16 @@ def prepare_battle_setup(
 
     Parameters
     ----------
+    task : {'tdm', 'ctf'}, default='tdm'
+        The mode to play: Team Deathmatch or Capture the Flag. Capture the Flag
+        has no scenarios yet and no Red Zone, so it refuses scenario_id and any
+        red_zone_depth but 0.0, and its score_threshold counts captures. Maps
+        and defaults come from the task's own catalog (maps_for_task,
+        make_standard_config). The public battle_client offers only 'tdm'
+        until v1.1.0.
     map_id, scenario_id : int or Omitted
-        Exactly one packaged source. Maps are 0 through 51; scenarios 1 through 8.
+        Exactly one packaged source. Maps are 0 through 51 in the task's own
+        catalog; scenarios 1 through 8 (Team Deathmatch only).
     team_a, team_b : controller or ordered sequence
         Text, Path, Policy or System for a team, or one per configured roster slot.
         Ordinary defaults are Manual. Fixed scenarios accept only Team A choices.
@@ -119,9 +131,12 @@ def prepare_battle_setup(
         Ordinary unsigned 32-bit seed, default 0. Fixed scenarios use their
         existing qualification schedule's first case.
     max_steps, score_threshold : int or Omitted
-        Ordinary defaults are 300 and 20, checked by the existing task builder.
+        Ordinary defaults are 300 and the task's own threshold (20 points in
+        Team Deathmatch, 3 captures in Capture the Flag), checked by the
+        existing task builder.
     red_zone_depth : float or Omitted
-        Ordinary default 5.0 map units, checked by the existing task builder.
+        Team Deathmatch's Red Zone depth, default 5.0 map units, checked by
+        the existing task builder. Capture the Flag accepts only 0.0.
     spawn_mode : {'default', 'swapped'} or Omitted
         Where each team starts on an ordinary map; omitted means 'default'.
         'default' keeps the map's spawn banks: on every packaged map Team A
@@ -143,7 +158,8 @@ def prepare_battle_setup(
     Raises
     ------
     TypeError, ValueError
-        Source selection, controller shape, spawn_mode or a task rule is invalid.
+        task is not a task name, or source selection, controller shape,
+        spawn_mode or a task rule is invalid.
         Any explicit scenario opponent, map, roster, seed, rule or spawn_mode
         override is rejected, even when its value equals the fixed setting.
         Content validation errors propagate.
@@ -153,7 +169,15 @@ def prepare_battle_setup(
     Uses only installed task content. It never reads mutable authoring drafts or
     compacts dead agents. A System remains the caller's exact object.
     """
+    if task not in TASK_MODES:
+        raise ValueError(
+            f"task must be one of {', '.join(map(repr, TASK_NAMES))}, not {task!r}"
+        )
     fixed = not isinstance(scenario_id, Omitted)
+    if fixed and task != "tdm":
+        raise ValueError(
+            "Capture the Flag has no scenarios yet. Supply map_id instead."
+        )
     if fixed:
         if not isinstance(team_b, Omitted):
             raise ValueError(SCENARIO_OPPONENT_ERROR)
@@ -222,15 +246,16 @@ def prepare_battle_setup(
     defaults = canonical_tournament_rosters()
     roster_a = defaults[0] if isinstance(team_a_roster, Omitted) else team_a_roster
     roster_b = defaults[1] if isinstance(team_b_roster, Omitted) else team_b_roster
-    config = make_standard_team_deathmatch_config(
+    config = make_standard_config(
+        task,
         map_id=map_id,
         team_a_roster=roster_a,
         team_b_roster=roster_b,
         max_steps=300 if isinstance(max_steps, Omitted) else max_steps,
-        score_threshold=20 if isinstance(score_threshold, Omitted) else score_threshold,
-        red_zone_depth=DEFAULT_TDM_RED_ZONE_DEPTH
-        if isinstance(red_zone_depth, Omitted)
-        else red_zone_depth,
+        score_threshold=None
+        if isinstance(score_threshold, Omitted)
+        else score_threshold,
+        red_zone_depth=None if isinstance(red_zone_depth, Omitted) else red_zone_depth,
     )
     if swapped:
         # evaluate validates a requested swapped choice the same way.
@@ -243,9 +268,9 @@ def prepare_battle_setup(
         name="team_b",
     )
     state, _, _, _ = reset(config, jax.random.key(actual_seed))
-    map_info = list_tdm_maps()[map_id]
+    map_info = maps_for_task(task)[map_id]
     scenario = DebuggerScenario(
-        name=f"tdm_map_{map_id}",
+        name=f"{task}_map_{map_id}",
         title=map_info.name,
         description=f"Packaged Map {map_id}",
         mode="interactive",

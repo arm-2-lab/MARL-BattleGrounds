@@ -254,8 +254,9 @@ class CombatConfigurationV1(_ProtocolModel):
 class CombatSetupV1(CombatConfigurationV1):
     """Display resolved physical ownership without making it a browser command.
 
-    Current live frames provide ownership and the effective Red Zone depth.
-    None is accepted only for older frame fixtures. Manual rows include configured
+    Current live frames provide ownership and, in Team Deathmatch, the
+    effective Red Zone depth; it is None in every other mode and in older
+    frame fixtures, and the wire leaves None out. Manual rows include configured
     dead agents. Labels have
     ten entries; None marks an unconfigured row. These are display facts, not
     permission to edit a policy-controlled row or load browser-supplied code.

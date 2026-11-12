@@ -51,10 +51,12 @@ from marl_battlegrounds.evaluation._replays.pov import (
     ActorPovAdjacentTransitionSliceV1,
     ActorPovAdjacentTransitionSliceV2,
     ActorPovAdjacentTransitionSliceV3,
+    ActorPovAdjacentTransitionSliceV4,
     ActorPovCurrentSlice,
     ActorPovCurrentSliceV1,
     ActorPovCurrentSliceV2,
     ActorPovCurrentSliceV3,
+    ActorPovCurrentSliceV4,
 )
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
@@ -63,6 +65,7 @@ from marl_battlegrounds.evaluation.models import (
     EvaluationFrameV1,
     EvaluationFrameV2,
     EvaluationFrameV3,
+    EvaluationFrameV4,
     StaticMechanicsCatalogV1,
     evaluation_context_type,
     recorded_team_scores,
@@ -296,8 +299,9 @@ def _canonical_live_view(
         type(current_frame) is not EvaluationFrameV1
         and type(current_frame) is not EvaluationFrameV2
         and type(current_frame) is not EvaluationFrameV3
+        and type(current_frame) is not EvaluationFrameV4
     ):
-        raise TypeError("current_frame must be the exact EvaluationFrameV1 root.")
+        raise TypeError("current_frame must be an exact EvaluationFrameV1-V4 root.")
     if current_frame.frame_index == 0:
         if incoming_transition_view is not None:
             raise ValueError("live frame zero cannot carry incoming T_(n-1).")
@@ -1408,8 +1412,11 @@ def build_live_no_shared_obs_authorized_presentation_v1(
         type(current_slice) is not ActorPovCurrentSliceV1
         and type(current_slice) is not ActorPovCurrentSliceV2
         and type(current_slice) is not ActorPovCurrentSliceV3
+        and type(current_slice) is not ActorPovCurrentSliceV4
     ):
-        raise TypeError("current_slice must be the exact ActorPovCurrentSliceV1 root.")
+        raise TypeError(
+            "current_slice must be an exact ActorPovCurrentSliceV1-V4 root."
+        )
     if type(public_catalog) is not StaticMechanicsCatalogV1:
         raise TypeError("public_catalog must be the exact V1 catalog root.")
     current_slice = type(current_slice).model_validate(
@@ -1437,6 +1444,7 @@ def build_live_no_shared_obs_authorized_presentation_v1(
             type(incoming_carrier) is not ActorPovAdjacentTransitionSliceV1
             and type(incoming_carrier) is not ActorPovAdjacentTransitionSliceV2
             and type(incoming_carrier) is not ActorPovAdjacentTransitionSliceV3
+            and type(incoming_carrier) is not ActorPovAdjacentTransitionSliceV4
         ):
             raise TypeError("nonzero live NoSharedObs frames require an exact carrier.")
         carrier = type(incoming_carrier).model_validate(
@@ -1528,6 +1536,7 @@ def build_live_no_shared_obs_authorized_presentation_v1(
             type(previous_global_frame) is not EvaluationFrameV1
             and type(previous_global_frame) is not EvaluationFrameV2
             and type(previous_global_frame) is not EvaluationFrameV3
+            and type(previous_global_frame) is not EvaluationFrameV4
         ):
             raise TypeError(
                 "non-initial live NoSharedObs frames require the exact prior "
