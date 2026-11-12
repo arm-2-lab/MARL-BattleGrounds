@@ -3748,7 +3748,14 @@ class _Run:
         )
 
     def set_status(self, phase: str, **facts: object) -> None:
-        """Publish host counters and the requested reset-time K without device reads."""
+        """Publish host counters and new games' winning score without device reads.
+
+        phase names the run's current phase; facts are extra status fields. The
+        winning score is the current stage's: the schedule names one only for a
+        winning-score curriculum, and every other stage uses the run's mode
+        default (DEFAULT_SCORE_THRESHOLDS: 20 points in Team Deathmatch, 3
+        captures in Capture the Flag), as the schedule itself does.
+        """
         self.host["elapsed_seconds"] = (
             self.prior_elapsed + time.monotonic() - self.start
         )
@@ -3756,8 +3763,9 @@ class _Run:
         rate = self.host["env_steps"] / training_seconds if training_seconds else None
         report = self.collection.schedule.rounding_report
         ends = cast(tuple[int, ...], report["cumulative_round_ends"])
+        default = DEFAULT_SCORE_THRESHOLDS[self.config.task]
         thresholds = cast(
-            tuple[int, ...], report.get("score_thresholds", (20,) * len(ends))
+            tuple[int, ...], report.get("score_thresholds", (default,) * len(ends))
         )
         stage = min(
             sum(end * self.config.num_envs <= self.host["env_steps"] for end in ends),

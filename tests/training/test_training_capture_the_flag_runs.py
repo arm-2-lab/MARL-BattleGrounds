@@ -14,8 +14,9 @@ schema 2. For MAPPO the second start goes through a portable
 model file, so the portable-file route is covered too. The resumed runs are
 made once per method and shared by both tests. A MAPPO run's Random checks
 play Capture the Flag (task "ctf", depth 0.0, winning score 3 in the saved
-pass) and pass the resume checks, and its saved status records the mode and
-its validation winning score.
+pass) and pass the resume checks; its saved status records the mode and the
+winning score of its training games and of validation, 3 each, and the live
+progress line says so ("Need 3 Captures to Win | Validation Still Needs 3").
 """
 
 import json
@@ -28,7 +29,7 @@ import pytest
 
 from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
 from marl_battlegrounds.portable_models import export_model
-from marl_battlegrounds.training import runner
+from marl_battlegrounds.training import _run_io, runner
 
 _SETTINGS: dict[str, tuple[dict[str, Any], int]] = {
     "mappo": ({"ppo": PPOConfig(rollout_length=2, epochs=1)}, 64),
@@ -173,4 +174,11 @@ def test_capture_the_flag_random_checks_play_the_mode_and_resume(
         options = entry["details"]["evaluation_contract"]["options"]
         assert (options["task"], options["score_threshold"]) == ("ctf", 3)
     status = json.loads((root / "status.json").read_text())
-    assert (status["task"], status["validation_score_threshold"]) == ("ctf", 3)
+    assert (
+        status["task"],
+        status["score_threshold"],
+        status["validation_score_threshold"],
+    ) == ("ctf", 3, 3)
+    assert "Need 3 Captures to Win | Validation Still Needs 3" in (
+        _run_io.progress_text(status)
+    )
