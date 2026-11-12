@@ -688,8 +688,8 @@ def encode_actor_inputs(inputs: ActorInput) -> Array:
     -------
     Array
         Float32 shape (*L, F). For a 20-column view F is ACTOR_FEATURE_SIZE
-        (5,165), ordered by ACTOR_FEATURE_OFFSETS under actor input schemas 2
-        and 3, which share this layout. For a 19-column view F is 5,164, the
+        (5,165), ordered by ACTOR_FEATURE_OFFSETS under actor input schema 2,
+        which every mode records. For a 19-column view F is 5,164, the
         frozen schema-1 order: the same features without context column 19
         (flat feature 1128 of schema 2). Each family keeps row-major order.
         Class and obstacle IDs become masked indicators. Other values retain
