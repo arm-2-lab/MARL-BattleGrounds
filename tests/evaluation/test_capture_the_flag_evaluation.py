@@ -10,9 +10,9 @@ neutral or King of the Hills config, an exact config of another mode (the error
 names the task to pass), an unknown task ("koth" is told King of the Hills
 arrives in v1.2.0), a Capture the Flag depth other than
 exactly 0.0, an exact source whose winning score conflicts with
-score_threshold, and replays in a Capture the Flag pass are refused. These run
-in memory on CPU; saving and resuming Capture the Flag passes is checked in
-test_capture_the_flag_saved_evaluation.py.
+score_threshold are refused. These run in memory on CPU; saving and resuming
+Capture the Flag passes is checked in test_capture_the_flag_saved_evaluation.py,
+and their replays in replays/test_capture_the_flag_evaluation_replays.py.
 """
 
 from pathlib import Path
@@ -108,7 +108,6 @@ def test_a_team_deathmatch_pass_records_no_task() -> None:
             },
             r"^score_threshold conflicts with the exact source configuration$",
         ),
-        ({"task": "ctf", "save_replays": 1}, r"^Capture the Flag replays arrive"),
     ],
 )
 def test_bad_capture_the_flag_requests_fail_before_any_file(

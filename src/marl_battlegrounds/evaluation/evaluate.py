@@ -1219,9 +1219,8 @@ def _run_evaluation(
     ValueError
         A setting, schedule, config, selection or output combination
         is invalid, or saved run details do not match the resumed pass.
-        This includes configs of no task's mode or of two modes, and replay
-        selections in a Capture the Flag pass, whose replays arrive with the
-        record update. These are refused before any game or file change.
+        This includes configs of no task's mode or of two modes, which are
+        refused before any game or file change.
     RuntimeError
         The writer is closed/failed, or execution violates an
         internal completion or requested-metric contract.
@@ -1280,8 +1279,6 @@ def _run_evaluation(
             run_config_check(validate_env_config, spec.env_config)
             validated.add(id(spec.env_config))
     task = _played_task(specs)
-    if task == "ctf" and tuple(replay_episodes):
-        raise ValueError("Capture the Flag replays arrive with the record update")
     if writer is not None and (output_dir is not None or resume_from is not None):
         raise ValueError("writer cannot be combined with output_dir or resume_from")
     if output_dir is not None and run_id is not None:
@@ -2556,9 +2553,8 @@ def evaluate(
         a pass saved before the Red Zone rule (ValueError "This pass was saved
         before the Red Zone rule. ..."). Also ValueError for an unknown task,
         an exact config in another mode ("... which task 'tdm' does not play;
-        pass task='ctf'"), a CTF depth other than 0.0, and replays in a CTF
-        pass, which arrive with the record update. Scientific validation
-        occurs before new files, writer recovery or pass changes.
+        pass task='ctf'"), and a CTF depth other than 0.0. Scientific
+        validation occurs before new files, writer recovery or pass changes.
     RuntimeError, OSError
         Execution, provider or recording fails. Earlier durable chunks remain
         valid; no fake actions, retry or provider rollback is performed.
