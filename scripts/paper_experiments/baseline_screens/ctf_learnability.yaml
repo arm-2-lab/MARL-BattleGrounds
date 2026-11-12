@@ -1,0 +1,82 @@
+# Capture the Flag learnability pilot: does recurrent IPPO learn the
+# objective chain (pick up the enemy flag, carry it, capture it)?
+#
+# This is a plain study declaration for training.run_study. It names no saved
+# model, so it needs no preparation step:
+#
+#   XLA_PYTHON_CLIENT_PREALLOCATE=false python -m marl_battlegrounds study start \
+#     --config scripts/paper_experiments/baseline_screens/ctf_learnability.yaml \
+#     --output-dir /path/ctf-learnability/study
+#
+# Two cases of one run each, 40,108,032 transitions: the objective reward
+# (recipe 1) and the objective reward plus the carrier's route potential
+# (recipe 2), in their per-agent forms. Every other learning setting is
+# recurrent IPPO's reference case in hyperparameter_search/shapes_and_ppo.yaml
+# (ippo-reference): every PPO setting, 512 games, saves, past copies, seed
+# pairs and validation maps. Three things differ, because no Capture the Flag
+# model or bot exists yet: the task, the reward, and opponents and a
+# validation panel without saved models (self-play 60%, past copies 20%,
+# Random 20%; validated against Random). Both cases use the same seed, so they
+# start from the same actor; retain_all_actors keeps it as the untrained
+# reference. No setting is tuned. One seed cannot rank the two rewards: the
+# pilot asks only whether either one learns.
+schema_version: 1
+name: Capture the Flag Learnability Pilot
+failure_policy: continue
+resources:
+  devices:
+    - device: GPU-6b11a0c4-14e8-6782-8932-1df56d599796
+      max_workers: 1
+cases:
+  - id: ippo-objective
+    seeds: &seeds [12259871]
+    runtime: &runtime
+      validation_opponents: [random]
+    config:
+      <<: &common
+        task: ctf
+        method: ippo
+        total_env_steps: 40108032
+        curriculum: false
+        score_threshold_curriculum: false
+        shaping: false
+        opponents:
+          self: 0.6
+          past: 0.2
+          random: 0.2
+        keep_past: 12
+        past_capture_interval: 1376256
+        validation_maps: [42, 43, 44, 46]
+        validation_fractions: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        routine_seed_pairs: 4
+        confirmation_seed_pairs: 8
+        metrics: priority
+        recording: false
+        retain_all_actors: true
+        checkpoint_interval_updates: 25
+        num_envs: 512
+        ppo:
+          actor_lr: 0.0001
+          critic_lr: 0.00025
+          rollout_length: 32
+          epochs: 4
+          minibatches: 2
+          groups: 2
+          gamma: 0.999
+          gae_lambda: 0.95
+          clip_epsilon: 0.2
+          entropy_coefficient: 0.01
+          value_coefficient: 0.5
+          max_grad_norm: 0.5
+          adam_epsilon: 0.00001
+          input_scale: 0.01
+          spawn_frame: left
+          value_normalization: true
+          parameter_sharing: all
+      reward: marl_battlegrounds.training.reward_recipes:ctf_objective_reward
+  - id: ippo-objective-route
+    seeds: *seeds
+    runtime: *runtime
+    config:
+      <<: *common
+      reward: marl_battlegrounds.training.reward_recipes:ctf_objective_route_reward
