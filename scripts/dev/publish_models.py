@@ -138,6 +138,8 @@ CODE_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds"
 # The repository's address before it moved; cleaned text names CODE_URL instead.
 OLD_CODE_URL = "https://github.com/oceansystemslab/MARL-BattleGrounds"
 GUIDE_URL = f"{CODE_URL}/blob/main/docs/released_models.md"
+# The public page naming each learner's code donors, their commits and licenses.
+METHOD_SOURCES_URL = f"{CODE_URL}/blob/main/docs/method_sources.md"
 # The public rulebook; the dataset and organization cards link its leaderboard.
 RULES_URL = f"{CODE_URL}/blob/main/docs/tournament_rules.md"
 # The day the clean copy replaced every released file, once (see clean).
@@ -188,6 +190,22 @@ _CONFIG_CLASSES = {
     "ff_ippo": ("PPOConfig", "ppo"),
     "qmix": ("QMIXConfig", "qmix"),
     "pqn_vdn": ("PQNConfig", "pqn"),
+}
+# Each method's code donors, for the model card's "Learner Code" line. All four
+# Season 0 PPO runs trained with ValueNorm on (value_normalization in each run's
+# run_details.json), so their line names its source too.
+_MAVA = "[Mava](https://github.com/instadeepai/Mava)"
+_PPO_DONORS = (
+    f"Adapted from {_MAVA}, with ValueNorm from the "
+    "[official MAPPO code](https://github.com/marlbenchmark/on-policy)."
+)
+_LEARNER_CODE = {
+    "mappo": _PPO_DONORS,
+    "ippo": _PPO_DONORS,
+    "ff_mappo": _PPO_DONORS,
+    "ff_ippo": _PPO_DONORS,
+    "qmix": f"Adapted from {_MAVA}.",
+    "pqn_vdn": "Adapted from [JaxMARL](https://github.com/bold-lab-ai/JaxMARL).",
 }
 SAME_GAMES = {
     "identical": (
@@ -1143,6 +1161,36 @@ def _numbers_text(values: Sequence[int]) -> str:
     return texts[0] if len(texts) == 1 else ", ".join(texts[:-1]) + f" and {texts[-1]}"
 
 
+def learner_code_text(method: str) -> str:
+    """Return the text of a model card's "Learner Code" line for one method.
+
+    The text credits the projects the method's learner code was adapted from,
+    with links, then links the Method Sources page for the exact commits,
+    licenses and changes. ``model_card`` uses it, and so does the private
+    script that added the line to the six live cards on 12 November 2026.
+
+    Parameters
+    ----------
+    method : str
+        A released Season 0 method key: ``"mappo"``, ``"ippo"``,
+        ``"ff_mappo"``, ``"ff_ippo"``, ``"qmix"`` or ``"pqn_vdn"``.
+
+    Returns
+    -------
+    str
+        One line of Markdown, without the ``- **Learner Code:**`` label.
+
+    Raises
+    ------
+    KeyError
+        ``method`` is not a released Season 0 method.
+    """
+    return (
+        f"{_LEARNER_CODE[method]} [Method Sources]({METHOD_SOURCES_URL}) lists the "
+        "exact commits, licenses and our changes."
+    )
+
+
 def model_card(
     model: Model,
     entrant: Entrant,
@@ -1234,6 +1282,7 @@ holds a portable model file for every save of its training, and its training
 records.
 
 - **Method:** {entrant.label} (`{entrant.method}`)
+- **Learner Code:** {learner_code_text(entrant.method)}
 - **Training Recipe:** `{entrant.recipe}`
 - **Training Seed:** {entrant.seed}
 - **Saves:** {len(steps):,}, from step {first:,} to step {last:,}

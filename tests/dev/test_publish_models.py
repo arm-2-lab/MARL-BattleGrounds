@@ -11,7 +11,8 @@ and a fake Hugging Face client. They check these contracts of
   ``steps.csv``; model files are hard links; training records leave out model
   folders, learner state, past copies and the run lock.
 - The model card's metadata is read correctly by Hugging Face's own card
-  parser, and the card states the chosen "same games" claim only.
+  parser, the card states the chosen "same games" claim only, and its "Learner
+  Code" line credits the method's code donors and links Method Sources.
 - The secret scan refuses every token pattern, the saved token and a secret in
   a compressed ZIP member, and never prints the secret.
 - ``upload`` checks every uploaded file's SHA-256 against the Hub's record and
@@ -321,6 +322,11 @@ def test_build_writes_index_config_records_and_card(
     assert "recurrent-mappo-pooled" in text
     assert PAPER in text and "@software" not in text
     assert publish.GUIDE_URL in text
+    assert (
+        "- **Learner Code:** Adapted from [Mava](https://github.com/instadeepai/Mava)."
+        f" [Method Sources]({publish.METHOD_SOURCES_URL})"
+    ) in text
+    assert "official MAPPO code" not in text
 
 
 class FakeHub:
