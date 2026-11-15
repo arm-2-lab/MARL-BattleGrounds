@@ -5,9 +5,10 @@ in this folder, copied once from Team Deathmatch's on 7 November 2026 and owned 
 Capture the Flag from then on. This module reads only that folder. It reuses Team
 Deathmatch's record models (TDMMapInfo, MapGeometry), so an entry has the same
 fields in both modes, and keeps its own reads, cache and messages. Each entry's
-source names the authored Team Deathmatch draft it was copied from. There is no
-map history or alias table yet; they begin with the first change to a Capture the
-Flag map. No game, JAX device or training distribution is created here.
+source names the authored Capture the Flag draft it was exported from; revision 1
+of each is the Team Deathmatch draft it was copied from, unchanged. There is no
+map history or alias table yet. No game, JAX device or training distribution is
+created here.
 """
 
 from __future__ import annotations
