@@ -31,7 +31,8 @@ through JSON and resumes, while another task or depth is refused, and a version
 4 record naming "tdm" or a version 3 record naming a task is refused. Team
 Deathmatch content stays version 3 with no task key. The equivalent Core rules
 are one set per mode: a fingerprint only Team Deathmatch's set lists does not
-restate a Capture the Flag binding.
+restate a Capture the Flag binding, and every fingerprint Capture the Flag's
+set lists does.
 No learner or training run is created.
 """
 
@@ -83,7 +84,7 @@ from marl_battlegrounds.training import (
 )
 
 # The simulator-rules fingerprint of the committed Core (every core/*.py).
-_SIMULATOR_RULES = "52e290618144a1373e9b52495f89c4892dd7a64a6100ff0930336c072a9ee408"
+_SIMULATOR_RULES = "d0263e0264fdde822289b22bec65bbda7d5342da096f0f317d561a227ff143f8"
 
 _V1_FIXTURE = (
     Path(__file__).parents[1] / "fixtures" / "training_content_binding_v1.json"
@@ -284,20 +285,20 @@ def test_capture_the_flag_content_is_version_4_on_its_own_maps(
 
 
 def test_equivalent_core_rules_are_kept_per_mode(
-    flags: PreparedTrainingContent, monkeypatch: pytest.MonkeyPatch
+    flags: PreparedTrainingContent,
 ) -> None:
-    season_0 = next(iter(_content._EQUIVALENT_SIMULATOR_RULES["tdm"]))
-    old = _with_rules(flags.binding, season_0)
+    equivalent = _content._EQUIVALENT_SIMULATOR_RULES
+    team_deathmatch_only = next(iter(equivalent["tdm"] - equivalent["ctf"]))
+    old = _with_rules(flags.binding, team_deathmatch_only)
     assert _content.read_saved_binding(old) == old
     with pytest.raises(ValueError, match="incompatible"):
         prepare_training_content(expected=old)
-    monkeypatch.setitem(
-        cast(dict[str, frozenset[str]], _content._EQUIVALENT_SIMULATOR_RULES),
-        "ctf",
-        frozenset({season_0}),
-    )
-    restated = _content.read_saved_binding(old)
-    assert restated.canonical_digest == flags.binding.canonical_digest
+    assert equivalent["ctf"]
+    for capture_the_flag_rules in equivalent["ctf"]:
+        restated = _content.read_saved_binding(
+            _with_rules(flags.binding, capture_the_flag_rules)
+        )
+        assert restated.canonical_digest == flags.binding.canonical_digest
 
 
 def test_layout_identity_uses_float32_values_and_order_not_wrappers() -> None:

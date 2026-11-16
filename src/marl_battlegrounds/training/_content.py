@@ -101,9 +101,12 @@ _SAVED_BEFORE_RED_ZONE = (
 # (tests/environment/test_tdm_goldens.py), and each later Core that plays the
 # same goldens: the one with those fields but no flag rules yet, the one with
 # the flag rules but before the King of the Hills checks, the one with those
-# checks but before captures, and the one with captures but before Capture the
-# Flag's objective rows. Capture the Flag has none: the flag rules and captures
-# changed its play, and the objective rows its agents' inputs.
+# checks but before captures, the one with captures but before Capture the
+# Flag's objective rows, and the one with those rows but before King of the
+# Hills' rules. The flag rules and captures changed Capture the Flag's play, and
+# the objective rows its agents' inputs, so its one entry is the Core with
+# those rows but before King of the Hills' rules, which plays the same Capture
+# the Flag games bit for bit (the resimulation check).
 _EQUIVALENT_SIMULATOR_RULES: Mapping[TaskName, frozenset[str]] = {
     "tdm": frozenset(
         {
@@ -112,9 +115,12 @@ _EQUIVALENT_SIMULATOR_RULES: Mapping[TaskName, frozenset[str]] = {
             "1439a5f293e6ea97a4727c46c2ab3ee9efd95e964aabcf0dbcaea2bf7c3fc201",
             "5f3adbfd49c1580fb88b31a60917e7a0769600d49d9a0331e11f9100577701bb",
             "11017963813c699c49e9597f0805dc2c2236b03fc506d0a5e9ca4c30410de4f7",
+            "52e290618144a1373e9b52495f89c4892dd7a64a6100ff0930336c072a9ee408",
         }
     ),
-    "ctf": frozenset(),
+    "ctf": frozenset(
+        {"52e290618144a1373e9b52495f89c4892dd7a64a6100ff0930336c072a9ee408"}
+    ),
 }
 
 

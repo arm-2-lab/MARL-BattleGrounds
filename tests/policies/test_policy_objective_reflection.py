@@ -8,7 +8,11 @@ carrier one-hot still names the same unit row. Reflecting twice returns the
 input within float rounding, and the compiled call equals the eager one. In
 Team Deathmatch, whose objective rows are all zero, the objective arrays come
 back unchanged. The objective values are hand-placed on a Capture the Flag
-reset, so the check does not wait for Core to fill the rows.
+reset, so the check does not wait for Core to fill the rows. In King of the
+Hills, on map 0 (its own mirror image) with a mirror-image hill state, the
+right-end team's objective rows after the reflection, its own and its shared
+sources', equal the left-end team's, so a model sees the hills the same from
+either end.
 """
 
 from typing import cast
@@ -18,7 +22,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
-from marl_battlegrounds.core.env import reset
+from marl_battlegrounds.core.env import initialize_scenario_state, reset
 from marl_battlegrounds.core.types import (
     OBJECTIVE_FEATURE_IS_ACTIVE,
     OBJECTIVE_FEATURE_UNIT_ROW_2_IS_FLAG_CARRIER,
@@ -34,6 +38,7 @@ from marl_battlegrounds.policies.input import (
 )
 from marl_battlegrounds.tasks import (
     make_standard_capture_the_flag_config,
+    make_standard_king_of_the_hills_config,
     make_standard_team_deathmatch_config,
 )
 
@@ -120,3 +125,43 @@ def test_team_deathmatch_objective_rows_come_back_unchanged() -> None:
         np.asarray(mirrored.source_bank.objective_features_by_source),
         np.asarray(actors.source_bank.objective_features_by_source),
     )
+
+
+def test_a_right_end_team_sees_mirrored_hills_as_the_left_end_team_does() -> None:
+    config = make_standard_king_of_the_hills_config(
+        map_id=0,
+        team_a_roster=_ROSTER,
+        team_b_roster=_ROSTER,
+        empty_hill_ownership_steps=2,
+    )
+    state, _, _, _ = reset(config, jax.random.key(0))
+    # A mirror-image hill state: each team owns its own spawn-side hill with 1
+    # tick left, the center hill is contested and neutral, and the scores tie.
+    state = state._replace(
+        king_of_the_hills_hill_owners=jnp.asarray([1, 0, 2], jnp.int32),
+        king_of_the_hills_hill_is_contested=jnp.asarray([False, True, False]),
+        king_of_the_hills_empty_hill_ownership_countdowns=jnp.asarray(
+            [1, 0, 1], jnp.int32
+        ),
+        king_of_the_hills_scores=jnp.asarray([4, 4], jnp.int32),
+    )
+    _, observation, mask, _ = initialize_scenario_state(state, config)
+    observations = build_observations(observation, config)
+    left = build_team_actor_input(observations, team=0)
+    right = build_team_actor_input(observations, team=1)
+    mirrored, _ = mirror_team_view(
+        right,
+        ActionMask(*(field[5:10] for field in mask)),
+        jnp.ones(5, jnp.bool_),
+    )
+    assert np.asarray(left.observation.objective_features).any()
+    for after, expected in (
+        (mirrored.observation.objective_features, left.observation.objective_features),
+        (
+            mirrored.source_bank.objective_features_by_source,
+            left.source_bank.objective_features_by_source,
+        ),
+    ):
+        np.testing.assert_allclose(
+            np.asarray(after), np.asarray(expected), atol=1e-6, rtol=0
+        )

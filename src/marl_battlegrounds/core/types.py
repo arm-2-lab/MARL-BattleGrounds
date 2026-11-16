@@ -91,8 +91,8 @@ TEAM_DEATHMATCH_POINTS_PER_RED_ZONE_DEATH = 2
 # normalization belongs to the later versioned observation-preprocessing layer.
 # Each mode fills only its own objective-count, score and threshold columns and
 # leaves every other mode's at 0: Team Deathmatch 10, 11 and 16 (and the Red
-# Zone depth, 19), Capture the Flag 9, 14, 15 and 18. King of the Hills' 9, 12,
-# 13 and 17 stay 0 until its rules exist.
+# Zone depth, 19), Capture the Flag 9, 14, 15 and 18, and King of the Hills 9,
+# 12, 13 and 17.
 CONTEXT_FEATURE_CURRENT_TIMESTEP = 0
 CONTEXT_FEATURE_EPISODE_HORIZON = 1
 CONTEXT_FEATURE_MAP_WIDTH = 2
@@ -1050,10 +1050,19 @@ class Observation(NamedTuple):
     flag goes home, and columns 7-11 one-hot the carrier's unit row (an enemy
     row for your flag, an ally row for theirs, self at self_ally_index), only
     when the observer sees the carrier. A flag's position is public, carried
-    or not. A dead observer keeps its rows and sees no carrier. Every other
-    row, every row in the neutral mode and Team Deathmatch, and unused
-    observers' rows are zero; King of the Hills' rows 4-6 stay zero until its
-    rules exist.
+    or not. A dead observer keeps its rows and sees no carrier.
+
+    In King of the Hills rows 4-6 are filled by side, never by x: row 4 is the
+    hill on your spawn side, 5 the center hill and 6 the far-side hill. The
+    distance column holds the radius. Columns 4 and 5 name the owner, also
+    while the hill is empty or contested; column 6 is 1 while it is contested,
+    7 the points per tick, 8 the three-hill sweep bonus (0 unless all three
+    hill slots are used) and 9 the empty ticks left before an owned hill turns
+    neutral. Hills are public, so a dead observer keeps its rows. An unused
+    hill slot's row is zero.
+
+    Every other row, every row in the neutral mode and Team Deathmatch, and
+    unused observers' rows are zero.
     """
     context_features: Array  # Meta/Config features.
     """Raw current context and episode rules for every observer.
@@ -1063,7 +1072,9 @@ class Observation(NamedTuple):
     Team Deathmatch Red Zone depth, your team before the enemy.
     CONTEXT_FEATURE_* constants name the columns. Each mode fills only its own
     count, score and threshold columns (Team Deathmatch 10, 11 and 16; Capture
-    the Flag 9 = 4, 14 and 15 the captures and 18 the threshold); the other
+    the Flag 9 = 4, 14 and 15 the captures and 18 the threshold; King of the
+    Hills 9 = the number of used hill slots, 12 and 13 the scores and 17 the
+    threshold); the other
     modes' columns and unused observers' rows are zero. A dead observer keeps
     its context.
     """

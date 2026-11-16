@@ -7,10 +7,11 @@ initialize_scenario_state is the separate host-validated authored-start path.
 
 Core owns action acceptance, observations, health/status/death/respawn rules,
 task rewards and event facts. Geometry and combat catalogs remain shared
-authorities in their own modules, and Capture the Flag's flag rules live in
-core/objectives.py, which step calls. Policies, native environment batching,
-episode scheduling, logging, metrics collection and persistence live outside
-this module. Numerical entry points do not auto-reset terminal states."""
+authorities in their own modules, and the objective rules (Capture the Flag's
+flags, King of the Hills' hills) live in core/objectives.py, which step calls.
+Policies, native environment batching, episode scheduling, logging, metrics
+collection and persistence live outside this module. Numerical entry points do
+not auto-reset terminal states."""
 
 from typing import NamedTuple, cast
 
@@ -82,7 +83,9 @@ from marl_battlegrounds.core.geometry import (
 )
 from marl_battlegrounds.core.objectives import (
     CaptureTheFlagFlagUpdate,
+    KingOfTheHillsHillUpdate,
     update_capture_the_flag_flags,
+    update_king_of_the_hills_hills,
 )
 from marl_battlegrounds.core.types import (
     AGENT_FEATURE_IS_ENEMY,
@@ -95,6 +98,9 @@ from marl_battlegrounds.core.types import (
     CONTEXT_FEATURE_ENEMY_TEAM_SIZE,
     CONTEXT_FEATURE_IS_CTF,
     CONTEXT_FEATURE_IS_TDM,
+    CONTEXT_FEATURE_KOTH_ALLY_SCORE,
+    CONTEXT_FEATURE_KOTH_ENEMY_SCORE,
+    CONTEXT_FEATURE_KOTH_SCORE_THRESHOLD,
     CONTEXT_FEATURE_MAP_HEIGHT,
     CONTEXT_FEATURE_TDM_ALLY_SCORE,
     CONTEXT_FEATURE_TDM_ENEMY_SCORE,
@@ -118,6 +124,8 @@ from marl_battlegrounds.core.types import (
     NUM_TASKS,
     NUM_TEAMS,
     NUM_ULTIMATE_ACTIONS,
+    OBJECTIVE_FEATURE_EMPTY_HILL_STEPS_UNTIL_OWNERSHIP_LOST,
+    OBJECTIVE_FEATURE_HILL_IS_CONTESTED,
     OBJECTIVE_FEATURE_INTERACTION_DISTANCE,
     OBJECTIVE_FEATURE_IS_ACTIVE,
     OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM,
@@ -130,6 +138,8 @@ from marl_battlegrounds.core.types import (
     OBJECTIVE_SLOT_ALLY_FLAG_HOME,
     OBJECTIVE_SLOT_ENEMY_FLAG,
     OBJECTIVE_SLOT_ENEMY_FLAG_HOME,
+    OBJECTIVE_SLOT_FAR_SIDE_HILL,
+    OBJECTIVE_SLOT_SPAWN_SIDE_HILL,
     OBSTACLE_FEATURES,
     PRIEST_CLASS_ID,
     REWARD_FOR_LOSING,
@@ -756,7 +766,8 @@ def _build_context_features(state: EnvState, config: EnvConfig) -> Array:
     rule is off or outside Team Deathmatch). The objective count (column 9) and
     the King of the Hills and Capture the Flag scores and thresholds (12-15,
     17 and 18) are 0 here; the observation's mode branch fills its own mode's
-    (_handle_ctf_task_mode_features). Unused observer rows are zero.
+    (_handle_koth_task_mode_features, _handle_ctf_task_mode_features). Unused
+    observer rows are zero.
     Configured dead observers retain context.
     """
 
@@ -1318,8 +1329,8 @@ def _handle_neutral_task_mode_features(
 ) -> tuple[Array, Array]:
     """Return no objective rows and the context unchanged, for modes without objectives.
 
-    The neutral and Team Deathmatch entries of the observation's mode branch
-    (and King of the Hills' until its rows exist). The operands match
+    The neutral and Team Deathmatch entries of the observation's mode branch.
+    The operands match _handle_koth_task_mode_features and
     _handle_ctf_task_mode_features, the other branches of that switch; only
     context_features is read.
 
@@ -1354,26 +1365,228 @@ def _handle_koth_task_mode_features(
     ally_visibility_mask: Array,
     enemy_visibility_mask: Array,
 ) -> tuple[Array, Array]:
-    """Return King of the Hills' objective rows and context (no hill rows yet).
+    """Build King of the Hills' hill rows 4-6 and its four context columns.
 
-    For now this returns _handle_neutral_task_mode_features' output: zero
-    objective rows and the context unchanged. The hill rows 4-6 and context
-    columns 9, 12, 13 and 17 come with King of the Hills' rules. The operands
-    match the other branches of the observation's mode switch.
+    Every value is from the observer's side. Row 4 is the observer's own
+    spawn-side hill, row 5 the center hill and row 6 the far-side hill: a team
+    whose spawn bank is on the left (axis_mappings.spawn_bank_on_right False)
+    sees hill slots 0, 1 and 2 in rows 4, 5 and 6, and a team on the right
+    sees them in rows 6, 5 and 4. The side comes from the spawn pads, never
+    from x. Coordinates stay in the world frame. Rows 0-3 and 7 stay zero.
 
     Parameters
     ----------
-    state, config, context_features, ally_visibility_mask, enemy_visibility_mask
-        As _handle_neutral_task_mode_features.
+    state : EnvState
+        The snapshot being observed: each hill slot's owner (0 nobody, 1 Team
+        A, 2 Team B), contested flag and ticks left, (3,) each, and the King
+        of the Hills scores, [Team A's, Team B's].
+    config : EnvConfig
+        Hill centers and radii (radius 0 marks an unused slot), the points per
+        tick, the sweep bonus, the score threshold, the spawn pads, the map
+        width and the configured slots (agent_profile.active_mask).
+    context_features : Array
+        Float32 (10, 20) from _build_context_features. Columns 9, 12, 13 and
+        17 are written here; the rest pass through.
+    ally_visibility_mask, enemy_visibility_mask : Array
+        Bool (10, 5) each. Unused: hills are public. They keep the operands
+        the same as the other branches of the observation's mode switch.
 
     Returns
     -------
     tuple[Array, Array]
-        As _handle_neutral_task_mode_features.
+        objective_features, float32 (10, 8, 12), then context_features,
+        float32 (10, 20).
+
+    Notes
+    -----
+    - Rows 4-6, features 0-9: active 1, x, y, the radius; owned by your team
+      (4) and by the enemy team (5), the owner even while the hill is empty
+      or contested; contested (6); the points per tick (7); the sweep bonus
+      (8), 0 unless all three hill slots are used; ticks left before an empty
+      owned hill turns neutral (9). Features 10-11 stay zero. An unused hill
+      slot's row is all zero.
+    - Context: column 9 = the number of used hill slots, 12 and 13 = your and
+      their score, 17 = the score threshold.
+    - Unused observers (active_mask False) get all-zero rows and context. A
+      dead observer keeps both, because hills and scores are public.
     """
-    return _handle_neutral_task_mode_features(
-        state, config, context_features, ally_visibility_mask, enemy_visibility_mask
+    del ally_visibility_mask, enemy_visibility_mask
+
+    objective_features = jnp.zeros(
+        shape=(MAX_AGENT_SLOTS, MAX_OBJECTIVE_SLOTS, OBJECTIVE_FEATURES),
+        dtype=jnp.float32,
     )
+
+    hill_is_active_by_hill = config.king_of_the_hills_hill_radii > 0
+    spawn_bank_on_right_by_team = spawn_bank_on_right(
+        config.team_spawn_pad_positions, config.map_width
+    )
+
+    # Features 0-3 (active, x, y, radius), one row per hill slot from left to
+    # right: the order a left-side team sees. A right-side team sees it flipped.
+    features_0_to_3_with_left_spawn_bank = jnp.concatenate(
+        (
+            hill_is_active_by_hill[:, None],  # (3, 1)
+            config.king_of_the_hills_hill_positions,  # (3, 2)
+            config.king_of_the_hills_hill_radii[:, None],  # (3, 1)
+        ),
+        axis=-1,
+    )
+
+    features_0_to_3_with_right_spawn_bank = features_0_to_3_with_left_spawn_bank[::-1]
+
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,  # Row 4 is this team's own spawn-side hill.
+        OBJECTIVE_SLOT_SPAWN_SIDE_HILL : OBJECTIVE_SLOT_FAR_SIDE_HILL + 1,
+        OBJECTIVE_FEATURE_IS_ACTIVE : OBJECTIVE_FEATURE_INTERACTION_DISTANCE + 1,
+    ].set(
+        jnp.where(
+            spawn_bank_on_right_by_team[TEAM_A_ID - 1],
+            features_0_to_3_with_right_spawn_bank,
+            features_0_to_3_with_left_spawn_bank,
+        )
+    )
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,  # Row 4 is this team's own spawn-side hill.
+        OBJECTIVE_SLOT_SPAWN_SIDE_HILL : OBJECTIVE_SLOT_FAR_SIDE_HILL + 1,
+        OBJECTIVE_FEATURE_IS_ACTIVE : OBJECTIVE_FEATURE_INTERACTION_DISTANCE + 1,
+    ].set(
+        jnp.where(
+            spawn_bank_on_right_by_team[TEAM_B_ID - 1],
+            features_0_to_3_with_right_spawn_bank,
+            features_0_to_3_with_left_spawn_bank,
+        )
+    )
+
+    # Features 4-5 (owned by your team, by the enemy team), from Team A's seat.
+    features_4_to_5_team_a_view_with_left_spawn_bank = jnp.concatenate(
+        (
+            state.king_of_the_hills_hill_owners[:, None] == TEAM_A_ID,  # (3, 1)
+            state.king_of_the_hills_hill_owners[:, None] == TEAM_B_ID,  # (3, 1)
+        ),
+        axis=-1,
+    )
+    features_4_to_5_team_a_view_with_right_spawn_bank = (
+        features_4_to_5_team_a_view_with_left_spawn_bank[::-1]
+    )
+
+    # From Team B's seat the two columns swap: Team A's own hill is its enemy's.
+    features_4_to_5_team_b_view_with_left_spawn_bank = (
+        features_4_to_5_team_a_view_with_left_spawn_bank[:, ::-1]
+    )
+    features_4_to_5_team_b_view_with_right_spawn_bank = (
+        features_4_to_5_team_b_view_with_left_spawn_bank[::-1]
+    )
+
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_SPAWN_SIDE_HILL : OBJECTIVE_SLOT_FAR_SIDE_HILL + 1,
+        OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM : OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM  # noqa: E501
+        + 1,
+    ].set(
+        jnp.where(
+            spawn_bank_on_right_by_team[TEAM_A_ID - 1],
+            features_4_to_5_team_a_view_with_right_spawn_bank,
+            features_4_to_5_team_a_view_with_left_spawn_bank,
+        )
+    )
+
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_SPAWN_SIDE_HILL : OBJECTIVE_SLOT_FAR_SIDE_HILL + 1,
+        OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ALLY_TEAM : OBJECTIVE_FEATURE_IS_CONTROLLED_BY_ENEMY_TEAM  # noqa: E501
+        + 1,
+    ].set(
+        jnp.where(
+            spawn_bank_on_right_by_team[TEAM_B_ID - 1],
+            features_4_to_5_team_b_view_with_right_spawn_bank,
+            features_4_to_5_team_b_view_with_left_spawn_bank,
+        )
+    )
+
+    # Feature 8, the sweep bonus: 0 on every row unless all three slots are used.
+    three_hill_sweep_bonus_points_per_step = jnp.where(
+        jnp.all(hill_is_active_by_hill),
+        jnp.full(
+            shape=(MAX_HILL_SLOTS, 1),
+            fill_value=config.king_of_the_hills_three_hill_sweep_bonus_points_per_step,
+        ),
+        0,
+    )
+
+    features_6_to_9_with_left_spawn_bank = jnp.concatenate(
+        (
+            state.king_of_the_hills_hill_is_contested[:, None],  # (3, 1)
+            jnp.full((MAX_HILL_SLOTS, 1), config.king_of_the_hills_hill_points_per_step)
+            * hill_is_active_by_hill[
+                :, None
+            ],  # Inactive hills do not provide points per step
+            three_hill_sweep_bonus_points_per_step,  # (3, 1)
+            state.king_of_the_hills_empty_hill_ownership_countdowns[:, None],  # (3, 1)
+        ),
+        axis=-1,
+    )
+    features_6_to_9_with_right_spawn_bank = features_6_to_9_with_left_spawn_bank[::-1]
+
+    objective_features = objective_features.at[
+        TEAM_A_START:TEAM_A_END,
+        OBJECTIVE_SLOT_SPAWN_SIDE_HILL : OBJECTIVE_SLOT_FAR_SIDE_HILL + 1,
+        OBJECTIVE_FEATURE_HILL_IS_CONTESTED : OBJECTIVE_FEATURE_EMPTY_HILL_STEPS_UNTIL_OWNERSHIP_LOST  # noqa: E501
+        + 1,
+    ].set(
+        jnp.where(
+            spawn_bank_on_right_by_team[TEAM_A_ID - 1],
+            features_6_to_9_with_right_spawn_bank,
+            features_6_to_9_with_left_spawn_bank,
+        )
+    )
+
+    objective_features = objective_features.at[
+        TEAM_B_START:TEAM_B_END,
+        OBJECTIVE_SLOT_SPAWN_SIDE_HILL : OBJECTIVE_SLOT_FAR_SIDE_HILL + 1,
+        OBJECTIVE_FEATURE_HILL_IS_CONTESTED : OBJECTIVE_FEATURE_EMPTY_HILL_STEPS_UNTIL_OWNERSHIP_LOST  # noqa: E501
+        + 1,
+    ].set(
+        jnp.where(
+            spawn_bank_on_right_by_team[TEAM_B_ID - 1],
+            features_6_to_9_with_right_spawn_bank,
+            features_6_to_9_with_left_spawn_bank,
+        )
+    )
+
+    # Context: the number of used hill slots, the scores (yours first) and the
+    # score threshold.
+    context_features = context_features.at[
+        :, CONTEXT_FEATURE_ACTIVE_OBJECTIVE_COUNT
+    ].set(jnp.sum(hill_is_active_by_hill))
+
+    scores_by_team = state.king_of_the_hills_scores
+    context_features = context_features.at[
+        TEAM_A_START:TEAM_A_END,
+        CONTEXT_FEATURE_KOTH_ALLY_SCORE : CONTEXT_FEATURE_KOTH_ENEMY_SCORE + 1,
+    ].set(scores_by_team)
+
+    context_features = context_features.at[
+        TEAM_B_START:TEAM_B_END,
+        CONTEXT_FEATURE_KOTH_ALLY_SCORE : CONTEXT_FEATURE_KOTH_ENEMY_SCORE + 1,
+    ].set(scores_by_team[::-1])
+
+    context_features = context_features.at[:, CONTEXT_FEATURE_KOTH_SCORE_THRESHOLD].set(
+        config.king_of_the_hills_score_threshold
+    )
+
+    # Unused observers (empty slots) carry nothing. A dead observer is still
+    # configured and keeps its rows.
+
+    objective_features = jnp.where(
+        config.agent_profile.active_mask[:, None, None], objective_features, 0
+    )
+
+    context_features = jnp.where(
+        config.agent_profile.active_mask[:, None], context_features, 0
+    )
+
+    return objective_features, context_features
 
 
 def _handle_ctf_task_mode_features(
@@ -1644,8 +1857,9 @@ def _build_observation_and_action_mask(
     The objective rows and each mode's own context columns come from one
     branch per task mode (lax.switch on config.task_mode), given the same
     visibility masks: Capture the Flag's fills rows 0-3 and columns 9, 14, 15
-    and 18, and the neutral and Team Deathmatch branch adds nothing, so Team
-    Deathmatch's compiled program does not contain Capture the Flag's work.
+    and 18, King of the Hills' fills rows 4-6 and columns 9, 12, 13 and 17,
+    and the neutral and Team Deathmatch branch adds nothing, so Team
+    Deathmatch's compiled program contains neither objective mode's work.
     """
     global_visibility_mask, global_pairwise_distances = (
         _build_global_visibility_mask_and_distances(state, config)
@@ -1710,7 +1924,7 @@ def _build_observation_and_action_mask(
     branches = [
         _handle_neutral_task_mode_features,
         _handle_neutral_task_mode_features,  # TDM
-        _handle_koth_task_mode_features,  # No hill rows yet (K1.1)
+        _handle_koth_task_mode_features,  # KOTH
         _handle_ctf_task_mode_features,
     ]
 
@@ -4010,13 +4224,72 @@ def _handle_capture_the_flag_outcome_and_rewards(
 def _handle_king_of_the_hill_outcome_and_rewards(
     next_state: EnvState, config: EnvConfig
 ) -> tuple[Reward, DoneFlags, Array]:
-    """Return King of the Hills' rewards, done flags and outcomes for one transition.
+    """Resolve King of the Hills completion from successor scores and step count.
 
-    next_state and config are passed to the shared neutral-output helper.
-    Return its zero Reward, horizon-only DoneFlags and zero outcomes (4,):
-    hill points and the King of the Hills outcome are not scored yet.
+    next_state and config describe one game after this tick's hill rules.
+    Return Reward with float32 (10,) values, DoneFlags with bool scalars, then
+    int32 outcomes (4,) with only the King of the Hills entry set. Team
+    Deathmatch's rules apply to king_of_the_hills_scores. The game terminates
+    on the tick either team reaches king_of_the_hills_score_threshold, and a
+    team at or above it with the higher score wins. A tick can add several
+    points to each team, so both can reach it on one tick: then the higher
+    score wins and equal scores draw. The horizon truncates on the tick where
+    next_state.step_count reaches max_steps, and a truncated game without a
+    winner draws, whatever the scores. Configured winner/loser slots receive
+    +1/-1 even when dead; ongoing, draw and unused slots get zero. The caller
+    must stop at done; this helper does not suppress repeated calls on an
+    already-complete state or latch a one-time reward.
     """
-    return _canonical_no_outcome_and_rewards(next_state, config)
+    # Each team's score after this tick's points, [Team A, Team B].
+    king_of_the_hills_scores_by_team = next_state.king_of_the_hills_scores
+
+    # Unlike Capture the Flag's, scores can pass the threshold, so >= not ==.
+    victory_by_team = (
+        king_of_the_hills_scores_by_team >= config.king_of_the_hills_score_threshold
+    )
+    terminated = victory_by_team.any()
+
+    # The time limit: true on the last tick, when the count of ticks played
+    # reaches max_steps.
+    truncated = next_state.step_count >= config.max_steps
+    done_flags = DoneFlags(terminated, truncated)
+
+    team_a_win_difference = (
+        king_of_the_hills_scores_by_team[TEAM_A_ID - 1]
+        - king_of_the_hills_scores_by_team[TEAM_B_ID - 1]
+    )
+
+    # Both teams can reach the threshold on one tick, so the higher score wins.
+    # Exactly one of the four below is true.
+    team_a_wins = victory_by_team[TEAM_A_ID - 1] & (team_a_win_difference > 0)
+    team_b_wins = victory_by_team[TEAM_B_ID - 1] & (team_a_win_difference < 0)
+    task_is_ongoing = ~(terminated | truncated)
+    # A draw is a game that ended, either way, with no winner: equal scores at
+    # the threshold, or the time limit without a winner.
+    draw = ~task_is_ongoing & ~(team_a_wins | team_b_wins)
+
+    # In outcome-code order: ongoing 0, Team A win 1, Team B win 2, draw 3.
+    branches = [
+        _handle_task_rewards_ongoing,
+        _handle_task_rewards_team_a_win,
+        _handle_task_rewards_team_b_win,
+        _handle_task_rewards_draw,
+    ]
+
+    # argmax gives the index of the one true entry, which is its outcome code.
+    king_of_the_hill_outcomes = jnp.array(
+        (task_is_ongoing, team_a_wins, team_b_wins, draw)
+    )
+    outcome_index = jnp.argmax(king_of_the_hill_outcomes)
+
+    rewards = cast(Reward, jax.lax.switch(outcome_index, branches, config))
+
+    # One entry per mode; only King of the Hills' is set.
+    outcomes_by_task = (
+        jnp.zeros(NUM_TASKS + 1, dtype=jnp.int32).at[TASK_MODE_KOTH].set(outcome_index)
+    )
+
+    return (rewards, done_flags, outcomes_by_task)
 
 
 def _handle_task_rewards_ongoing(config: EnvConfig) -> Reward:
@@ -4158,6 +4431,29 @@ def _not_capture_the_flag(
         next_capture_the_flag_dropped_flag_countdowns_by_flag=current_state.capture_the_flag_dropped_flag_countdowns,
         next_capture_the_flag_scores_by_team=current_state.capture_the_flag_scores,
         capture_the_flag_facts=build_reset_capture_the_flag_facts(),
+    )
+
+
+def _not_king_of_the_hills(
+    current_state: EnvState,
+    config: EnvConfig,
+    next_agent_positions: Array,
+) -> KingOfTheHillsHillUpdate:
+    """Keep the hills as they are, for every mode but King of the Hills.
+
+    Returns current_state's three hill fields and King of the Hills scores
+    unchanged, with neutral hill facts (build_reset_king_of_the_hills_facts).
+    The three operands match update_king_of_the_hills_hills, the other branch
+    of step's mode branch; only current_state is read.
+    """
+    del config, next_agent_positions
+
+    return KingOfTheHillsHillUpdate(
+        next_king_of_the_hills_hill_owners_by_hill=current_state.king_of_the_hills_hill_owners,
+        next_king_of_the_hills_empty_hill_ownership_countdowns_by_hill=current_state.king_of_the_hills_empty_hill_ownership_countdowns,
+        next_king_of_the_hills_hill_is_contested_by_hill=current_state.king_of_the_hills_hill_is_contested,
+        next_king_of_the_hills_scores_by_team=current_state.king_of_the_hills_scores,
+        king_of_the_hills_facts=build_reset_king_of_the_hills_facts(),
     )
 
 
@@ -4420,7 +4716,12 @@ def step(
     (objectives.update_capture_the_flag_flags) run after this tick's
     deaths and before the respawn wave, from end-of-movement positions, and
     update the flags, the Capture the Flag scores and the flag facts; every
-    other mode passes all three through unchanged.
+    other mode passes all three through unchanged. In King of the Hills, the
+    hill rules (objectives.update_king_of_the_hills_hills) run at the same
+    point and update the hills, the King of the Hills scores and the hill
+    facts; every other mode passes them through unchanged. King of the Hills
+    applies Team Deathmatch's outcome rules to its own scores: the higher score
+    at or above the threshold wins, and both teams can reach it on one tick.
     Team Deathmatch can terminate and truncate together. Threshold ties draw;
     horizon expiry without a threshold winner also draws. Each new configured
     death gives the other team 1 point, or 2 when the victim's center at the
@@ -4617,6 +4918,20 @@ def step(
         ),
     )
 
+    # King of the Hills' hill rules run at the same point. Every other mode keeps
+    # its hills unchanged.
+    king_of_the_hills_hill_update = cast(
+        KingOfTheHillsHillUpdate,
+        jax.lax.cond(
+            config.task_mode == TASK_MODE_KOTH,
+            update_king_of_the_hills_hills,
+            _not_king_of_the_hills,
+            current_state,
+            config,
+            next_agent_positions,
+        ),
+    )
+
     # Every team clock advances independently, including an empty due wave.
     next_team_respawn_wave_countdowns = jnp.where(
         current_state.team_respawn_wave_countdowns == 0,
@@ -4668,16 +4983,16 @@ def step(
 
     next_state = EnvState(
         team_deathmatch_scores=next_team_deathmatch_scores,
-        # Capture the Flag scores come from the flag update. Every King of the
-        # Hills field stays unchanged until its rules exist.
+        # Capture the Flag's fields come from the flag update, and King of the
+        # Hills' fields from the hill update.
         capture_the_flag_scores=capture_the_flag_flag_update.next_capture_the_flag_scores_by_team,
-        king_of_the_hills_scores=current_state.king_of_the_hills_scores,
+        king_of_the_hills_scores=king_of_the_hills_hill_update.next_king_of_the_hills_scores_by_team,
         capture_the_flag_flag_positions=capture_the_flag_flag_update.next_capture_the_flag_flag_positions_by_flag,
         capture_the_flag_flag_carrier_slots=capture_the_flag_flag_update.next_capture_the_flag_flag_carrier_slots_by_flag,
         capture_the_flag_dropped_flag_countdowns=capture_the_flag_flag_update.next_capture_the_flag_dropped_flag_countdowns_by_flag,
-        king_of_the_hills_hill_is_contested=current_state.king_of_the_hills_hill_is_contested,
-        king_of_the_hills_hill_owners=current_state.king_of_the_hills_hill_owners,
-        king_of_the_hills_empty_hill_ownership_countdowns=current_state.king_of_the_hills_empty_hill_ownership_countdowns,
+        king_of_the_hills_hill_is_contested=king_of_the_hills_hill_update.next_king_of_the_hills_hill_is_contested_by_hill,
+        king_of_the_hills_hill_owners=king_of_the_hills_hill_update.next_king_of_the_hills_hill_owners_by_hill,
+        king_of_the_hills_empty_hill_ownership_countdowns=king_of_the_hills_hill_update.next_king_of_the_hills_empty_hill_ownership_countdowns_by_hill,
         step_count=current_state.step_count + 1,
         agent_positions=next_agent_positions,
         alive_mask=next_alive_mask,
@@ -4737,8 +5052,9 @@ def step(
         capture_the_flag_facts=capture_the_flag_flag_update.capture_the_flag_facts._replace(
             outcome=task_outcomes[TASK_MODE_CTF]
         ),
-        # Neutral until King of the Hills has its rules.
-        king_of_the_hills_facts=build_reset_king_of_the_hills_facts(),
+        king_of_the_hills_facts=king_of_the_hills_hill_update.king_of_the_hills_facts._replace(
+            outcome=task_outcomes[TASK_MODE_KOTH]
+        ),
     )
 
     info = Info(
