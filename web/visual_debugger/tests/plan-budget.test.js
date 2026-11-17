@@ -516,7 +516,10 @@ test("each changed Capture the Flag flag adds room for its holds", () => {
   // A tick already over the cap still gives its flags their own room on top.
   const bodies = /** @type {any[]} */ (Array.from({ length: 16 }, () => ({})));
   const cap = PLAN_RESOURCE_CAPS.overrideAnimations;
-  assert.equal(applyPlanBudget([], [], bodies, schedule).bounds.overrideAnimations, cap);
+  assert.equal(
+    applyPlanBudget([], [], bodies, schedule).bounds.overrideAnimations,
+    cap,
+  );
   assert.equal(
     applyPlanBudget([], [], bodies, schedule, 2).bounds.overrideAnimations,
     cap + 22,

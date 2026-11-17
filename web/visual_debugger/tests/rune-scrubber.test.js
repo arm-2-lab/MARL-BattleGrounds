@@ -315,7 +315,12 @@ test("a Capture the Flag capture is a pennant in its team's row, named first on 
   assert.ok(unseen);
   assert.deepEqual(tickMarkRows(unseen), [{ label: "Captured", value: "Team B" }]);
   assert.equal(tickMarkTitle(unseen, 19), "Tick 19 · Team B Captured");
-  const later = scrubberTrackRecords({ marks, frameIndex: 20, finalFrameIndex: 20, width: 600 });
+  const later = scrubberTrackRecords({
+    marks,
+    frameIndex: 20,
+    finalFrameIndex: 20,
+    width: 600,
+  });
   assert.match(later.staticMarks.captureB, /^M/u);
   raw.ticks.at(-1).captures = [{ team_id: 2, capturer: agent("agent-3", 1, 4) }];
   assert.throws(() => normalizeTimelineMarks(raw), /capturing team/u);
