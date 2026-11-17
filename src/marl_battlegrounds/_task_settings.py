@@ -27,12 +27,14 @@ DEFAULT_TDM_RED_ZONE_DEPTH = 5.0
 
 # The Capture the Flag defaults: captures needed to win; the largest distance,
 # in map units, from an agent's center to a flag for a pickup or a return, and
-# from a carrier's center to its own flag's home for a capture; and the ticks a
+# from a carrier's center to its own flag's home for a capture (one reach, 0.75,
+# for every flag touch by default, so a player learns one number; the two stay
+# separate settings, so a curriculum can ease captures alone); and the ticks a
 # dropped flag waits before going home. Each flag home is its team's spawn
 # center, the same on every map, Team A's first, in the map's own frame.
 DEFAULT_CTF_SCORE_THRESHOLD = 3
 DEFAULT_CTF_FLAG_INTERACTION_DISTANCE = 0.75
-DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 1.25
+DEFAULT_CTF_FLAG_CAPTURE_DISTANCE = 0.75
 DEFAULT_CTF_DROPPED_FLAG_AUTO_RETURN_STEPS = 30
 DEFAULT_CTF_FLAG_HOME_POSITIONS = ((0.5, 5.0), (19.5, 5.0))
 

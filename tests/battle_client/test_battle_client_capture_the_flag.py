@@ -207,18 +207,22 @@ def test_a_bot_game_plays_to_the_time_limit_and_saves_replay_v5(
 
 def test_a_live_return_and_winning_capture_end_the_game(tmp_path: Path) -> None:
     def flags_in_play(state: EnvState) -> EnvState:
-        # Our Mage (slot 0) carries their flag 1.0 from our home, inside the
-        # 1.25 capture reach; our flag lies dropped under our slot 1.
+        # Our Mage (slot 0) carries their flag 0.6 from our home, inside the
+        # 0.75 capture reach; our flag lies dropped under our slot 1; our slot 2,
+        # which starts on the middle pad at our home, stands aside.
         point = jnp.asarray((5.0, 5.0), jnp.float32)
+        carrier = jnp.asarray((1.1, 5.0), jnp.float32)
         return state._replace(
             agent_positions=state.agent_positions.at[0]
-            .set(jnp.asarray((1.5, 5.0), jnp.float32))
+            .set(carrier)
             .at[1]
-            .set(point),
+            .set(point)
+            .at[2]
+            .set(jnp.asarray((3.0, 8.0), jnp.float32)),
             capture_the_flag_flag_positions=state.capture_the_flag_flag_positions.at[0]
             .set(point)
             .at[1]
-            .set(jnp.asarray((1.5, 5.0), jnp.float32)),
+            .set(carrier),
             capture_the_flag_flag_carrier_slots=(
                 state.capture_the_flag_flag_carrier_slots.at[1].set(0)
             ),

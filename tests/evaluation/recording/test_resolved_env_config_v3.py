@@ -67,7 +67,7 @@ def test_a_record_holds_the_shared_settings_and_only_its_own() -> None:
         "capture_the_flag_score_threshold": 3,
         "capture_the_flag_flag_home_positions": ((0.5, 5.0), (19.5, 5.0)),
         "capture_the_flag_flag_interaction_distance": 0.75,
-        "capture_the_flag_flag_capture_distance": 1.25,
+        "capture_the_flag_flag_capture_distance": 0.75,
         "capture_the_flag_dropped_flag_auto_return_steps": 30,
     }
     tdm = build_resolved_env_config_v2(_TDM).model_dump()

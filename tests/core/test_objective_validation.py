@@ -129,7 +129,7 @@ def test_a_capture_the_flag_config_is_accepted() -> None:
         (
             {
                 "capture_the_flag_flag_home_positions": jnp.asarray(
-                    ((0.5, 5.0), (2.5, 5.0)), jnp.float32
+                    ((0.5, 5.0), (1.5, 5.0)), jnp.float32
                 )
             },
             "farther apart than",

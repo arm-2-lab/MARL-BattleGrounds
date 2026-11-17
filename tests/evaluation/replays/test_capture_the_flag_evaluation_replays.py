@@ -98,11 +98,12 @@ _GAMES = {
         _start({0: (19.0, 5.0)}, flags={0: (10.0, 9.0)}, countdowns={0: 1}),
         [("FlagPickedUpEventV1", "home"), ("FlagAutomaticallyReturnedEventV1", None)],
     ),
-    # Our Warrior stands on our dropped flag; our Mage carries theirs home.
+    # Our Warrior stands on our dropped flag; our Mage carries theirs home,
+    # 0.6 from it, inside the 0.75 capture reach.
     2: (
         _start(
-            {0: (1.5, 5.0), 1: (5.0, 5.0)},
-            flags={0: (5.0, 5.0), 1: (1.5, 5.0)},
+            {0: (1.1, 5.0), 1: (5.0, 5.0)},
+            flags={0: (5.0, 5.0), 1: (1.1, 5.0)},
             carriers={1: 0},
             countdowns={0: 10},
         ),

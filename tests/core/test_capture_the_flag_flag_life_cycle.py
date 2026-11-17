@@ -425,17 +425,17 @@ def test_a_same_tick_respawn_wave_leaves_the_flag_at_the_body() -> None:
 @_SIDES
 def test_a_carrier_killed_this_tick_still_captures_with_its_last_move(us: int) -> None:
     carrier, mage = _slot(us, 1), _slot(1 - us, 0)
-    # The carrier starts 2.0 from home, outside the 1.25 capture distance, and
-    # its one-unit move ends 1.0 from home.
+    # The carrier starts 1.5 from home, outside the 0.75 capture distance, and
+    # its one-unit move ends 0.5 from home.
     start = _start(
-        {carrier: _point(us, 2.5, 5.0), mage: _point(us, 3.75, 5.0)},
-        _carried_by(carrier, _point(us, 2.5, 5.0), flag=1 - us),
+        {carrier: _point(us, 2.0, 5.0), mage: _point(us, 3.25, 5.0)},
+        _carried_by(carrier, _point(us, 2.0, 5.0), flag=1 - us),
     )
     homeward = MOVE_WEST if us == 0 else MOVE_EAST
     ((state, info),) = _play(
         start, [_act(attacks={mage: carrier}, moves={carrier: homeward})]
     )
-    assert state.agent_positions[carrier].tolist() == _at(us, 1.5, 5.0)
+    assert state.agent_positions[carrier].tolist() == _at(us, 1.0, 5.0)
     assert _slots(info.transition_facts.death_facts.is_newly_dead_by_recipient) == [
         carrier
     ]
@@ -527,10 +527,10 @@ def test_a_flag_its_timer_sends_home_counts_from_the_next_tick(us: int) -> None:
 def test_an_enemy_flag_dropped_at_your_doorstep_is_taken_and_captured_on_one_tick(
     us: int,
 ) -> None:
-    # The Mage is 0.6 from the flag (reach 0.75) and about 1.17 from home (1.25).
+    # The Mage is about 0.51 from the flag and 0.64 from home (both reaches 0.75).
     mage = _slot(us, 0)
     start = _start(
-        {mage: _point(us, 1.5, 5.6)}, _dropped_at(_point(us, 1.5, 5.0), flag=1 - us)
+        {mage: _point(us, 0.9, 5.5)}, _dropped_at(_point(us, 1.0, 5.0), flag=1 - us)
     )
     ((state, info),) = _play(start, [_act()])
     assert _events(info) == _none(**{"picked up": [mage], "captured": [mage]})

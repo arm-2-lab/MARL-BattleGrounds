@@ -1092,7 +1092,7 @@ def make_standard_capture_the_flag_config(
     flag_interaction_distance : float, default=0.75
         Largest distance, in map units, from an agent's center to a flag for a
         pickup or a return (DEFAULT_CTF_FLAG_INTERACTION_DISTANCE).
-    flag_capture_distance : float, default=1.25
+    flag_capture_distance : float, default=0.75
         Largest distance, in map units, from a carrier's center to its own
         flag's home for a capture (DEFAULT_CTF_FLAG_CAPTURE_DISTANCE).
     dropped_flag_auto_return_steps : int, default=30
