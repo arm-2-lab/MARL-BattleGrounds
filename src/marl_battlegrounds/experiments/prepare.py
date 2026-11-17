@@ -262,10 +262,10 @@ def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) 
     refused before any write. Load only the validator to obtain its panel identity;
     run no games or learning. Use JAX_PLATFORMS=cpu for this preparation command.
     Missing/corrupt inputs raise before publication. These fixed small settings
-    test software and are never presented as paper hyperparameters. MAPPO, IPPO
-    and their feedforward forms use combat_support_reward; HAPPO, whose theory
-    assumes one team reward, and QMIX and PQN-VDN, which train on one, use its
-    team form combat_support_team_reward. The bundle check
+    test software and are never presented as paper hyperparameters. MAPPO, IPPO,
+    their feedforward forms and TarMAC use combat_support_reward; HAPPO, whose
+    theory assumes one team reward, and QMIX and PQN-VDN, which train on one,
+    use its team form combat_support_team_reward. The bundle check
     and publication are shared with prepare_declared_study.
     """
     from marl_battlegrounds.experiments.hydra import (
@@ -310,7 +310,16 @@ def prepare_software_check(opponent_bundle: str | Path, output_dir: str | Path) 
         else value
         for name, value in references.items()
     }
-    order = ("mappo", "ff_mappo", "ippo", "ff_ippo", "happo", "qmix", "pqn_vdn")
+    order = (
+        "mappo",
+        "ff_mappo",
+        "ippo",
+        "ff_ippo",
+        "happo",
+        "tarmac",
+        "qmix",
+        "pqn_vdn",
+    )
     if set(order) != set(TRAINING_METHODS):
         raise ValueError("Software-check method census differs from training methods")
     cases: list[dict[str, Any]] = []

@@ -57,6 +57,7 @@ from marl_battlegrounds.baselines.config import (
     PQNConfig,
     QMIXConfig,
     _pqn_normalization,  # pyright: ignore[reportPrivateUsage]
+    tarmac_messages,
     with_later_settings,
 )
 from marl_battlegrounds.baselines.inputs import (
@@ -115,6 +116,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
     _actor_input_scale as _actor_input_scale,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_messages as _actor_messages,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
     _actor_normalization as _actor_normalization,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
@@ -134,6 +138,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
     _config_input_scale as _config_input_scale,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _config_messages as _config_messages,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
     _config_method as _config_method,
@@ -206,7 +213,7 @@ class RestoredCheckpoint:
     """Hold a fully checked learner before any recording or log rewind.
 
     state is the complete restored numerical learner: a PPO LearnerState for
-    the five PPO methods, a QMIXLearnerState for ``method="qmix"`` or a
+    the six PPO methods, a QMIXLearnerState for ``method="qmix"`` or a
     PQNLearnerState for ``method="pqn_vdn"``, as the saved model schema says.
     It is typed ``Any`` so existing PPO code keeps reading its fields without
     casts; check the method (or use isinstance) when a caller handles more
@@ -1103,11 +1110,12 @@ def save_checkpoint(
         pass_id, policies, checkpoint_id and details from original registration.
     ppo : PPOConfig, default DEFAULT_PPO_CONFIG
         Existing numerical learner settings used by boundary validation. Its
-        input scale, spawn frame and value-normalization setting must equal the
-        saved config's, and the state must carry matching statistics, else the
-        save is refused before any file changes. The default's frame is "left".
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
-default="mappo"
+        input scale, spawn frame, value-normalization setting and TarMAC's
+        messages must equal the saved config's, and the state must carry
+        matching statistics, else the save is refused before any file changes.
+        The default's frame is "left".
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
+"pqn_vdn"}, default="mappo"
         Static learner method, matching metadata.config.method and the complete
         numerical state. Missing historical config method means MAPPO. Conflicts
         fail before obtaining a writer token or writing any payload.
@@ -1192,6 +1200,8 @@ default="mappo"
             raise ValueError(
                 "Checkpoint config value_normalization differs from PPO settings"
             )
+        if _config_messages(context["config"]) != ppo.messages:
+            raise ValueError("Checkpoint config messages differs from PPO settings")
         validate_learner(
             collection,
             cast("LearnerState", state),
@@ -1382,12 +1392,12 @@ def restore_checkpoint(
         keys are equality assertions; attempt/parent IDs usually are omitted.
     ppo : PPOConfig, default DEFAULT_PPO_CONFIG
         Matched numerical update settings for restored-boundary validation. Its
-        input scale, spawn frame and value-normalization setting must equal the
-        checkpoint's, else restore
+        input scale, spawn frame, value-normalization setting and TarMAC's
+        messages must equal the checkpoint's, else restore
         is refused before arrays are read. The default's frame is "left", so a
         checkpoint trained in "world" needs the matching config passed here.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
-default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
+"pqn_vdn"}, default="mappo"
         Static requested method. It must agree with saved/expected config and
         the model schema before any numerical arrays are restored. Missing
         historical config method means MAPPO, never a guess from array shapes.
@@ -1535,6 +1545,8 @@ default="mappo"
             != ppo.value_normalization
         ):
             raise ValueError("Checkpoint value_normalization differs from PPO settings")
+        if _actor_messages(details) != ppo.messages:
+            raise ValueError("Checkpoint messages differs from PPO settings")
     collection = _check_collection_compatibility(details, collection)
     recorded = details["metadata"].get("recording")
     if collection.recording != (recorded is not None):
@@ -1785,8 +1797,8 @@ def _actor_template(
     Parameters
     ----------
     method : str, default="mappo"
-        Training method: "mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix" or
-        "pqn_vdn".
+        Training method: "mappo", "ippo", "ff_mappo", "ff_ippo", "happo",
+        "tarmac", "qmix" or "pqn_vdn". TarMAC's tree is TarMACActor's.
     actor_input_schema : int, default=ACTOR_INPUT_SCHEMA_VERSION
         2 for 5,165-feature actors, which every mode records (the default), or
         1 for actors saved before Red Zone (5,164 features).
@@ -1840,6 +1852,8 @@ def _actor_template(
             pqn_actor_template(parameter_sharing=sharing, normalization=normalization)
         )
     else:
+        # TarMAC's message choice changes no parameter shape, so the default
+        # PPOConfig builds its template.
         template = jax.eval_shape(
             partial(
                 initialize_ppo,
@@ -1930,6 +1944,7 @@ def export_system(
     parameter_sharing: str = "all",
     normalization: str = "batch_norm",
     task: TaskName = "tdm",
+    messages: str = "attention",
 ) -> Path:
     """Publish a standalone immutable actor artifact (sampled PPO, greedy Q-values).
 
@@ -1963,8 +1978,8 @@ def export_system(
         the description and the inference identity; "world" writes no key, so
         world exports keep their historical description bytes. PQN-VDN
         exports always write the frame.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
-default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
+"pqn_vdn"}, default="mappo"
         Method that trained these weights. Its model schema is the export's
         sole method authority. Equal actor shapes/bytes do not make different
         methods interchangeable; an existing different-method path is rejected.
@@ -1982,6 +1997,11 @@ default="mappo"
         The training run's mode name, as TrainConfig.task holds it. The
         description records that task's schemas (checkpoint_schemas), so a
         Team Deathmatch export keeps its bytes. The caller validates the name.
+    messages : {"attention", "mean", "blocked"}, default="attention"
+        TarMAC's message choice used in training (PPOConfig.messages). Only
+        "mean" and "blocked" write a "messages" key, so the choice is part of
+        the description and the inference identity. Other methods accept only
+        "attention".
 
     Returns
     -------
@@ -2018,6 +2038,9 @@ default="mappo"
     normalization = _pqn_normalization(normalization)
     if normalization != "batch_norm" and method != "pqn_vdn":
         raise ValueError("Only PQN-VDN models have a normalization choice")
+    messages = tarmac_messages(messages)
+    if messages != "attention" and method != "tarmac":
+        raise ValueError("Only TarMAC models have a messages choice")
     if method == "pqn_vdn":
         if not isinstance(cast(object, actor_variables), PQNInferenceVariables):
             raise TypeError("A PQN-VDN export takes PQNInferenceVariables")
@@ -2059,6 +2082,7 @@ default="mappo"
             and _actor_spawn_frame(saved) == spawn_frame
             and _actor_parameter_sharing(saved) == sharing
             and _actor_normalization(saved) == normalization
+            and _actor_messages(saved) == messages
             and saved["metadata"] == context
         ):
             return target
@@ -2081,6 +2105,8 @@ default="mappo"
             details["parameter_sharing"] = sharing
         if normalization != "batch_norm":
             details["normalization"] = normalization
+        if messages != "attention":
+            details["messages"] = messages
         if method in ("qmix", "pqn_vdn"):
             details["epsilon"] = 0.0
             details["tie_rule"] = QMIX_TIE_RULE
@@ -2137,7 +2163,8 @@ def export_actor(
     No arrays, optimizer, replay buffer or learner are restored. Full learner
     verification still reads its payload from disk. Only actor bytes are copied,
     including PQN running statistics. Q exports play greedily. Schema, sharing,
-    scale, frame and known exposure provenance remain unchanged. Published
+    scale, frame, TarMAC's messages and known exposure provenance remain
+    unchanged. Published
     artifacts survive later sync failures; unpublished writes clean themselves.
     The caller must serialize writers to the same destination.
     """
@@ -2199,6 +2226,8 @@ def export_actor(
             actor["parameter_sharing"] = sharing
         if _actor_normalization(details) != "batch_norm":
             actor["normalization"] = _actor_normalization(details)
+        if _actor_messages(details) != "attention":
+            actor["messages"] = _actor_messages(details)
         if method in ("qmix", "pqn_vdn"):
             actor.update(epsilon=0.0, tie_rule=QMIX_TIE_RULE)
         if frame != "world" or method == "pqn_vdn":
@@ -2337,8 +2366,11 @@ def load_system(checkpoint: str | Path) -> System:
     restored the same way and is never inferred from a model's results; a
     missing frame means "world". A PQN-VDN model is rebuilt with its saved
     hidden normalization (an export's "normalization" key or its learner
-    config's ``pqn.normalization``); a missing value means "batch_norm".
-    Neither route rewrites weights. The saved actor input schema picks the
+    config's ``pqn.normalization``); a missing value means "batch_norm". A
+    TarMAC model is rebuilt with its saved message choice (an export's
+    "messages" key or its learner config's ``ppo.messages``); a missing value
+    means "attention". Neither route rewrites weights. The saved actor input
+    schema picks the
     template and the System route: an artifact
     saved before Red Zone (schema 1, 5,164 features) is restored with the
     schema-1 template and built with actor_input_schema=1, so it plays
@@ -2443,6 +2475,7 @@ def _actor_system(details: dict[str, Any], actor: Tree) -> System:
         spawn_frame=_actor_spawn_frame(details),
         actor_input_schema=schema,
         parameter_sharing=sharing,
+        messages=_actor_messages(details),
     )
 
 
@@ -2475,6 +2508,7 @@ def load_initial_actor(
     spawn_frame: str,
     parameter_sharing: str = "all",
     normalization: str = "batch_norm",
+    messages: str = "attention",
 ) -> tuple[System, dict[str, Any]]:
     """Load compatible built-in weights before a new training run opens files.
 
@@ -2482,8 +2516,9 @@ def load_initial_actor(
     file, a released model name (such as
     ``"MARL-BattleGrounds/tdm-season-0-qmix@final"``), its exact ``hf://``
     address or a local released-layout folder. Only its actor is imported. The
-    method, current actor schema, input scale, spawn frame, parameter sharing
-    and (for PQN-VDN) hidden normalization must match. For a folder,
+    method, current actor schema, input scale, spawn frame, parameter sharing,
+    (for PQN-VDN) hidden normalization and (for TarMAC) the message choice
+    (``messages``, default "attention") must match. For a folder,
     load_system checks layout, dtypes, payload hashes and values. For a model
     file, portable_models.portable_actor_variables rebuilds the actor variables
     from the file's weights and checks them against the embedded original
@@ -2529,6 +2564,8 @@ def load_initial_actor(
         raise ValueError("Initial actor parameter_sharing differs from the new learner")
     if _actor_normalization(details) != _pqn_normalization(normalization):
         raise ValueError("Initial actor normalization differs from the new learner")
+    if _actor_messages(details) != tarmac_messages(messages):
+        raise ValueError("Initial actor messages differ from the new learner")
     if model_file is not None:
         if _layout(actor) != details["actor_layout"]:
             raise ValueError("Initial actor weights differ from their saved layout")
@@ -2546,8 +2583,8 @@ def checkpoint_dependencies(method: str = "mappo") -> dict[str, str]:
 
     Parameters
     ----------
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
-default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
+"pqn_vdn"}, default="mappo"
         Training method. QMIX also records Flashbax; PPO and PQN-VDN record
         exactly the historical set, so PPO identities keep their bytes.
 

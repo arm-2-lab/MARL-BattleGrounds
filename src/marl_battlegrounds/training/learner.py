@@ -296,7 +296,9 @@ def _rollout_shapes(
     """Check static PPO rollout leaves before tracing critic or update work.
 
     Require positive output capacity, the method's critic features and the existing
-    PPOLearningOutputs record. A centralized critic's rows and final state carry
+    PPOLearningOutputs record, with TarMAC's (T,B,5,5) Boolean sender masks
+    for "tarmac" and none for other methods. A centralized critic's rows and
+    final state carry
     one training-state schema's width (920 or 973), the same in both; the run's
     own schema is checked where the learner is set up and validated.
     Real-prefix length remains a numerical guard.
@@ -355,6 +357,13 @@ def _rollout_shapes(
     _array(
         rows.learning_outputs.log_prob, (length, games, 5), jnp.float32, "old_log_prob"
     )
+    senders = rows.learning_outputs.sender_mask
+    if (senders is None) == (method == "tarmac"):
+        raise ValueError(
+            "TarMAC collection must return sender masks; other methods return none"
+        )
+    if senders is not None:
+        _array(senders, (length, games, 5, 5), jnp.bool_, "sender_mask")
     _array(rows.learner_update, (length, games), jnp.int32, "learner_update")
     for head in rows.actions:
         _array(head, (length, games, 10), jnp.int32, "native action")
@@ -479,7 +488,8 @@ def init_learner(
         default's frame is "left".
         Counters and per-minibatch sample counts must fit int32 for the
         complete scheduled run.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Static actor/critic choice. IPPO uses only local critic inputs and omits
         physical-state collection. Feedforward methods keep empty actor/critic
         memory and require T*B, rather than B, divisible by groups*minibatches.
@@ -598,6 +608,7 @@ def init_learner(
         input_scale=ppo.input_scale,
         spawn_frame=ppo.spawn_frame,
         parameter_sharing=ppo.parameter_sharing,
+        messages=ppo.messages,
     )
     collection, carry = init_training_collection(
         actor,
@@ -756,7 +767,8 @@ def build_ppo_batch(
     ppo : PPOConfig, default=DEFAULT_PPO_CONFIG
         Original learner settings. The critic uses its fixed input scale for
         both sequence values and the final bootstrap value.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Static initialized method. IPPO reconstructs only permitted local inputs,
         using the actor's saved frame and the critic's independent memory.
 
@@ -927,6 +939,7 @@ def build_ppo_batch(
         critic_memory,
         old_normalized_values,
         rows.learner_active,
+        rows.learning_outputs.sender_mask,
     )
     return _owned_ppo_batch(batch), memory
 
@@ -1183,7 +1196,8 @@ def update_learner(
     ppo : PPOConfig, default=DEFAULT_PPO_CONFIG
         Same static settings used at initialization. Capture these in the jit
         wrapper; changing ordinary state/data values does not make them static.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Same static method used at initialization. Keep it in the compiled
         wrapper; it is not stored as a dynamic learner-state leaf.
 
@@ -1340,7 +1354,8 @@ def validate_learner(
         Fully restored numerical boundary, including initialization at update 0.
     ppo : PPOConfig, default=DEFAULT_PPO_CONFIG
         Original static learner settings; optimizer/network shapes must agree.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Original static method; memory, critic payload and model shapes must
         match. Never infer it from actor shapes, which MAPPO and IPPO share. A
         centralized critic's input width follows collection.training_state_schema.

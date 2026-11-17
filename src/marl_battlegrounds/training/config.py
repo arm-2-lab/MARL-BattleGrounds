@@ -33,6 +33,7 @@ from marl_battlegrounds.baselines.config import (
     PPOConfig,
     PQNConfig,
     QMIXConfig,
+    check_ppo_method_settings,
     pqn_planned_learning_blocks,
     saved_settings,
     validate_ppo_batch_size,
@@ -135,8 +136,8 @@ class TrainConfig:
     ----------
     seed : int, default=42
         Root seed for model and independent collection/shuffle/sampling streams.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", \
-"pqn_vdn"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", \
+"qmix", "pqn_vdn"}, default="mappo"
         Learner saved with the run. MAPPO uses physical critic inputs; IPPO
         uses each actor's permitted inputs. The ff_ methods use two 128-wide
         layers without recurrent memory. "happo" (HAPPO, Kuba et al., ICLR
@@ -151,7 +152,16 @@ class TrainConfig:
         reward and this recipe do:
         ``marl_battlegrounds.training.reward_recipes:combat_support_team_reward``.
         A per-agent reward still runs but breaks that assumption, and nothing
-        checks it. "qmix" is recurrent QMIX
+        checks it. "tarmac" (TarMAC, Das et al., ICML 2019, one round) is
+        recurrent MAPPO's learner, critic and recipe with learned messages
+        between teammates: each actor reads, by attention, what its teammates
+        sent at the end of the last tick (rule 6, "Each Agent Decides Alone").
+        It needs parameter_sharing "all". ppo.messages picks "attention" (the
+        paper), "mean" or "blocked" (its controls); every other method refuses
+        a value other than "attention". TarMAC actors exchange messages, so
+        they cannot be saved as a portable model file yet; share or load the
+        actor folder (load_system, opponent pools, tournaments). "qmix" is
+        recurrent QMIX
         with compact replay, configured by qmix instead of ppo. "pqn_vdn" is
         recurrent PQN-VDN (no replay or target network), configured by pqn.
     task : str, default="tdm"
@@ -510,6 +520,8 @@ class TrainConfig:
                 if method == "qmix"
                 else "A PPO run takes no PQN settings"
             )
+        if is_ppo_method(method):
+            check_ppo_method_settings(method, self.ppo)
         if method == "happo" and self.ppo.parameter_sharing == "all":
             if self.ppo != PPOConfig():
                 raise ValueError(
@@ -894,9 +906,9 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
         qmix and pqn, so historical PPO bytes are unchanged; a QMIX config
         keeps only its resolved qmix settings and a PQN-VDN config only its
         resolved pqn settings, in the form ``baselines.config.saved_settings``
-        gives (QMIX/PQN reward_scale 1.0 and PQN normalization "batch_norm"
-        are left out, so runs that do not use them keep their historical
-        bytes). red_zone_depth is always written as a JSON
+        gives (PPO messages "attention", QMIX/PQN reward_scale 1.0 and PQN
+        normalization "batch_norm" are left out, so runs that do not use them
+        keep their historical bytes). red_zone_depth is always written as a JSON
         number such as 5.0 (map units; 0.0 means the Red Zone rule is off), so
         every new saved config states its scoring rule. The schema version
         stays 1 (a config saved before the rule lacks the key).

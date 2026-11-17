@@ -12,7 +12,13 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from typing import Any, cast
 
-_PPO_METHODS = frozenset(("mappo", "ippo", "ff_mappo", "ff_ippo", "happo"))
+from marl_battlegrounds.baselines.methods import (
+    PPO_METHODS,
+    TRAINING_METHODS,
+    method_settings_field,
+)
+
+_PPO_METHODS = frozenset(PPO_METHODS)
 _MAX_COUNT = 2**31 - 1
 _PQN_FLOOR = 1e-10
 CONTINUATION_CHANGE_KEYS = frozenset(
@@ -190,7 +196,7 @@ def learner_continuation(
     if type(data["allow_terminal_rate"]) is not bool:
         raise ValueError("Terminal-rate permission must be bool")
     method = data["method"]
-    if not isinstance(method, str) or method not in _PPO_METHODS | {"qmix", "pqn_vdn"}:
+    if not isinstance(method, str) or method not in TRAINING_METHODS:
         raise ValueError("Unknown continuation method")
     for name in ("start_rounds", "start_blocks", "start_learning_blocks"):
         data[name] = _integer(data[name], name)
@@ -304,9 +310,7 @@ def learner_continuation(
         )
     if method in _PPO_METHODS and data["frozen_epsilon"]:
         raise ValueError("PPO has no frozen exploration rates")
-    family = (
-        "ppo" if method in _PPO_METHODS else "pqn" if method == "pqn_vdn" else "qmix"
-    )
+    family = method_settings_field(method)
     settings = data["loss_settings"]
     if not isinstance(settings, (list, tuple)):
         raise ValueError("Saved loss settings must be name/value pairs")
@@ -511,7 +515,7 @@ def resolve_learner_continuation(
     last_refresh_rounds must then be its verified history publication boundary.
     The returned JSON-ready record belongs in schedule.continuation['learner'].
     """
-    if method not in _PPO_METHODS | {"qmix", "pqn_vdn"}:
+    if method not in TRAINING_METHODS:
         raise ValueError("Unknown continuation method")
     if type(reward_reset) is not bool:
         raise TypeError("reward_reset must be bool")
@@ -521,9 +525,7 @@ def resolve_learner_continuation(
         type(changes["seed"]) is not int or not 0 <= changes["seed"] < 2**32
     ):
         raise ValueError("Branch seed must be an integer in [0, 2**32)")
-    family = (
-        "ppo" if method in _PPO_METHODS else "pqn" if method == "pqn_vdn" else "qmix"
-    )
+    family = method_settings_field(method)
     if (set(changes) & set(_LOSS_SETTINGS)) - {family}:
         raise ValueError("Continuation settings belong to another learner")
     overrides = changes.get(family, {})

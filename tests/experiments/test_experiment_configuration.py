@@ -7,14 +7,16 @@ settings, games, reward, the 250,675,200-transition budget with the lineage's
 actor-retention settings. The expected values below are those runs' saved
 settings, written out independently of the generator. HAPPO, which has no
 tournament run yet, takes recurrent MAPPO's recipe with the team reward and
-one actor per class.
+one actor per class; TarMAC, which has none either, takes recurrent MAPPO's
+recipe, seed and reward unchanged, and only its method group lists messages.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
-PQN normalization, and validation_maps and task, whose defaults are left out
-of saved configs), seven method groups, complete pool replacement, ordinary
-Hydra overrides and rejection paths. Each method's software_check settings
-file also builds a valid TrainConfig on its own, as the every-method software
-check reads it without the method group. Subprocess probes forbid numerical imports,
-factory calls and workers. These are software checks, not learning experiments.
+PQN normalization, TarMAC's messages, and validation_maps and task, whose
+defaults are left out of saved configs), eight method groups, complete pool
+replacement, ordinary Hydra overrides and rejection paths. Each method's
+software_check settings file also builds a valid TrainConfig on its own, as the
+every-method software check reads it without the method group. Subprocess probes
+forbid numerical imports, factory calls and workers. These are software checks,
+not learning experiments.
 """
 
 import json
@@ -68,6 +70,7 @@ SELECTED: dict[str, tuple[int, int, dict[str, Any]]] = {
     "ff_mappo": (12259871, 512, {**PPO_SELECTED, "actor_lr": 0.0003}),
     "ff_ippo": (20261001, 512, PPO_SELECTED),
     "happo": (20261002, 512, {**PPO_SELECTED, "parameter_sharing": "class"}),
+    "tarmac": (20261002, 512, PPO_SELECTED),
     "qmix": (
         12259871,
         768,
@@ -101,6 +104,7 @@ REWARD = {
     "ff_mappo": TEAM,
     "ff_ippo": PER_AGENT,
     "happo": TEAM,
+    "tarmac": PER_AGENT,
     "qmix": TEAM,
     "pqn_vdn": TEAM,
 }
@@ -156,10 +160,10 @@ def test_default_recipe_is_the_selected_search_recipe(
     actual = config_to_dict(
         resolve_training_config(composed(f"method={method}"), base_dir=tmp_path)
     )
-    # The defaults fixture predates HAPPO, whose defaults are MAPPO's.
+    # The defaults fixture predates HAPPO and TarMAC, whose defaults are MAPPO's.
     defaults: dict[str, Any] = json.loads(
         (ROOT / "tests/fixtures/training_config_defaults.json").read_text()
-    )["mappo" if method == "happo" else method]
+    )["mappo" if method in ("happo", "tarmac") else method]
     defaults = {**defaults, "method": method}
     block = method_settings_field(method)
     seed, games, settings = SELECTED[method]
@@ -181,6 +185,9 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
         "PQNConfig": ("pqn_vdn", "pqn"),
     }
     method, block = blocks.get(record, ("mappo", None))
+    if field == "messages":
+        # Only TarMAC's method group lists its message choice.
+        method = "tarmac"
     cfg = composed(f"method={method}")
     resolved = resolve_training_config(cfg, base_dir=tmp_path)
     effective = config_to_dict(resolved)
@@ -216,8 +223,9 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
 
 def test_original_census_and_generated_presets_do_not_drift() -> None:
     # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale,
-    # PQN normalization, the validation map choice and the task.
-    assert len(FIELDS) == 94
+    # PQN normalization, the validation map choice, the task and TarMAC's
+    # messages.
+    assert len(FIELDS) == 95
     result = subprocess.run(
         [
             sys.executable,

@@ -58,7 +58,7 @@ from dataclasses import asdict, dataclass
 from numbers import Real
 from typing import Literal, cast
 
-type PPOMethod = Literal["mappo", "ippo", "ff_mappo", "ff_ippo", "happo"]
+type PPOMethod = Literal["mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"]
 
 _METHODS = {
     "mappo": (True, False, "Recurrent MAPPO"),
@@ -66,9 +66,25 @@ _METHODS = {
     "ff_mappo": (False, False, "Feedforward MAPPO"),
     "ff_ippo": (False, True, "Feedforward IPPO"),
     "happo": (True, False, "Recurrent HAPPO"),
+    "tarmac": (True, False, "TarMAC"),
 }
 
 _PARAMETER_SHARING = ("all", "class", "none")
+
+TARMAC_MESSAGES = ("attention", "mean", "blocked")
+"""TarMAC's message choices: the paper's attention, then its two controls."""
+
+TARMAC_KEY_SIZE = 16
+"""Floats in each TarMAC signature key and query (the paper's default)."""
+
+TARMAC_VALUE_SIZE = 32
+"""Floats in each TarMAC message value (the paper's size)."""
+
+_TARMAC_NAMES = {
+    "attention": "TarMAC",
+    "mean": "TarMAC (mean of messages)",
+    "blocked": "TarMAC (trained without messages)",
+}
 
 PQN_NORMALIZATIONS = ("batch_norm", "layer_norm")
 """PQN hidden-layer normalization choices, matching the donor's NORM_TYPE names."""
@@ -84,15 +100,111 @@ SPAWN_FRAMES = ("world", "left")
 def validate_ppo_method(method: str) -> PPOMethod:
     """Return a supported static PPO method name or raise ValueError.
 
-    Accept mappo, ippo, ff_mappo, ff_ippo and happo. HAPPO (Kuba et al., ICLR
-    2022) uses recurrent MAPPO's networks and training-only critic view and
-    differs only in its update: one actor group at a time, in a random order.
-    This host-only check allocates no
+    Accept mappo, ippo, ff_mappo, ff_ippo, happo and tarmac. HAPPO (Kuba et
+    al., ICLR 2022) uses recurrent MAPPO's networks and training-only critic
+    view and differs only in its update: one actor group at a time, in a
+    random order. TarMAC (Das et al., ICML 2019) keeps recurrent MAPPO's
+    update and critic and adds one round of learned messages between
+    teammates: each actor reads its teammates' messages from the tick before
+    (see ``ppo.TarMACActor``). This host-only check allocates no
     arrays and owns the method choices shared by models, training and storage.
     """
     if not isinstance(cast(object, method), str) or method not in _METHODS:
-        raise ValueError("PPO method must be mappo, ippo, ff_mappo, ff_ippo or happo")
+        raise ValueError(
+            "PPO method must be mappo, ippo, ff_mappo, ff_ippo, happo or tarmac"
+        )
     return cast(PPOMethod, method)
+
+
+def tarmac_messages(value: object) -> str:
+    """Check a TarMAC message choice and return it as a Python string.
+
+    Parameters
+    ----------
+    value : object
+        Candidate choice: "attention" (the paper's method), "mean" (every
+        valid teammate's message weighted equally, the paper's no-attention
+        control) or "blocked" (every message masked, the same network trained
+        without messages).
+
+    Returns
+    -------
+    str
+        The same string.
+
+    Raises
+    ------
+    ValueError
+        value is not one of the three strings.
+
+    Notes
+    -----
+    Host-only; no device work.
+    """
+    if not isinstance(value, str) or value not in TARMAC_MESSAGES:
+        raise ValueError('messages must be "attention", "mean" or "blocked"')
+    return value
+
+
+def check_ppo_method_settings(method: str, config: PPOConfig) -> None:
+    """Refuse PPO settings that the method cannot use.
+
+    Parameters
+    ----------
+    method : str
+        A PPO method name accepted by validate_ppo_method.
+    config : PPOConfig
+        The run's PPO settings.
+
+    Raises
+    ------
+    ValueError
+        method is unknown; a method other than "tarmac" has messages other
+        than "attention"; or "tarmac" has parameter_sharing other than
+        "all" (the paper and recurrent MAPPO's recipe share one network, and
+        no proof covers grouped attention). HAPPO's sharing rule stays with
+        TrainConfig, which also picks HAPPO's default sharing.
+
+    Notes
+    -----
+    Host-only; the owner of this rule for live settings. TrainConfig,
+    initialize_ppo, update_ppo and make_ppo_system call it; saved
+    descriptions apply the same rule when they are read and written
+    (training.checkpoints and training._checkpoint_metadata).
+    """
+    method = validate_ppo_method(method)
+    if method == "tarmac":
+        if config.parameter_sharing != "all":
+            raise ValueError(
+                "TarMAC shares one actor network; it needs parameter_sharing 'all'"
+            )
+    elif config.messages != "attention":
+        raise ValueError(
+            f'Only TarMAC has a messages setting; {method} needs "attention"'
+        )
+
+
+def tarmac_name(messages: str) -> str:
+    """Return a TarMAC System's default display name for its message choice.
+
+    Parameters
+    ----------
+    messages : str
+        A checked choice from TARMAC_MESSAGES.
+
+    Returns
+    -------
+    str
+        "TarMAC" for "attention", "TarMAC (mean of messages)" for "mean" and
+        "TarMAC (trained without messages)" for "blocked", so a trained control
+        never reads as TarMAC in runs, catalogs or standings.
+
+    Raises
+    ------
+    ValueError
+        messages is not one of the three choices.
+    """
+    return _TARMAC_NAMES[tarmac_messages(messages)]
 
 
 def is_recurrent_method(method: str) -> bool:
@@ -394,13 +506,24 @@ class PPOConfig:
         coordinates keep float32 rounding. Use the same setting for
         collection, learning and loaded inference; it is saved with exported
         actors and is part of their inference identity.
+    messages : {"attention", "mean", "blocked"}, default="attention"
+        TarMAC only; every other method refuses a value other than
+        "attention" (TrainConfig checks). "attention" is the paper's method:
+        each actor weights its teammates' last-tick messages by learned
+        attention. "mean" weights every valid teammate's message equally (the
+        paper's no-attention control). "blocked" masks every message, so the
+        same network trains without them. The choice changes no parameter
+        shape; it is saved with TarMAC actors and is part of their inference
+        identity. Saved settings leave it out when it is "attention", so the
+        saved settings of every other PPO run keep their bytes.
 
     Raises
     ------
     ValueError
         A count is not a positive Python int, or a numerical setting is nonfinite
         or outside its stated range. Boolean counts and non-real/Boolean input
-        scales are rejected, as is a spawn frame other than "world" or "left".
+        scales are rejected, as is a spawn frame other than "world" or "left"
+        or a messages value other than the three choices.
 
     Notes
     -----
@@ -426,12 +549,14 @@ class PPOConfig:
     spawn_frame: str = "left"
     value_normalization: bool = True
     parameter_sharing: str = "all"
+    messages: str = "attention"
 
     def __post_init__(self) -> None:
         """Reject invalid static update counts and numerical settings on the host."""
         _input_scale(self.input_scale)
         _spawn_frame(self.spawn_frame)
         _parameter_sharing(self.parameter_sharing)
+        tarmac_messages(self.messages)
         if type(self.value_normalization) is not bool:
             raise ValueError("value_normalization must be a Python bool")
         for name in ("rollout_length", "epochs", "minibatches", "groups"):
@@ -750,6 +875,7 @@ class PQNConfig:
 
 
 _LATER_SETTING_DEFAULTS: dict[type, dict[str, object]] = {
+    PPOConfig: {"messages": "attention"},
     QMIXConfig: {"reward_scale": 1.0},
     PQNConfig: {"reward_scale": 1.0, "normalization": "batch_norm"},
 }
@@ -769,8 +895,9 @@ def saved_settings(settings: PPOConfig | QMIXConfig | PQNConfig) -> dict[str, ob
     dict[str, object]
         A new JSON-ready dictionary of every field in field order (after a
         JSON round trip). Settings added after runs were first saved
-        (QMIX and PQN ``reward_scale``; PQN ``normalization``) are left out
-        while they hold the value older runs used (1.0 and "batch_norm"). So
+        (PPO ``messages``; QMIX and PQN ``reward_scale``; PQN
+        ``normalization``) are left out while they hold the value older runs
+        used ("attention", 1.0 and "batch_norm"). So
         a run that does not use them saves the same bytes as before they
         existed, and an older saved block compares equal to the record it
         reads back as.
@@ -805,8 +932,9 @@ def with_later_settings(
     -------
     dict[str, object]
         A new dictionary: the block with each setting added after runs were
-        first saved (QMIX and PQN ``reward_scale``; PQN ``normalization``) set
-        to the value older runs used, when the block omits it. A block that
+        first saved (PPO ``messages``; QMIX and PQN ``reward_scale``; PQN
+        ``normalization``) set to the value older runs used, when the block
+        omits it. A block that
         states a value keeps it. So a block written before the setting
         existed, one written by ``saved_settings`` and one stating the old
         default explicitly all compare equal to the full JSON form of the same

@@ -34,6 +34,7 @@ from marl_battlegrounds._task_settings import DEFAULT_SCORE_THRESHOLDS
 from marl_battlegrounds.baselines.config import (
     QMIXConfig,
     pqn_planned_learning_blocks,
+    tarmac_name,
 )
 from marl_battlegrounds.baselines.methods import (
     is_ppo_method,
@@ -817,6 +818,20 @@ def _checkpoint_memory_scope() -> Generator[None]:
         gc.collect()
 
 
+def _actor_label(config: TrainConfig) -> str:
+    """Return the method label that begins a saved actor's display name.
+
+    config is the run's checked TrainConfig. Every method keeps its upper-case
+    name (for example "MAPPO" or "PQN-VDN"), so earlier display names are
+    unchanged. TarMAC uses ``tarmac_name``: "TarMAC", or "TarMAC (mean of
+    messages)" and "TarMAC (trained without messages)" for its controls, so a
+    trained control never reads as TarMAC. Host-only.
+    """
+    if config.method == "tarmac":
+        return tarmac_name(config.ppo.messages)
+    return config.method.replace("_", "-").upper()
+
+
 def train(
     config: TrainConfig | None = None,
     *,
@@ -1590,6 +1605,7 @@ def _train(
             normalization="batch_norm"
             if config.pqn is None
             else config.pqn.normalization,
+            messages=config.ppo.messages,
         )
         variables = initial_system.variables
         initial_actor = (
@@ -4313,7 +4329,7 @@ class _Run:
             "env_steps": self.host["env_steps"],
             "checkpoint_id": self.checkpoint_id,
             "display_name": (
-                f"{self.config.method.replace('_', '-').upper()} at step "
+                f"{_actor_label(self.config)} at step "
                 f"{self.host['env_steps']:,} ({self.root.name.replace('_', ' ')})"
             ),
             **(
@@ -4361,6 +4377,7 @@ class _Run:
             normalization="batch_norm" if self.pqn is None else self.pqn.normalization,
             metadata=provenance,
             task=self.config.task,
+            messages=self.config.ppo.messages,
         )
         self.host["actors"][self.checkpoint_id] = str(destination)
         self.event(
@@ -4417,8 +4434,7 @@ class _Run:
             "seed": self.config.seed,
             "env_steps": steps,
             "display_name": (
-                f"{self.config.method.replace('_', '-').upper()} "
-                f"past copy at step {steps:,}"
+                f"{_actor_label(self.config)} past copy at step {steps:,}"
             ),
             "capture_origin": {
                 "capture_id": capture_id,
@@ -4469,6 +4485,7 @@ class _Run:
             input_scale=settings.input_scale,
             spawn_frame=settings.spawn_frame,
             task=self.config.task,
+            messages=self.config.ppo.messages,
         )
         self.host["past_copies"][str(capture_id)] = {
             "env_steps": steps,

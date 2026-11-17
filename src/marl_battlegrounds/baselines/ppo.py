@@ -48,8 +48,13 @@ keeps its existing MAPPO interface. IPPO critics use each actor's permitted
 view. MAPPO critics use separate physical training data. HAPPO (method
 "happo", Kuba et al., ICLR 2022) keeps recurrent MAPPO's networks, inputs and
 critic update and replaces the joint actor step with one actor group at a time
-(``_sequential_update``). Learners retain the compact rollout and construct
-only the selected minibatch's expanded features.
+(``_sequential_update``). TarMAC (method "tarmac", Das et al., ICML 2019, one
+round) keeps recurrent MAPPO's critic and update and adds learned messages
+between teammates (TarMACActor): each actor reads, by attention, the messages
+its teammates sent at the end of the last tick, never within one. Its hook
+returns each tick's sender mask, which the batch stores and the update reads.
+Learners retain the compact rollout and construct only the selected
+minibatch's expanded features.
 
 PPOConfig and host setting checks are re-exported from baselines.config.
 Requires the optional training extra. Inputs stay on device inside jit/scan.
@@ -79,6 +84,14 @@ from marl_battlegrounds.baselines.config import (
 )
 from marl_battlegrounds.baselines.config import (
     DEFAULT_PPO_CONFIG as DEFAULT_PPO_CONFIG,
+)
+from marl_battlegrounds.baselines.config import (
+    TARMAC_KEY_SIZE,
+    TARMAC_MESSAGES,
+    TARMAC_VALUE_SIZE,
+    check_ppo_method_settings,
+    tarmac_messages,
+    tarmac_name,
 )
 from marl_battlegrounds.baselines.config import (
     PPOConfig as PPOConfig,
@@ -156,6 +169,10 @@ _VALUE_NORM_VARIANCE_FLOOR = 1e-2
 # Folded into an update key to draw HAPPO's group order ("HAPP"), apart from
 # the shuffle keys, which split the same key.
 _HAPPO_ORDER_TAG = 0x48415050
+# A large finite score for masked TarMAC senders. With -inf, a receiver with no
+# valid sender gets NaN weights unless a second mask follows the softmax; the
+# finite fill keeps both the value and the gradient finite on its own.
+_MASKED_SCORE = -1e9
 
 
 def uses_local_critic(method: str) -> bool:
@@ -449,16 +466,22 @@ class PPOLearningOutputs(NamedTuple):
     log_prob : Array
         Float32 (B,5) natural-log probability of each submitted choice under its
         action-time mask and actor weights, computed in the actor's frame.
+    sender_mask : Array or None, default=None
+        TarMAC only: Boolean (B,5,5) [receiver, sender] mask the actor used
+        this tick (``tarmac_sender_mask``), so the update replays exactly the
+        messages each actor heard. None for every other method, whose outputs
+        keep their two fields' values.
 
     Notes
     -----
     B is the number of games. Ignore invalid lanes and exclude dead/inactive
-    actors from policy learning. Neither field contains critic information or
+    actors from policy learning. No field contains critic information or
     recurrent memory. No later policy call is used to reconstruct these values.
     """
 
     action_indices: Array
     log_prob: Array
+    sender_mask: Array | None = None
 
 
 class PPOBatch(NamedTuple):
@@ -509,6 +532,10 @@ class PPOBatch(NamedTuple):
         Bool (T,B,5) slots owned by this learner. None uses physical active.
         Partner slots keep their physical inputs but do not enter GAE, losses
         or value statistics.
+    sender_mask : Array or None, default=None
+        TarMAC only: Bool (T,B,5,5) [receiver, sender] masks stored from
+        collection (PPOLearningOutputs.sender_mask). Required for "tarmac"
+        and None for every other method.
 
     Notes
     -----
@@ -535,6 +562,7 @@ class PPOBatch(NamedTuple):
     critic_memory: Tree
     old_normalized_values: Array | None = None
     learner_active: Array | None = None
+    sender_mask: Array | None = None
 
 
 def _owned_ppo_batch(batch: PPOBatch) -> PPOBatch:
@@ -615,6 +643,9 @@ class PPOMinibatch(NamedTuple):
         row's clipped surrogate (the product of the earlier-updated groups'
         probability ratios at that step and game). None means weight 1, the
         ordinary PPO objective.
+    sender_mask : Array or None, default=None
+        TarMAC only: Boolean (G,T,E,5,5) [receiver, sender] masks stored at
+        collection. None for every other method.
 
     Notes
     -----
@@ -643,6 +674,7 @@ class PPOMinibatch(NamedTuple):
     critic_memory: Tree
     actor_group: Array | None = None
     actor_weight: Array | None = None
+    sender_mask: Array | None = None
 
 
 class PPOMetrics(NamedTuple):
@@ -891,6 +923,203 @@ class RecurrentActor(nn.Module):
         return carry, DiscreteActionHead(name="action_head")(embedding)
 
 
+class TarMACRNN(nn.Module):
+    """Carry a team's five memories through time with one round of messages.
+
+    TarMAC's step (Das et al., ICML 2019, one round). On each tick, every
+    actor's memory from the end of its last decision gives a 16-float key k,
+    a 32-float value v and a 16-float query q (Dense layers named "key",
+    "value" and "query"). Receiver i attends softmax(q_i . k_j / 4) over its
+    valid senders j, its own last-tick message included (the paper's equation
+    2), and reads c_i = sum_j a_ij v_j. Its GRU then reads its 128-value
+    embedding joined with c_i (160 values). A message sent at tick t-1 is
+    read at tick t and never within a tick: rule 6 of the tournament rules,
+    "Each Agent Decides Alone". messages is "attention", "mean" (every valid
+    sender weighted equally) or "blocked" (every sender masked). Reset and
+    padding rules follow ScannedRNN: reset before the cell, invalid rows keep
+    their memory and emit zero.
+    """
+
+    messages: str = "attention"
+
+    @functools.partial(
+        nn.scan,
+        variable_broadcast="params",
+        in_axes=0,
+        out_axes=0,
+        split_rngs={"params": False},
+    )
+    @nn.compact
+    def __call__(
+        self, carry: Array, inputs: tuple[Array, Array, Array, Array]
+    ) -> tuple[Array, Array]:
+        """Apply one tick: read last-tick messages, then one GRU step.
+
+        Parameters
+        ----------
+        carry : Array
+            Float32 (E,5,128) team memory just before this decision; row j is
+            sender j's memory at the end of its last decision.
+        inputs : tuple[Array, Array, Array, Array]
+            Embeddings float32 (E,5,128), episode-reset flags bool (E,5),
+            valid-decision flags bool (E,5) and the sender mask bool (E,5,5),
+            in that order. senders[e, i, j] is True when receiver i may read
+            sender j's message this tick (``tarmac_sender_mask``). The scan
+            wrapper supplies these rows from time-first arrays.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            Next memory and cell output, both float32 (E,5,128). A receiver
+            with no valid sender reads an all-zero message. Invalid rows keep
+            their old memory and emit zero; valid reset rows start from zero
+            memory before the cell.
+
+        Notes
+        -----
+        Masked scores use a large finite fill and a second mask after the
+        softmax (the double-where pattern), so the value and the gradient
+        stay finite when a receiver has no valid sender, as on every game's
+        first tick.
+        """
+        features, resets, valid, senders = inputs
+        messages = tarmac_messages(self.messages)
+        if messages == "blocked":
+            senders = jnp.zeros_like(senders)
+        key = nn.Dense(TARMAC_KEY_SIZE, name="key")(carry)
+        value = nn.Dense(TARMAC_VALUE_SIZE, name="value")(carry)
+        query = nn.Dense(TARMAC_KEY_SIZE, name="query")(carry)
+        if messages == "mean":
+            scores = jnp.zeros(senders.shape, jnp.float32)
+        else:
+            scores = jnp.einsum("...if,...jf->...ij", query, key) / jnp.sqrt(
+                jnp.float32(TARMAC_KEY_SIZE)
+            )
+        weights = jax.nn.softmax(jnp.where(senders, scores, _MASKED_SCORE), axis=-1)
+        weights = jnp.where(senders, weights, 0.0)
+        message = jnp.einsum("...ij,...jf->...if", weights, value)
+        before = jnp.where((resets & valid)[..., None], 0.0, carry)
+        # Named as ScannedRNN's cell so the two actors' trees read alike. Its
+        # input kernels are 160 wide, so MAPPO's GRU weights do not load here.
+        updated, output = cast(
+            tuple[Array, Array],
+            nn.GRUCell(features=HIDDEN_SIZE, name="GRUCell_1")(
+                before, jnp.concatenate([features, message], axis=-1)
+            ),
+        )
+        return jnp.where(valid[..., None], updated, carry), jnp.where(
+            valid[..., None], output, 0.0
+        )
+
+
+class TarMACActor(nn.Module):
+    """Apply TarMAC's actor: recurrent MAPPO's actor with teammate messages.
+
+    Features are permitted float32 (T,E,5,F), carry (E,5,128), reset and
+    valid masks bool (T,E,5) and the sender mask bool (T,E,5,5). The layers
+    are recurrent MAPPO's (pre-torso, GRU, post-torso, 198-way head) with the
+    GRU's input widened by the 32-float message (``TarMACRNN``): about 20,500
+    more weights. One shared network for all five actors (parameter sharing
+    "all" only). A message is a channel, not sight: it ignores the sensor
+    limits in ``source_availability``, as rule 6 ("Each Agent Decides Alone")
+    allows for messages sent on earlier ticks. No actor reads another's
+    current view. input_scale and messages are fixed settings, as in
+    RecurrentActor and PPOConfig.
+    """
+
+    input_scale: float = 1.0
+    messages: str = "attention"
+
+    @nn.compact
+    def __call__(
+        self,
+        carry: Array,
+        features: Array,
+        resets: Array,
+        valid: Array,
+        senders: Array,
+    ) -> tuple[Array, Array]:
+        """Read permitted feature sequences and last-tick teammate messages.
+
+        Parameters
+        ----------
+        carry : Array
+            Float32 (E,5,128) team memory immediately before the sequence.
+        features : Array
+            Float32 (T,E,5,F) encoded actor inputs, F normally
+            ACTOR_FEATURE_SIZE.
+        resets, valid : Array
+            Boolean (T,E,5) episode starts before a decision and valid
+            decisions; invalid rows keep their memory.
+        senders : Array
+            Boolean (T,E,5,5) sender masks, [receiver, sender], from
+            ``tarmac_sender_mask`` at play and from the stored batch in the
+            update.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            Final float32 (E,5,128) memory and float32 (T,E,5,198) raw logits.
+            Ignore logits of invalid rows. No action is sampled here.
+
+        Raises
+        ------
+        ValueError
+            input_scale or messages is invalid, before any numerical work.
+
+        Notes
+        -----
+        Pure Flax; works inside jit. Reads no critic state.
+        """
+        scale = _input_scale(self.input_scale)
+        if scale != 1.0:
+            features = features * scale
+        embedding = MLPTorso(name="pre_torso")(features)
+        carry, embedding = TarMACRNN(messages=self.messages)(
+            carry, (embedding, resets, valid, senders)
+        )
+        embedding = MLPTorso(name="post_torso")(embedding)
+        return carry, DiscreteActionHead(name="action_head")(embedding)
+
+
+def tarmac_sender_mask(inputs: SystemInput) -> Array:
+    """Return which teammates each actor may hear this tick: (B,5,5) [i, j].
+
+    Parameters
+    ----------
+    inputs : SystemInput
+        One team's same-tick System inputs with leading B.
+
+    Returns
+    -------
+    Array
+        Boolean (B,5,5): True when receiver i may read sender j's message,
+        which j sent at the end of its last decision. Sender j is left out
+        when it is an inactive roster slot (active_mask), a slot this System
+        does not control (controlled_mask; None means every active slot), dead
+        in receiver i's own public flags
+        (``observation.spawn_lifecycle.alive_mask_by_agent_by_team[:, i, 0,
+        j]``: own team first, team slot j, which survive occlusion and the
+        receiver's own death and are not reflected by the spawn frame), or
+        when the game starts this tick. A living sender out of sight stays
+        valid: a message is a channel, not sight. A dead receiver still hears
+        its living teammates, as it already receives their shared sight. The
+        receiver's own last-tick message is in the set when it is valid.
+
+    Notes
+    -----
+    Pure JAX; inputs are unchanged. The hook returns this mask in its learning
+    outputs, and the update reads that stored copy, so replay matches play.
+    """
+    sending = inputs.active_mask
+    if inputs.controlled_mask is not None:
+        sending = sending & inputs.controlled_mask
+    alive = inputs.actors.observation.spawn_lifecycle.alive_mask_by_agent_by_team
+    return (
+        sending[:, None, :] & alive[:, :, 0, :] & ~inputs.episode_start[:, None, None]
+    )
+
+
 class RecurrentValueNet(nn.Module):
     """Apply the separate donor critic to physical or permitted local features.
 
@@ -1110,9 +1339,13 @@ def initialize_ppo(
     config : PPOConfig, default=DEFAULT_PPO_CONFIG
         Static optimizer and input-scale settings. The default uses the pinned
         donor settings. Scaling preserves the initialized parameter tree/bytes.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+        TarMAC also reads messages, which changes no parameter shape.
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Static network choice. IPPO uses local critic inputs; feedforward methods
         initialize two-layer models without recurrent parameters or memory.
+        "tarmac" initializes TarMACActor (one shared network) and recurrent
+        MAPPO's critic.
     training_state_schema : {2, 3}, default=TRAINING_STATE_SCHEMA_VERSION (2)
         The run's training-state schema, which sets a centralized critic's
         input width: 920 features for 2 (Team Deathmatch) and 973 for 3
@@ -1130,7 +1363,8 @@ def initialize_ppo(
     Raises
     ------
     ValueError
-        The key does not use Threefry, the method is unsupported or
+        The key does not use Threefry, the method is unsupported, the settings
+        do not suit the method (``check_ppo_method_settings``) or
         training_state_schema is not 2 or 3.
 
     Notes
@@ -1141,6 +1375,7 @@ def initialize_ppo(
     episode memory remains the learner's responsibility. Weights are untrained.
     """
     method = validate_ppo_method(method)
+    check_ppo_method_settings(method, config)
     if str(jax.random.key_impl(key)) != "threefry2x32":
         raise ValueError("PPO initialization requires Threefry random keys.")
     actor_key, critic_key = jax.random.split(key)
@@ -1157,18 +1392,31 @@ def initialize_ppo(
         memory = jnp.zeros((1, 5, HIDDEN_SIZE), jnp.float32)
         starts = jnp.zeros((1, 1, 5), jnp.bool_)
         valid = jnp.ones_like(starts)
-        actor_init = functools.partial(
-            RecurrentActor(input_scale=config.input_scale).init,
-            carry=memory,
-            features=jnp.zeros((1, 1, 5, ACTOR_FEATURE_SIZE)),
-            resets=starts,
-            valid=valid,
-        )
-        actor = (
-            actor_init(actor_key)
-            if config.parameter_sharing == "all"
-            else jax.vmap(actor_init)(jax.random.split(actor_key, 5))
-        )
+        features = jnp.zeros((1, 1, 5, ACTOR_FEATURE_SIZE))
+        if method == "tarmac":
+            actor = TarMACActor(
+                input_scale=config.input_scale, messages=config.messages
+            ).init(
+                actor_key,
+                memory,
+                features,
+                starts,
+                valid,
+                jnp.zeros((1, 1, 5, 5), jnp.bool_),
+            )
+        else:
+            actor_init = functools.partial(
+                RecurrentActor(input_scale=config.input_scale).init,
+                carry=memory,
+                features=features,
+                resets=starts,
+                valid=valid,
+            )
+            actor = (
+                actor_init(actor_key)
+                if config.parameter_sharing == "all"
+                else jax.vmap(actor_init)(jax.random.split(actor_key, 5))
+            )
         critic = RecurrentValueNet(input_scale=config.input_scale).init(
             critic_key, memory, jnp.zeros((1, 1, 5, critic_width)), starts, valid
         )
@@ -1481,6 +1729,139 @@ def _grouped_ppo_actor_apply(
     return apply
 
 
+def _apply_tarmac_actor(
+    variables: Tree,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    messages_index: int,
+) -> SystemOutput:
+    """Apply TarMAC's actor once, with the team's last-tick messages.
+
+    Parameters
+    ----------
+    variables : PyTree
+        TarMACActor variables only; no critic parameters or optimizer state.
+    memory : Array
+        Float32 (B,5,128) team memory before this decision. Row j is also
+        sender j's message source (TarMACRNN).
+    inputs : SystemInput
+        Same-tick permitted views, native action masks and lifecycle flags.
+    keys : Array
+        B independent Threefry lane keys, typed (B,) or legacy uint32 (B,2).
+    input_scale : float
+        Fixed positive finite feature multiplier from training.
+    spawn_frame_index : int
+        Position of the training spawn frame in SPAWN_FRAMES (0 "world", 1
+        "left"), handled exactly as in _apply_actor.
+    messages_index : int
+        Position of the message choice in TARMAC_MESSAGES.
+
+    Returns
+    -------
+    SystemOutput
+        Native int32 (B,5) actions, next memory and PPOLearningOutputs with
+        the (B,5,5) sender mask used this tick. Invalid lanes keep memory.
+
+    Raises
+    ------
+    TypeError, ValueError
+        As _apply_actor, for incompatible shapes, dtypes or keys.
+
+    Notes
+    -----
+    It repeats _apply_actor's spawn-frame handling in its own body, because
+    recurrent MAPPO and IPPO Systems at scale 1.0 in the world frame register
+    _apply_actor itself, and registration identity digests that function's
+    own code (``evaluation.recording_identity``): moving its body into a
+    shared helper would change their identities. The
+    sender mask is computed from the unreflected inputs; the frame mirror
+    does not move the alive flags it reads. Pure device work for jit and scan.
+    """
+    senders = tarmac_sender_mask(inputs)
+    actors, frame_mask = inputs.actors, inputs.action_mask
+    flag: Array | None = None
+    spawn_frame = SPAWN_FRAMES[spawn_frame_index]
+    if spawn_frame != "world":
+        flag = spawn_frame_flag(actors, spawn_frame)
+        actors, frame_mask = mirror_team_view(
+            actors,
+            frame_mask,
+            flag,
+            obstacle_partners=team_obstacle_partners(actors),
+        )
+    features = encode_actor_inputs(actors)
+    valid = jnp.broadcast_to(inputs.valid[:, None], inputs.active_mask.shape)
+    starts = jnp.broadcast_to(inputs.episode_start[:, None], inputs.active_mask.shape)
+    memory, logits = cast(
+        tuple[Array, Array],
+        TarMACActor(
+            input_scale=input_scale, messages=TARMAC_MESSAGES[messages_index]
+        ).apply(
+            variables, memory, features[None], starts[None], valid[None], senders[None]
+        ),
+    )
+    logits = logits[0]
+    mask = categorical_action_mask(frame_mask)
+    actor_keys = jax.vmap(functools.partial(jax.random.split, num=5))(keys)
+    indices = sample_actions(logits, mask, actor_keys)
+    log_prob = action_log_prob(logits, mask, indices)
+    if flag is not None:
+        indices = mirror_action_indices(indices, flag)
+    return SystemOutput(
+        decode_actions(indices),
+        memory,
+        learning_outputs=PPOLearningOutputs(indices, log_prob, senders),
+    )
+
+
+@functools.lru_cache(maxsize=16)
+def _tarmac_actor_apply(
+    scale: float, spawn_frame: str, messages: str
+) -> Callable[[Tree, Array, SystemInput, Array], SystemOutput]:
+    """Cache TarMAC's apply hook for one checked scale, frame and message choice.
+
+    The keyword defaults record all three settings as numbers, because M8
+    digests a hook's numerical keyword defaults into System identity: equal
+    weights trained with "attention" and with "blocked" describe different
+    Systems. The hook captures no weights or live inputs; caching keeps one
+    callable, and so one compiled program, per setting. Host-only.
+    """
+    frame_index = SPAWN_FRAMES.index(spawn_frame)
+    messages_index = TARMAC_MESSAGES.index(messages)
+
+    def apply(
+        variables: Tree,
+        memory: Array,
+        inputs: SystemInput,
+        keys: Array,
+        *,
+        input_scale: float = scale,
+        spawn_frame_index: int = frame_index,
+        tarmac_messages_index: int = messages_index,
+    ) -> SystemOutput:
+        """Apply TarMAC with the factory-bound settings in the keyword defaults.
+
+        Arguments, outputs and side effects follow _apply_tarmac_actor.
+        Normal System execution supplies only variables, memory, inputs and
+        keys.
+        """
+        return _apply_tarmac_actor(
+            variables,
+            memory,
+            inputs,
+            keys,
+            input_scale=input_scale,
+            spawn_frame_index=spawn_frame_index,
+            messages_index=tarmac_messages_index,
+        )
+
+    return apply
+
+
 def make_recurrent_mappo_system(
     actor_params: Tree,
     *,
@@ -1729,6 +2110,7 @@ def make_ppo_system(
     checkpoint: str | None = None,
     actor_input_schema: int = ACTOR_INPUT_SCHEMA_VERSION,
     parameter_sharing: str = "all",
+    messages: str = "attention",
 ) -> System:
     """Wrap one PPO actor as the existing sampled-action M8 System.
 
@@ -1736,9 +2118,17 @@ def make_ppo_system(
     ----------
     actor_params : PyTree
         Actor-only variables matching method. No critic or optimizer is used.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Static architecture choice. Recurrent methods retain separate actor
         memory; feedforward methods have init=None and use empty memory tuples.
+        "tarmac" uses its own cached hook (_tarmac_actor_apply): current actor
+        input schema and parameter sharing "all" only.
+    messages : {"attention", "mean", "blocked"}, default="attention"
+        TarMAC's message choice used in training (PPOConfig.messages). It is
+        part of the System identity, and a TarMAC System's default name
+        carries it (``config.tarmac_name``). Other methods accept only
+        "attention".
     input_scale : float, default=1.0
         Positive finite feature multiplier used during training.
     spawn_frame : {"world", "left"}, default="left"
@@ -1769,7 +2159,9 @@ def make_ppo_system(
     Raises
     ------
     ValueError
-        Method, scale, frame, actor_input_schema or display name is invalid.
+        Method, scale, frame, actor_input_schema, sharing, messages or display
+        name is invalid, or the settings do not suit the method
+        (``check_ppo_method_settings``; TarMAC also refuses schema 1).
 
     Notes
     -----
@@ -1779,6 +2171,24 @@ def make_ppo_system(
     """
     method = validate_ppo_method(method)
     sharing = _parameter_sharing(parameter_sharing)
+    messages = tarmac_messages(messages)
+    check_ppo_method_settings(
+        method, PPOConfig(parameter_sharing=sharing, messages=messages)
+    )
+    if method == "tarmac":
+        if _actor_input_schema(actor_input_schema) != ACTOR_INPUT_SCHEMA_VERSION:
+            raise ValueError("TarMAC actors use the current actor input schema")
+        return System(
+            tarmac_name(messages) if name is None else name,
+            _declare_lane_independent(
+                _tarmac_actor_apply(
+                    _input_scale(input_scale), _spawn_frame(spawn_frame), messages
+                )
+            ),
+            variables=actor_params,
+            init=_initial_actor_memory,
+            checkpoint=checkpoint,
+        )
     label = _METHODS[method][2] if name is None else name
     if is_recurrent_method(method):
         return make_recurrent_mappo_system(
@@ -2026,7 +2436,21 @@ def _actor_logits(
     of size one under class or slot sharing names one group for every row:
     that group's weights then run as one dense network, the grouped route's
     calculation (equal up to float rounding) without its per-step sorting.
+    TarMAC replays each sequence with the batch's stored sender masks.
     """
+    if method == "tarmac":
+        _, logits = cast(
+            tuple[Array, Array],
+            TarMACActor(input_scale=config.input_scale, messages=config.messages).apply(
+                params,
+                batch.actor_memory,
+                batch.actor_features,
+                batch.episode_start,
+                batch.valid,
+                batch.sender_mask,
+            ),
+        )
+        return logits
     if config.parameter_sharing != "all" and (
         batch.actor_group is not None and batch.actor_group.size == 1
     ):
@@ -2194,7 +2618,8 @@ def update_minibatch(
     config : PPOConfig, default=DEFAULT_PPO_CONFIG
         Static clipping, optimizer and loss settings. Use the same optimizer
         structure that created state's actor and critic optimizer trees.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Static model choice. Recurrent samples use (G,T,E,5); feedforward samples
         use (G,Q,5). Empty groups contribute no gradient weight in either case.
 
@@ -2515,9 +2940,11 @@ def update_ppo(
         keys. Group/epoch splitting follows the pinned donor.
     config : PPOConfig, default=DEFAULT_PPO_CONFIG
         Static loss, input-frame, normalization and update settings.
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo"}, default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
+default="mappo"
         Static actor/critic and minibatch choice. IPPO shares each selected
-        actor's encoded features with its separate local critic.
+        actor's encoded features with its separate local critic. TarMAC is
+        MAPPO's update with its actor replayed on the stored sender masks.
 
     Returns
     -------
@@ -2529,8 +2956,10 @@ def update_ppo(
     ------
     ValueError
         Method, Threefry key, shapes, minibatch divisibility or clipping-anchor
-        presence is incompatible with the static settings, or method is
-        "happo" with parameter_sharing "all".
+        presence is incompatible with the static settings, method is "happo"
+        with parameter_sharing "all", the settings do not suit the method
+        (``check_ppo_method_settings``), or batch.sender_mask is missing for
+        "tarmac" or present for another method.
 
     Notes
     -----
@@ -2549,9 +2978,12 @@ def update_ppo(
     Finite arrays, permitted inputs and legal recorded actions are preconditions.
     """
     method = validate_ppo_method(method)
+    check_ppo_method_settings(method, config)
     recurrent = is_recurrent_method(method)
     if str(jax.random.key_impl(key)) != "threefry2x32":
         raise ValueError("PPO sequence shuffling requires Threefry random keys.")
+    if (batch.sender_mask is None) == (method == "tarmac"):
+        raise ValueError("TarMAC batches need stored sender masks; others need None")
     length, games, actors = batch.actions.shape
     if length != config.rollout_length or actors != 5:
         raise ValueError("PPO needs T=rollout_length and five actor slots")
@@ -2693,6 +3125,7 @@ def update_ppo(
         valid = jnp.broadcast_to(pick(batch.valid)[..., None], lane_shape)
         starts = jnp.broadcast_to(pick(batch.episode_start)[..., None], lane_shape)
         member = keep(member)
+        senders = None if batch.sender_mask is None else pick(batch.sender_mask)
         return PPOMinibatch(
             features,
             critic,
@@ -2715,6 +3148,7 @@ def update_ppo(
             first(batch.actor_memory[selected]) if recurrent else (),
             first(batch.critic_memory[selected]) if recurrent else (),
             owners,
+            sender_mask=senders,
         )
 
     def run_epochs(

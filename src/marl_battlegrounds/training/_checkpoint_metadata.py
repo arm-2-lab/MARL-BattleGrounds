@@ -31,6 +31,7 @@ from marl_battlegrounds.baselines.config import (
     PPOConfig,
     _parameter_sharing,
     _pqn_normalization,
+    tarmac_messages,
     training_state_schema,
     validate_ppo_method,
 )
@@ -64,6 +65,7 @@ _MODELS = {
     "ff_mappo": "feedforward_mappo_128x128",
     "ff_ippo": "feedforward_ippo_128x128",
     "happo": "recurrent_happo_128",
+    "tarmac": "recurrent_tarmac_128",
     "qmix": "recurrent_qmix_256",
     "pqn_vdn": "recurrent_pqn_vdn_512",
 }
@@ -246,8 +248,8 @@ def _schema_method(schemas: object) -> str:
     and any task (a current dictionary) or that model's frozen pre-Red-Zone
     dictionary in
     _ACTOR_INPUT_1_SCHEMAS (actor input 1, and training state 1 where the
-    method has it). HAPPO, added after the Red Zone, has only the current
-    one. A mixed dictionary, such as actor input 2 with training state 1,
+    method has it). HAPPO and TarMAC, added after the Red Zone, have only the
+    current one. A mixed dictionary, such as actor input 2 with training state 1,
     matches neither and is rejected. Reject unknown models, altered
     versions/types, missing fields and extra fields with ValueError. Each
     method's own dictionary sets the types, so Boolean or float versions (such
@@ -419,6 +421,30 @@ def _actor_normalization(details: dict[str, Any]) -> str:
     return _pqn_normalization(value)
 
 
+def _config_messages(config: object) -> str:
+    """Read a saved learner config's TarMAC message choice; absence is "attention".
+
+    config is a JSON learner config. Its settings block leaves out "messages"
+    when it is "attention", so every other method's config, and TarMAC's with
+    attention, reads "attention". Raises ValueError for an unknown value.
+    """
+    return tarmac_messages(_settings_block(config).get("messages", "attention"))
+
+
+def _actor_messages(details: dict[str, Any]) -> str:
+    """Read a saved TarMAC message choice; absence is "attention".
+
+    details is a checked actor or learner description. Actor exports carry an
+    explicit "messages" key only for "mean" or "blocked"; learner checkpoints
+    read their config (_config_messages). Every saved model without the key
+    (every other method, and TarMAC trained with attention) means "attention".
+    Raises ValueError for an unknown value.
+    """
+    if details["kind"] == "actor":
+        return tarmac_messages(details.get("messages", "attention"))
+    return _config_messages(details["metadata"]["config"])
+
+
 def _directory(path: Path) -> Path:
     """Reject symbolic links along an existing directory's complete path."""
     absolute = path.absolute()
@@ -563,11 +589,15 @@ def read_checkpoint_description(path: str | Path) -> dict[str, Any]:
         required.add("parameter_sharing")
     if details["kind"] == "actor" and "normalization" in details:
         required.add("normalization")
+    if details["kind"] == "actor" and "messages" in details:
+        required.add("messages")
     if set(details) != required:
         raise ValueError("Checkpoint description fields differ from its schema")
     _actor_parameter_sharing(details)
     if _actor_normalization(details) != "batch_norm" and method != "pqn_vdn":
         raise ValueError("Only PQN-VDN models have a normalization choice")
+    if _actor_messages(details) != "attention" and method != "tarmac":
+        raise ValueError("Only TarMAC models have a messages choice")
     if method in ("qmix", "pqn_vdn") and details["kind"] == "actor":
         steps = _object(details["metadata"], "Actor provenance").get("optimizer_steps")
         if (
@@ -612,8 +642,8 @@ def checkpoint_schemas(
 
     Parameters
     ----------
-    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "qmix", "pqn_vdn"}, \
-default="mappo"
+    method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
+"pqn_vdn"}, default="mappo"
         Static method. Unknown values raise ValueError through the shared
         method check. MAPPO keeps its historical keys, including learner_keys.
     task : str, default="tdm"
@@ -854,7 +884,8 @@ def _check_actor_origin(actor: dict[str, Any], learner: dict[str, Any]) -> None:
     """Bind a standalone actor description to its original learner boundary.
 
     Both descriptions must already pass their content-ID checks. Compare method,
-    inference identity, sharing and original run/seed/step/optimizer facts. This
+    inference identity, sharing, PQN-VDN's normalization, TarMAC's messages and
+    original run/seed/step/optimizer facts. This
     small-record check reads no files or arrays and proves no validation score.
     Raise ValueError for any mismatch, including a claimed but incorrect origin.
     """
@@ -877,6 +908,7 @@ def _check_actor_origin(actor: dict[str, Any], learner: dict[str, Any]) -> None:
         or any(actual.get(key) != expected.get(key) for key in keys)
         or _actor_parameter_sharing(actor) != _actor_parameter_sharing(learner)
         or _actor_normalization(actor) != _actor_normalization(learner)
+        or _actor_messages(actor) != _actor_messages(learner)
     ):
         raise ValueError("Saved actor differs from its originating checkpoint")
 
@@ -898,7 +930,10 @@ def _inference_digest(details: dict[str, Any]) -> str:
     covers the parameters and the BatchNorm statistics, so a statistics-only
     change is a different System. A PQN-VDN "layer_norm" model also binds
     "normalization": "layer_norm" in its envelope; "batch_norm" adds no key,
-    so every earlier identity is unchanged. A synthetic historical MAPPO
+    so every earlier identity is unchanged. A TarMAC model trained with "mean"
+    or "blocked" binds "messages" in its ppo_inference envelope the same way,
+    so equal weights played with different message choices are different
+    Systems; "attention" adds no key. A synthetic historical MAPPO
     identity may omit schemas; saved artifacts cannot omit it.
     """
     scale = _actor_input_scale(details)
@@ -973,6 +1008,11 @@ def _inference_digest(details: dict[str, Any]) -> str:
                     "actor_digest": details["actor_digest"],
                     "input_scale": scale,
                     "spawn_frame": frame,
+                    **(
+                        {}
+                        if _actor_messages(details) == "attention"
+                        else {"messages": _actor_messages(details)}
+                    ),
                 }
             )
         ).hexdigest()

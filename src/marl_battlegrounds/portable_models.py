@@ -85,6 +85,12 @@ if TYPE_CHECKING:
 PORTABLE_MODEL_FORMAT = "marl-bgs-portable-model"
 PORTABLE_MODEL_FORMAT_VERSION = 1
 PLATFORMS = ("cpu", "cuda", "rocm", "tpu")
+TARMAC_REFUSAL = (
+    "TarMAC actors exchange messages, so they cannot be saved as a portable "
+    "model file yet; share or load the actor folder (load_system, opponent "
+    "pools, tournaments)"
+)
+"""Why export_model refuses a TarMAC actor: format 1 runs each actor alone."""
 
 _PARTS = (
     "model.json",
@@ -1320,6 +1326,8 @@ def _export_builtin(folder: Path, path: Path) -> Path:
     if details.get("kind") != "actor":
         raise ValueError(f"{folder} is not a saved actor folder")
     method = _schema_method(details["schemas"])
+    if method == "tarmac":
+        raise ValueError(f"{folder}: {TARMAC_REFUSAL}")
     sharing = _actor_parameter_sharing(details)
     if sharing != "all":
         raise ValueError(
@@ -1470,8 +1478,11 @@ def export_model(source: Policy | str | Path, path: str | Path) -> Path:
     ValueError
         The folder is not a saved actor, its weights or digest do not match,
         it was trained with ``parameter_sharing`` other than ``"all"`` (format
-        1 has no per-slot or per-class weights), or the Policy runs on the
-        host (for example a language-model team).
+        1 has no per-slot or per-class weights), it is a TarMAC actor
+        (TARMAC_REFUSAL: "TarMAC actors exchange messages, so they cannot be
+        saved as a portable model file yet; share or load the actor folder
+        (load_system, opponent pools, tournaments)"), or the Policy runs on
+        the host (for example a language-model team).
     TypeError
         source is neither a Policy nor a folder path.
     OSError

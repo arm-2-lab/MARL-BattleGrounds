@@ -55,6 +55,12 @@ def _actor_facts(details: Record) -> Record:
             if checkpoints._actor_normalization(details) == "batch_norm"  # pyright: ignore[reportPrivateUsage]
             else {"normalization": checkpoints._actor_normalization(details)}  # pyright: ignore[reportPrivateUsage]
         ),
+        # Only a TarMAC control ("mean" or "blocked") adds this fact.
+        **(
+            {}
+            if checkpoints._actor_messages(details) == "attention"  # pyright: ignore[reportPrivateUsage]
+            else {"messages": checkpoints._actor_messages(details)}  # pyright: ignore[reportPrivateUsage]
+        ),
     }
 
 
@@ -620,6 +626,11 @@ def collect_actors(
                         input_scale=checkpoints._actor_input_scale(actor),  # pyright: ignore[reportPrivateUsage]
                         spawn_frame=checkpoints._actor_spawn_frame(actor),  # pyright: ignore[reportPrivateUsage]
                         parameter_sharing=checkpoints._actor_parameter_sharing(actor),  # pyright: ignore[reportPrivateUsage]
+                        **(
+                            {}
+                            if checkpoints._actor_messages(actor) == "attention"  # pyright: ignore[reportPrivateUsage]
+                            else {"messages": checkpoints._actor_messages(actor)}  # pyright: ignore[reportPrivateUsage]
+                        ),
                         schemas=actor["schemas"],
                         source_actor_run_id=metadata["run_id"],
                         source_actor_seed=metadata["seed"],

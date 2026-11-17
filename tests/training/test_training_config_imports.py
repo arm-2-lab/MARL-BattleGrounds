@@ -7,8 +7,11 @@ The JSON fixture was captured before the configuration extraction, for the
 six methods that existed then; HAPPO's defaults are recurrent MAPPO's with
 its own method name and one actor per class, a custom HAPPO ppo that
 shares one actor is refused, and so is class sharing when a curriculum's
-system roster repeats a class, which one actor per slot accepts. Numerical
-module aliases are checked separately, since those modules require training.
+system roster repeats a class, which one actor per slot accepts. TarMAC's
+defaults are recurrent MAPPO's with its own method name, saved without a
+messages key; "mean" is saved and read back, TarMAC refuses grouped actors and
+every other method refuses a messages choice. Numerical module aliases are
+checked separately, since those modules require training.
 TrainConfig.task defaults to "tdm" and is left out of the saved config when it
 is "tdm", so saved bytes stay unchanged; a saved config without it reads back
 as "tdm"; a name that make() does not accept is refused with the accepted
@@ -109,7 +112,7 @@ def test_all_configuration_defaults_match_before_extraction(method: str) -> None
 
 
 def test_happo_defaults_are_mappo_with_one_actor_per_class() -> None:
-    assert set(TRAINING_METHODS) == {*HISTORICAL_METHODS, "happo"}
+    assert set(TRAINING_METHODS) == {*HISTORICAL_METHODS, "happo", "tarmac"}
     mappo = config_to_dict(config_from_dict({"method": "mappo"}))
     happo = config_to_dict(config_from_dict({"method": "happo"}))
     assert happo == {
@@ -130,6 +133,26 @@ def test_happo_defaults_are_mappo_with_one_actor_per_class() -> None:
     with pytest.raises(ValueError, match="repeats a class"):
         TrainConfig(method="happo", curriculum=[stage])
     TrainConfig(method="happo", curriculum=[stage], ppo=custom.ppo)
+
+
+def test_tarmac_defaults_are_mappo_and_messages_belong_to_tarmac() -> None:
+    mappo = config_to_dict(config_from_dict({"method": "mappo"}))
+    tarmac = config_to_dict(config_from_dict({"method": "tarmac"}))
+    assert tarmac == {**mappo, "method": "tarmac"}
+    assert "messages" not in tarmac["ppo"]
+    mean = config_to_dict(TrainConfig(method="tarmac", ppo=PPOConfig(messages="mean")))
+    assert mean["ppo"]["messages"] == "mean"
+    assert config_from_dict(mean).ppo.messages == "mean"
+    with pytest.raises(ValueError, match="parameter_sharing 'all'"):
+        TrainConfig(method="tarmac", ppo=PPOConfig(parameter_sharing="class"))
+    for method in ("mappo", "happo"):
+        with pytest.raises(ValueError, match="Only TarMAC has a messages setting"):
+            TrainConfig(
+                method=method,
+                ppo=PPOConfig(messages="blocked", parameter_sharing="class"),
+            )
+    with pytest.raises(ValueError, match="messages must be"):
+        PPOConfig(messages="none")
 
 
 def test_old_imports_are_the_same_objects() -> None:
