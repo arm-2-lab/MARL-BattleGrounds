@@ -7,7 +7,9 @@ Seeking and exporting then select stored values without replaying game physics.
 Full metrics require a matching recorded mechanics catalog. This computes the
 current scalar schema from captured facts. replay_metrics is the public route:
 one saved game's final values by column name, for any replay, including games
-played by people in the BattleClient. Historical stored metric reports
+played by people in the BattleClient. A Capture the Flag game (replay V5) is
+measured by its own columns (metric_columns_for_task_mode). Historical stored
+metric reports
 keep their own recorded schemas and are not overwritten or relabeled. A
 recording saved before the Red Zone rule (its context does not hold
 ResolvedEnvConfigV2) shows all 44 Red Zone columns as unavailable, never as
@@ -36,6 +38,8 @@ from numpy.typing import NDArray
 from marl_battlegrounds.core.types import (
     MAGE_CLASS_ID,
     PRIEST_CLASS_ID,
+    TASK_MODE_CTF,
+    TASK_MODE_TDM,
     WARRIOR_CLASS_ID,
     ActionMask,
     EnvConfig,
@@ -54,6 +58,7 @@ from marl_battlegrounds.evaluation._metrics.full_metrics import (
     FullTotals,
     full_values,
     initialize_full,
+    metric_columns_for_task_mode,
     update_full,
 )
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationEpisodeCompletionV1
@@ -67,6 +72,7 @@ from marl_battlegrounds.evaluation.catalog import (
     reconstruct_env_config_v1,
 )
 from marl_battlegrounds.evaluation.metric_catalog import (
+    CAPTURE_THE_FLAG_METRIC_TOPICS,
     METRIC_COLUMNS,
     METRIC_SCHEMA_ID,
     METRIC_SCHEMA_VERSION,
@@ -177,36 +183,52 @@ def _source_digest() -> str:
 
 
 def _values(
-    config: EnvConfig, initial_step: Array, carry: _Carry, outcome: Array, *, full: bool
+    config: EnvConfig,
+    initial_step: Array,
+    carry: _Carry,
+    outcome: Array,
+    *,
+    full: bool,
+    task_mode: int,
 ) -> MetricValues:
     """Read current priority values, adding full values only for the static full
-    mode. Replay analysis plays Team Deathmatch only, so the scores are its own.
+    mode. The scores are the game's own mode's: captures in Capture the Flag,
+    Team Deathmatch's points otherwise.
     """
-    priority = priority_values(
-        config,
-        carry.state,
-        initial_step,
-        carry.priority,
-        outcome,
-        carry.state.team_deathmatch_scores,
+    scores = (
+        carry.state.capture_the_flag_scores
+        if task_mode == TASK_MODE_CTF
+        else carry.state.team_deathmatch_scores
     )
-    return full_values(carry.diagnostics, config, priority) if full else priority
+    priority = priority_values(
+        config, carry.state, initial_step, carry.priority, outcome, scores
+    )
+    if not full:
+        return priority
+    return full_values(carry.diagnostics, config, priority, task_mode=task_mode)
 
 
-@partial(jax.jit, static_argnames=("full",))
+@partial(jax.jit, static_argnames=("full", "task_mode"))
 def _initialize(
-    config: EnvConfig, state: EnvState, *, full: bool
+    config: EnvConfig, state: EnvState, *, full: bool, task_mode: int
 ) -> tuple[_Carry, MetricValues]:
     """Create one prefix's metric totals and values at the captured initial frame."""
     carry = _Carry(
-        state, initialize_priority(), initialize_full(config, state) if full else {}
+        state,
+        initialize_priority(),
+        initialize_full(config, state, task_mode=task_mode) if full else {},
     )
     return carry, _values(
-        config, state.step_count, carry, jnp.asarray(0, jnp.int32), full=full
+        config,
+        state.step_count,
+        carry,
+        jnp.asarray(0, jnp.int32),
+        full=full,
+        task_mode=task_mode,
     )
 
 
-@partial(jax.jit, static_argnames=("full",))
+@partial(jax.jit, static_argnames=("full", "task_mode"))
 def _scan_block(
     config: EnvConfig,
     initial_step: Array,
@@ -214,12 +236,13 @@ def _scan_block(
     rows: _Transition,
     *,
     full: bool,
+    task_mode: int,
 ) -> tuple[_Carry, MetricValues]:
     """Reduce one fixed-size captured block without advancing simulator physics.
 
-    full is static; config/state/facts are numerical inputs. Valid rows update the
-    shared metric authorities and return prefix values. Padding leaves carry
-    unchanged and returns unavailable zeros that the host removes.
+    full and task_mode are static; config/state/facts are numerical inputs. Valid
+    rows update the shared metric authorities and return prefix values. Padding
+    leaves carry unchanged and returns unavailable zeros that the host removes.
     """
 
     def step(previous: _Carry, row: _Transition) -> tuple[_Carry, MetricValues]:
@@ -240,23 +263,30 @@ def _scan_block(
                     previous.state,
                     row.action_mask,
                     row.info,
+                    task_mode=task_mode,
                 )
                 if full
                 else previous.diagnostics,
             )
+            facts = row.info.transition_facts
+            outcome = (
+                facts.capture_the_flag_facts.outcome
+                if task_mode == TASK_MODE_CTF
+                else facts.team_deathmatch_facts.outcome
+            )
             return current, _values(
-                config,
-                initial_step,
-                current,
-                row.info.transition_facts.team_deathmatch_facts.outcome,
-                full=full,
+                config, initial_step, current, outcome, full=full, task_mode=task_mode
             )
 
         def padding(_: None) -> tuple[_Carry, MetricValues]:
             """Preserve carry and emit unavailable zero values for a padded block
             row.
             """
-            size = len(METRIC_COLUMNS) if full else len(PRIORITY_METRIC_COLUMNS)
+            size = (
+                len(metric_columns_for_task_mode(task_mode))
+                if full
+                else len(PRIORITY_METRIC_COLUMNS)
+            )
             return previous, MetricValues(
                 jnp.zeros(size, jnp.float32), jnp.zeros(size, bool)
             )
@@ -392,6 +422,11 @@ class ReplayAnalysis:
                     ),
                 }
                 for topic in METRIC_TOPICS
+                + (
+                    CAPTURE_THE_FLAG_METRIC_TOPICS
+                    if self.context.resolved_env_config.task_mode == TASK_MODE_CTF
+                    else ()
+                )
                 if (
                     len(self.columns) > len(PRIORITY_METRIC_COLUMNS)
                     or topic.name == "priority"
@@ -999,13 +1034,17 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
     ReplayAnalysis
         ReplayAnalysis with read-only float32 values and boolean validity for
         initial frame plus every captured transition. Column order is current
-        PRIORITY_METRIC_COLUMNS or METRIC_COLUMNS, independent of old sidecars.
+        PRIORITY_METRIC_COLUMNS, or with full=True the full list of the game's
+        mode (metric_columns_for_task_mode): METRIC_COLUMNS for a Team
+        Deathmatch or neutral game, and for a Capture the Flag game (replay V5)
+        Team Deathmatch's columns without the Red Zone, then its own. It is
+        independent of old sidecars. A Capture the Flag game's score columns
+        count captures.
 
     Raises
     ------
     ValueError
-        The replay records a Capture the Flag game (replay V5), or full
-        analysis sees a different mechanics catalog.
+        Full analysis sees a different mechanics catalog.
     RuntimeError
         Evaluation/Core source bytes change during analysis.
     TypeError
@@ -1024,8 +1063,6 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
     frame; every older column keeps its computed value and availability.
     """
     replay = bundle.replay
-    if isinstance(replay, ReplayArtifactV5):  # A Capture the Flag game.
-        raise ValueError("scalar replay analysis supports TDM only")
     context = replay.header.context
     if full and context.static_mechanics_catalog != build_static_mechanics_catalog_v1():
         raise ValueError(
@@ -1033,9 +1070,13 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
         )
     digest = _source_digest()
     config = reconstruct_env_config_v1(context)
+    # Capture the Flag games (replay V5) measure their own columns; every other
+    # replay is a Team Deathmatch or neutral game.
+    task_mode = TASK_MODE_CTF if isinstance(replay, ReplayArtifactV5) else TASK_MODE_TDM
     initial = reconstruct_env_state_v1(replay.frames[0], host=True)
     carry, first = cast(
-        tuple[_Carry, MetricValues], _initialize(config, initial, full=full)
+        tuple[_Carry, MetricValues],
+        _initialize(config, initial, full=full, task_mode=task_mode),
     )
     first = jax.device_get(first)
     value_blocks = [np.asarray(first.values)[None]]
@@ -1080,14 +1121,20 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
         batch = jax.tree.map(lambda *leaves: np.stack(leaves), *rows)
         carry, values = cast(
             tuple[_Carry, MetricValues],
-            _scan_block(config, initial_step, carry, batch, full=full),
+            _scan_block(
+                config, initial_step, carry, batch, full=full, task_mode=task_mode
+            ),
         )
         values = jax.device_get(values)
         value_blocks.append(np.asarray(values.values)[: len(transitions)])
         valid_blocks.append(np.asarray(values.valid)[: len(transitions)])
     scalars = np.concatenate(value_blocks)
     valid = np.concatenate(valid_blocks)
-    if full and not isinstance(context.resolved_env_config, ResolvedEnvConfigV2):
+    if (
+        full
+        and task_mode != TASK_MODE_CTF
+        and not isinstance(context.resolved_env_config, ResolvedEnvConfigV2)
+    ):
         # No Red Zone rule was recorded; do not report reconstructed depth-0
         # zeros as evidence.
         valid[:, _RED_ZONE_COLUMN_INDICES] = False
@@ -1096,7 +1143,9 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
     if _source_digest() != digest:
         raise RuntimeError("evaluation source changed during replay analysis")
     original = bundle.metric_report_artifact
-    columns = METRIC_COLUMNS if full else PRIORITY_METRIC_COLUMNS
+    columns = (
+        metric_columns_for_task_mode(task_mode) if full else PRIORITY_METRIC_COLUMNS
+    )
     return ReplayAnalysis(
         source_replay_digest=replay.canonical_digest_sha256,
         analysis_source_digest=digest,
@@ -1138,7 +1187,8 @@ def replay_metrics(
         takes a few seconds and is most of this call's time.
     metrics : {'priority', 'full'}, default='priority'
         ``'priority'`` gives the priority columns, the default everywhere in
-        MARL-BGs; ``'full'`` gives every column of the full metric catalog.
+        MARL-BGs; ``'full'`` gives every column of the full metric catalog
+        for the game's mode.
 
     Returns
     -------
@@ -1150,7 +1200,9 @@ def replay_metrics(
         cannot provide, is NaN, as in those tables; a real zero stays 0.0. For
         example ``team_a_win`` is 1.0 or 0.0 once the game has ended, and the
         44 Red Zone columns are NaN for a replay recorded before the Red Zone
-        rule. Values are computed in float32 and returned as Python floats.
+        rule. A Capture the Flag game's full columns have no Red Zone and add
+        its own, such as ``agent_0_steps__carrying``; its scores count
+        captures. Values are computed in float32 and returned as Python floats.
 
     Raises
     ------
@@ -1158,9 +1210,9 @@ def replay_metrics(
         ``replay`` is neither a path nor a loaded replay, or the replay's
         captured data cannot be rebuilt with its declared types.
     ValueError
-        ``metrics`` is not ``'priority'`` or ``'full'``, the replay is not a
-        Team Deathmatch or neutral game, or a full measurement meets a replay
-        whose recorded game mechanics differ from this version's.
+        ``metrics`` is not ``'priority'`` or ``'full'``, or a full measurement
+        meets a replay whose recorded game mechanics differ from this
+        version's.
     RuntimeError
         The installed evaluation or Core source files change during the call.
     marl_battlegrounds.evaluation.replay_io.ReplayLoadError

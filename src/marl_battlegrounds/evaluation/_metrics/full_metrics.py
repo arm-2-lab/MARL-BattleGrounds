@@ -5,7 +5,10 @@ Core facts; full_values packs the current metric catalog. Live evaluation and
 replay prefix analysis share these functions. Keys are static tree structure,
 values are arrays, and no host report, callback or replay buffer is retained.
 Optional collection is selected by the environment wrapper. Red Zone counts use
-Core's red_zone_death_mask, the same classifier that scores points.
+Core's red_zone_death_mask, the same classifier that scores points. A static
+task_mode argument adds a Capture the Flag game's own totals and columns
+(_metrics/capture_the_flag.py); Team Deathmatch's totals, columns and compiled
+program stay as they are.
 """
 
 from functools import cache
@@ -27,11 +30,20 @@ from marl_battlegrounds.core.env import (
 )
 from marl_battlegrounds.core.types import (
     PRIEST_CLASS_ID,
+    TASK_MODE_CTF,
     TASK_MODE_TDM,
     ActionMask,
     EnvConfig,
     EnvState,
     Info,
+)
+from marl_battlegrounds.evaluation._metrics.capture_the_flag import (
+    capture_the_flag_data,
+    initialize_capture_the_flag,
+    update_capture_the_flag,
+)
+from marl_battlegrounds.evaluation._metrics.capture_the_flag_catalog import (
+    capture_the_flag_metric_columns,
 )
 from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
 from marl_battlegrounds.evaluation.combat_metrics import combat_quantities
@@ -44,10 +56,44 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     STATUS_NAMES,
     ULTIMATE_CLASS_NAMES,
     ULTIMATE_TEAM_ABILITY_STEMS,
+    MetricColumn,
     MetricScope,
 )
 
 type FullTotals = dict[str, Array]
+
+_CTF_PREFIX = "capture_the_flag/"
+"""Key prefix of a Capture the Flag game's own totals inside its FullTotals."""
+
+
+def metric_columns_for_task_mode(task_mode: int) -> tuple[MetricColumn, ...]:
+    """Return the full column list of a game of one task mode.
+
+    Parameters
+    ----------
+    task_mode : int
+        The game's static task mode: TASK_MODE_CTF (3) gives a Capture the Flag
+        game's columns; every other mode gives METRIC_COLUMNS, Team Deathmatch's.
+
+    Returns
+    -------
+    tuple of MetricColumn
+        The columns full_values returns, in order. Both lists start with the
+        PRIORITY_METRIC_COLUMNS.
+    """
+    if task_mode == TASK_MODE_CTF:
+        return capture_the_flag_metric_columns()
+    return METRIC_COLUMNS
+
+
+def _capture_the_flag_totals(totals: FullTotals) -> FullTotals:
+    """Return a Capture the Flag game's own totals without their key prefix."""
+    return {
+        name.removeprefix(_CTF_PREFIX): total
+        for name, total in totals.items()
+        if name.startswith(_CTF_PREFIX)
+    }
+
 
 _COUNTER_SHAPES = {
     "deaths": (10,),
@@ -149,7 +195,9 @@ def _matrix(pairs: Array, relation: str) -> Array:
     )
 
 
-def initialize_full(config: EnvConfig, state: EnvState) -> FullTotals:
+def initialize_full(
+    config: EnvConfig, state: EnvState, *, task_mode: int = TASK_MODE_TDM
+) -> FullTotals:
     """Create compact full-metric totals for one episode's initial state.
 
     Parameters
@@ -158,6 +206,11 @@ def initialize_full(config: EnvConfig, state: EnvState) -> FullTotals:
         Exact scalar episode config with ten active-slot flags.
     state : EnvState
         Matching initial Core state, including authored deaths and Traps.
+    task_mode : int, default=TASK_MODE_TDM
+        The game's static task mode. TASK_MODE_CTF also creates the game's
+        Capture the Flag totals (initialize_capture_the_flag), under keys that
+        start with "capture_the_flag/". Other modes create none, so Team
+        Deathmatch's totals and compiled program do not change.
 
     Returns
     -------
@@ -191,6 +244,13 @@ def initialize_full(config: EnvConfig, state: EnvState) -> FullTotals:
     )
     totals["trap_periods"] = initial_traps.astype(jnp.int32)
     totals["initial_dead"] = config.agent_profile.active_mask & ~state.alive_mask
+    if task_mode == TASK_MODE_CTF:
+        totals.update(
+            {
+                _CTF_PREFIX + name: total
+                for name, total in initialize_capture_the_flag().items()
+            }
+        )
     return totals
 
 
@@ -226,6 +286,8 @@ def update_full(
     state: EnvState,
     action_mask: ActionMask,
     info: Info,
+    *,
+    task_mode: int = TASK_MODE_TDM,
 ) -> FullTotals:
     """Accumulate one transition's full metrics without retaining its trajectory.
 
@@ -242,6 +304,10 @@ def update_full(
         Acting masks, including joint target/Ultimate legality.
     info : Info
         Authoritative Core Info for the transition from that state.
+    task_mode : int, default=TASK_MODE_TDM
+        The game's static task mode, the same as initialize_full's. With
+        TASK_MODE_CTF the Capture the Flag totals are updated too, from this
+        tick's combat quantities, computed once for both.
 
     Returns
     -------
@@ -515,12 +581,24 @@ def update_full(
         delta[f"{name}_team_coverage"] = team_covered
         delta[f"{name}_team_eligible"] = team_eligible
 
-    return {
+    updated = {
         name: total
         if name == "initial_dead"
         else total + jnp.where(facts.has_transition, delta[name], 0).astype(total.dtype)
         for name, total in totals.items()
+        if not name.startswith(_CTF_PREFIX)
     }
+    if task_mode == TASK_MODE_CTF:
+        flags = update_capture_the_flag(
+            _capture_the_flag_totals(totals),
+            config,
+            state,
+            info,
+            quantities,
+            freedom_protected,
+        )
+        updated.update({_CTF_PREFIX + name: total for name, total in flags.items()})
+    return updated
 
 
 def _available(value: Array) -> MetricValues:
@@ -535,7 +613,11 @@ def _ratio(numerator: Array, denominator: Array) -> MetricValues:
 
 
 def full_values(
-    totals: FullTotals, config: EnvConfig, priority: MetricValues
+    totals: FullTotals,
+    config: EnvConfig,
+    priority: MetricValues,
+    *,
+    task_mode: int = TASK_MODE_TDM,
 ) -> MetricValues:
     """Read full metrics in fixed catalog order, reusing supplied priority values.
 
@@ -548,13 +630,16 @@ def full_values(
     priority : MetricValues
         MetricValues for the same episode boundary, in the 16-column
         PRIORITY_METRIC_COLUMNS order.
+    task_mode : int, default=TASK_MODE_TDM
+        The game's static task mode, the same as initialize_full's. It picks
+        the column list (metric_columns_for_task_mode).
 
     Returns
     -------
     MetricValues
         MetricValues with float32 values and boolean availability, each shape
-        (len(METRIC_COLUMNS),). The first len(PRIORITY_METRIC_COLUMNS) entries
-        copy priority exactly.
+        (len(metric_columns_for_task_mode(task_mode)),). The first
+        len(PRIORITY_METRIC_COLUMNS) entries copy priority exactly.
         Invalid entries are unavailable, not measurements of zero; consumers must
         apply valid before publishing them.
 
@@ -974,7 +1059,11 @@ def full_values(
     )
 
     _directed_values(data, stored, expanded, config)
-    return _pack_values(data, config, priority)
+    if task_mode == TASK_MODE_CTF:
+        flags = capture_the_flag_data(_capture_the_flag_totals(stored))
+        assert not flags.keys() & data.keys(), "a Capture the Flag stem repeats one"
+        data.update(flags)
+    return _pack_values(data, config, priority, task_mode)
 
 
 def _directed_values(
@@ -1162,14 +1251,18 @@ def _directed_values(
 
 
 @cache
-def _packing_groups() -> tuple[tuple[tuple[MetricScope, str], tuple[int, ...]], ...]:
+def _packing_groups(
+    task_mode: int,
+) -> tuple[tuple[tuple[MetricScope, str], tuple[int, ...]], ...]:
     """Cache fixed catalog indexes grouped by metric scope/stem.
 
-    Return immutable host tuples used during tracing. Grouped gathers avoid
-    building a separate numerical operation for every exported scalar column.
+    Return immutable host tuples used during tracing, for the static task
+    mode's column list. Grouped gathers avoid building a separate numerical
+    operation for every exported scalar column.
     """
     groups: dict[tuple[MetricScope, str], list[int]] = {}
-    for column in METRIC_COLUMNS[len(PRIORITY_METRIC_COLUMNS) :]:
+    columns = metric_columns_for_task_mode(task_mode)
+    for column in columns[len(PRIORITY_METRIC_COLUMNS) :]:
         if column.scope == "team":
             index = column.subjects[0] - 1
         elif column.scope == "team_recipient":
@@ -1183,10 +1276,11 @@ def _packing_groups() -> tuple[tuple[tuple[MetricScope, str], tuple[int, ...]], 
 
 
 @cache
-def _packing_order() -> tuple[int, ...]:
+def _packing_order(task_mode: int) -> tuple[int, ...]:
     """Cache the fixed permutation that restores catalog order after grouped gathers."""
     groups: dict[tuple[MetricScope, str], list[int]] = {}
-    for index, column in enumerate(METRIC_COLUMNS[len(PRIORITY_METRIC_COLUMNS) :]):
+    columns = metric_columns_for_task_mode(task_mode)
+    for index, column in enumerate(columns[len(PRIORITY_METRIC_COLUMNS) :]):
         groups.setdefault((column.scope, column.stem), []).append(index)
     grouped = [index for indices in groups.values() for index in indices]
     return tuple(sorted(range(len(grouped)), key=grouped.__getitem__))
@@ -1196,6 +1290,7 @@ def _pack_values(
     data: dict[tuple[MetricScope, str], MetricValues],
     config: EnvConfig,
     priority: MetricValues,
+    task_mode: int,
 ) -> MetricValues:
     """Pack grouped values and apply config-dependent availability masks.
 
@@ -1206,15 +1301,15 @@ def _pack_values(
     """
     values: list[Array] = []
     valid: list[Array] = []
-    for key, indices in _packing_groups():
+    for key, indices in _packing_groups(task_mode):
         measurement = data[key]
         indices_array = jnp.asarray(indices)
         values.append(measurement.values.reshape(-1)[indices_array])
         valid.append(measurement.valid.reshape(-1)[indices_array])
-    order = jnp.asarray(_packing_order())
+    order = jnp.asarray(_packing_order(task_mode))
     result = jnp.concatenate(values)[order].astype(jnp.float32)
     available = jnp.concatenate(valid)[order]
-    columns = METRIC_COLUMNS[len(PRIORITY_METRIC_COLUMNS) :]
+    columns = metric_columns_for_task_mode(task_mode)[len(PRIORITY_METRIC_COLUMNS) :]
     team_scope = jnp.asarray(
         tuple(c.scope in ("team", "team_recipient") for c in columns)
     )

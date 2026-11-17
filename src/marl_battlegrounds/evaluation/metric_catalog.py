@@ -866,11 +866,40 @@ METRIC_TOPICS = (
         True,
     ),
 )
-METRIC_TOPICS_BY_NAME = MappingProxyType({topic.name: topic for topic in METRIC_TOPICS})
+# Capture the Flag's own topics, named after the inventory's tables 1 and 2. They
+# are listed only for a Capture the Flag game's columns, after METRIC_TOPICS, so a
+# Team Deathmatch analysis lists exactly METRIC_TOPICS.
+CAPTURE_THE_FLAG_METRIC_TOPICS = (
+    MetricTopic(
+        "flag_carry",
+        "The Carry",
+        "Capture the Flag",
+        (
+            "Who takes the enemy flag, how long each carry lasts, how it ends, and "
+            "how the carrier moves and fights while it holds the flag."
+        ),
+    ),
+    MetricTopic(
+        "ally_carrier_support",
+        "Staying With and Supporting the Ally Carrier",
+        "Capture the Flag",
+        (
+            "Who stays near the team's carrier, how many teammates escort it, who "
+            "heals it, and what happens to the carrier while they do."
+        ),
+        True,
+    ),
+)
+METRIC_TOPICS_BY_NAME = MappingProxyType(
+    {topic.name: topic for topic in METRIC_TOPICS + CAPTURE_THE_FLAG_METRIC_TOPICS}
+)
 METRIC_VIEW_LABELS = MappingProxyType(
     {"totals": "Totals", "recipients": "By Recipient", "single": "Single View"}
 )
-_TOPIC_ORDER = {topic.name: index for index, topic in enumerate(METRIC_TOPICS)}
+_TOPIC_ORDER = {
+    topic.name: index
+    for index, topic in enumerate(METRIC_TOPICS + CAPTURE_THE_FLAG_METRIC_TOPICS)
+}
 _TOPIC_BY_FAMILY = {
     "recipient_damage": "damage_done",
     "recipient_healing": "healing_done",
@@ -1884,7 +1913,9 @@ def _row_order(
         status_order.index(column.status_channel)
         if column.status_channel is not None
         else 0,
-        *measure_order[column.stem],
+        # A stem outside Team Deathmatch's order (a Capture the Flag column) shares
+        # one rank after them, so a stable sort keeps its catalog's own order.
+        *measure_order.get(column.stem, (len(measure_order), 0)),
     )
 
 
