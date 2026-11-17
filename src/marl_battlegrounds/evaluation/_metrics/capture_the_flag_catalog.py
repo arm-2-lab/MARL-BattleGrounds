@@ -1,12 +1,12 @@
 """Name and describe Capture the Flag's metric columns, as the audited inventory does.
 
-The approved inventory of 28 October (decisions 132 and 133) owns every Capture the
+The approved inventory of 28 October owns every Capture the
 Flag column's name, label, description and direction. _INVENTORY_ROWS holds the rows
 this build measures, copied word for word (with the decided capture reach, 0.75);
 rows the inventory flags as views (copies of other columns) are never shipped
-(rule 31). _WRITTEN_ROWS writes out the rows the inventory gives as one text for
+_WRITTEN_ROWS writes out the rows the inventory gives as one text for
 several columns: the whole-game closest ally, each situation's tick block, and the
-approved carries ending in death within 5, 10 and 20 ticks (decision 279).
+approved carries ending in death within 5, 10 and 20 ticks.
 capture_the_flag_columns expands each pattern to its columns: agent_{i} to the ten
 slots, team_{t} to Team A and Team B, agent_{i}_to_agent_{j} to the 50 ordered pairs
 of teammates (the 10 pairs of an agent with itself stay blank), and {n} to escort
@@ -14,8 +14,8 @@ sizes 0 to 4 ("with_1_ally_near" for one). capture_the_flag_metric_columns is a
 Capture the Flag game's full
 list: Team Deathmatch's columns without the Red Zone, then these. Healing given is
 a Priest's alone, so those columns name the Priest as their required class (the
-class rule, decision 138). Capture the Flag stays out of the public exports until
-version 1.1.0 (decision 86).
+class rule). Capture the Flag stays out of the public exports until version
+1.1.0.
 """
 
 from functools import cache
@@ -24,6 +24,7 @@ from typing import Literal
 from marl_battlegrounds.core.types import PRIEST_CLASS_ID
 from marl_battlegrounds.evaluation._metrics.capture_the_flag import (
     DEATH_WINDOWS,
+    MAX_ALLIES_NEAR,
     escort_split,
 )
 from marl_battlegrounds.evaluation.metric_catalog import (
@@ -32,7 +33,7 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     MetricScope,
 )
 
-# (pattern, label, description, direction), from final/02's Tables 1 and 2.
+# (pattern, label, description, direction), from the inventory's Tables 1 and 2.
 _INVENTORY_ROWS: tuple[tuple[str, str, str, str], ...] = (
     (
         "agent_{i}_flag_steals",
@@ -100,8 +101,7 @@ _INVENTORY_ROWS: tuple[tuple[str, str, str, str], ...] = (
         "Deaths While Carrying",
         "How many times this agent died while it held the enemy flag at the start "
         "of the tick. Each such death drops the flag, unless the agent captured on "
-        "that tick (decision 160, 31 October: a carrier this tick's combat kills "
-        "still captures).",
+        "that tick: a carrier that this tick's combat kills still captures.",
         "Context dependent",
     ),
     (
@@ -545,7 +545,7 @@ _CLOSEST_ALLY_ROWS: tuple[tuple[str, str, str, str], ...] = (
 def _tick_block_rows(
     slug: str, name: str, where: str, definition: str
 ) -> tuple[tuple[str, str, str, str], ...]:
-    """Write a situation's tick block (final/01, table 5) for its columns.
+    """Write a situation's tick block (the inventory's Table 5) for its columns.
 
     slug is the situation's slug, name its title ("Near the Ally Carrier"),
     where a phrase that finishes "was ..." ("near its team's carrier"), and
@@ -609,7 +609,7 @@ def _tick_block_rows(
 
 
 def _death_window_rows() -> tuple[tuple[str, str, str, str], ...]:
-    """Write the approved carries-ending-in-death-within rows (decision 279)."""
+    """Write the approved carries-ending-in-death-within rows."""
     rows: list[tuple[str, str, str, str]] = []
     for ticks in DEATH_WINDOWS:
         rows.append(
@@ -618,7 +618,8 @@ def _death_window_rows() -> tuple[tuple[str, str, str, str], ...]:
                 f"Carries Ending in Death Within {ticks} Ticks",
                 f"How many of this agent's carries ended with its death within "
                 f"{ticks} ticks of the pickup (a steal or a pickup of the dropped "
-                "flag) that started them.",
+                "flag) that started them. A carrier killed on the tick it picked "
+                "the flag up counts, with a carry of 0 ticks.",
                 "Context dependent",
             )
         )
@@ -627,14 +628,16 @@ def _death_window_rows() -> tuple[tuple[str, str, str, str], ...]:
                 f"team_{{t}}_carries_ending_in_death_within_{ticks}_steps",
                 f"Carries Ending in Death Within {ticks} Ticks",
                 "How many of this team's carries ended with the carrier's death "
-                f"within {ticks} ticks of the pickup that started them.",
+                f"within {ticks} ticks of the pickup that started them. A carrier "
+                "killed on the tick it picked the flag up counts, with a carry of 0 "
+                "ticks.",
                 "Context dependent",
             )
         )
     return tuple(rows)
 
 
-# Carrying's tick block beyond its two stored counts (final/01, table 5, the
+# Carrying's tick block beyond its two stored counts (the inventory's Table 5, the
 # Carrying row): a team has at most one carrier, so its solo ticks and team sums
 # are views (never shipped) and these four keep their always-known values.
 _CARRYING_BLOCK_ROWS = tuple(
@@ -702,8 +705,8 @@ _DIRECTIONS: dict[str, Literal["higher", "lower", "descriptive"]] = {
 # Columns whose combined value across games weighs each game by another column
 # (MetricColumn.summary_weight), by stem, or by (scope, stem) where the scopes
 # differ; any other mean's weight is its _observations twin. A weight starting
-# "team:" is the agent's team's column. A mean whose count is a view (rule 31:
-# never shipped) is weighed by the shipped column the view copies, or by None,
+# "team:" is the agent's team's column. A mean whose count is a view (a
+# copy, never shipped) is weighed by the shipped column the view copies, or by None,
 # so its games count equally, when the view adds or subtracts columns.
 _WEIGHTS: dict[str | tuple[MetricScope, str], str | None] = {
     "flag_captures_per_steal": "flag_steals",
@@ -742,7 +745,9 @@ def _weight(stem: str, scope: MetricScope) -> str | None:
 
 def _unit(stem: str) -> str:
     """Name a stem's unit in the catalog's words."""
-    if stem.endswith(("_fraction", "_participation")) or "_fraction__" in stem:
+    if stem.endswith(("_fraction", "_participation")) or any(
+        part in stem for part in ("_fraction__", "_participation__")
+    ):
         return "fraction"
     if stem.endswith("_observations") or "_observations__" in stem:
         return "count"
@@ -767,22 +772,18 @@ def _escort(text: str, n: int, *, label: bool) -> str:
     """Write one escort size into a split row's label or description."""
     if label:
         word = "Ally" if n == 1 else "Allies"
-        for example in range(MAX_ESCORT + 1):
+        for example in range(MAX_ALLIES_NEAR + 1):
             text = text.replace(
                 f"Exactly {example} Allies Near", f"Exactly {n} {word} Near"
             )
         return text
     word = "teammate" if n == 1 else "teammates"
-    for example in range(MAX_ESCORT + 1):
+    for example in range(MAX_ALLIES_NEAR + 1):
         text = text.replace(
             f"exactly {example} (or the column's number of) teammates",
             f"exactly {n} {word}",
         )
     return text
-
-
-MAX_ESCORT = 4
-"""Largest escort size a split names: a carrier has at most four teammates."""
 
 
 def _column(
@@ -814,7 +815,7 @@ def _column(
         missing_when=f"This measurement was not recorded; or {who}.",
         direction=_DIRECTIONS[direction],
         stem=stem,
-        # Healing given is a Priest's alone (the class rule, decision 138).
+        # Healing given is a Priest's alone (the class rule).
         required_class_id=PRIEST_CLASS_ID
         if "healing_done_to_allies" in stem
         or "excess_healing_to_allies" in stem
@@ -842,7 +843,7 @@ def capture_the_flag_columns() -> tuple[MetricColumn, ...]:
     """
     columns: list[MetricColumn] = []
     for pattern, label, description, direction in _INVENTORY_ROWS + _WRITTEN_ROWS:
-        sizes = range(MAX_ESCORT + 1) if "{n}" in pattern else (None,)
+        sizes = range(MAX_ALLIES_NEAR + 1) if "{n}" in pattern else (None,)
         for n in sizes:
             text = (
                 pattern

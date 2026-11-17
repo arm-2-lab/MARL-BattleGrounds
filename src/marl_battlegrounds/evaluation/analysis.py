@@ -212,7 +212,12 @@ def _values(
 def _initialize(
     config: EnvConfig, state: EnvState, *, full: bool, task_mode: int
 ) -> tuple[_Carry, MetricValues]:
-    """Create one prefix's metric totals and values at the captured initial frame."""
+    """Create one prefix's metric totals and values at the captured initial frame.
+
+    task_mode is the replay's static task mode (TASK_MODE_TDM or TASK_MODE_CTF);
+    it picks the full totals and column list, and every later _scan_block and
+    _values call for the same replay passes the same mode.
+    """
     carry = _Carry(
         state,
         initialize_priority(),

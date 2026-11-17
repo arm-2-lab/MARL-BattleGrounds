@@ -1,6 +1,6 @@
 """Check Capture the Flag's carry and carrier-support columns against worked values.
 
-Five hand-built games on map 0 (three champions a team, no walls, so every
+Six hand-built games on map 0 (three champions a team, no walls, so every
 agent sees every other) run for 4 ticks through evaluate_episodes, and
 replay_metrics(metrics="full") measures each saved replay. Nobody moves. Each
 agent heals its own team's first agent (slot 0 or 5) when it can, which only a
@@ -25,6 +25,10 @@ enemy Mage for 8 every tick.
 Game 5: Team B's Mage has a start-state carry at 1 health with no ally near and
 is killed on tick 1. Team A's Priest picks Team B's flag up off the ground on
 tick 1 and carries for 3 ticks with no ally near.
+Game 6: Team A's Priest carries Team B's flag at (8, 5) and heals Team A's Mage,
+2 units away at 40 health, while that Mage hits Team B's Mage, which stands 2
+units from the carrier and hits back. The Mage is attacking enemies near the
+carrier every tick; the carrier never is, even through the Priest rule.
 
 Contracts: each game plays as scripted (carriers and deaths at the start of
 every tick). Position rows read the start of the tick, so a pickup counts from
@@ -43,10 +47,16 @@ blocks for Near the Ally Carrier, Attacking Enemies Near the Ally Carrier and
 Carrying. own_healing, aura and carrier_combat are columns a later packet
 builds, so they are expected to fail until it lands. Blanks are NaN: means
 with nothing to average, healing by agents that are not Priests, an agent
-paired with itself. Views and pairs across teams are not columns. Runs on CPU
-in about 40 s.
+paired with itself. Views and pairs across teams are not columns. The training
+reward's carry_steps counter, run over each game's saved carrier slots with
+Core's drop facts marking carrier deaths, counts the same deaths within 5 ticks
+of the pickup as the metric does, for every team that starts its game without a
+carrier (as training games do). These games hold no death on a pickup or
+capture tick, so those two cases rest on the counter's own tests. Runs
+on CPU in about 40 s.
 """
 
+# pyright: reportPrivateUsage=false
 import math
 from collections.abc import Mapping
 
@@ -59,6 +69,7 @@ from marl_battlegrounds.core.types import ActionMask, EnvState
 from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.analysis import replay_metrics
 from marl_battlegrounds.evaluation.evaluate import EpisodeSpec, evaluate_episodes
+from marl_battlegrounds.evaluation.models import TransitionFactsCaptureTheFlagV2
 from marl_battlegrounds.evaluation.policy_execution import Policy
 from marl_battlegrounds.evaluation.replay_io import LoadedReplayBundle, load_replay
 from marl_battlegrounds.policies.actor import ActorAction
@@ -67,6 +78,7 @@ from marl_battlegrounds.tasks import (
     AgentClassName,
     make_standard_capture_the_flag_config,
 )
+from marl_battlegrounds.training.shaping import _team_carry_steps
 
 _ROSTER: tuple[AgentClassName, ...] = ("mage", "warrior", "priest")
 _CONFIG = make_standard_capture_the_flag_config(
@@ -169,6 +181,12 @@ _GAMES = {
         countdowns={1: 10},
         health={5: 1},
     ),
+    6: _start(
+        {0: (8.0, 3.0), 2: (8.0, 5.0), 5: (10.0, 5.0)},
+        flags={1: (8.0, 5.0)},
+        carriers={1: 2},
+        health={0: 40},
+    ),
 }
 
 # At the start of ticks 1 to 4: (Team A's carrier, Team B's carrier, dead slots).
@@ -178,6 +196,7 @@ _TIMELINE: dict[int, list[tuple[int | None, int | None, list[int]]]] = {
     3: [(0, 5, []), (0, 5, []), (0, 5, []), (0, 5, [])],
     4: [(None, None, []), (0, None, []), (None, None, [0]), (None, None, [0])],
     5: [(None, 5, []), (2, None, [5]), (2, None, [5]), (2, None, [5])],
+    6: [(2, None, []), (2, None, []), (2, None, []), (2, None, [])],
 }
 
 
@@ -589,6 +608,12 @@ _EXPECTED: dict[tuple[int, str], dict[str, float]] = {
         "agent_2_effective_healing_done__carrying": 0.0,
         "team_a_effective_healing_done__carrying": 0.0,
     },
+    (6, "situations"): {
+        "agent_0_steps__attacking_enemies_near_the_ally_carrier": 4,
+        "agent_2_steps__attacking_enemies_near_the_ally_carrier": 0,
+        "team_a_steps_with_an_agent__attacking_enemies_near_the_ally_carrier": 4,
+        "team_a_solo_steps__attacking_enemies_near_the_ally_carrier": 4,
+    },
     (5, "situations"): {
         "team_a_steps_with_an_agent__near_the_ally_carrier": 0,
         "team_a_headcount_mean__near_the_ally_carrier": _BLANK,
@@ -706,3 +731,50 @@ def test_views_and_pairs_across_teams_are_not_columns(
     measured: dict[int, dict[str, float]],
 ) -> None:
     assert [name for name in _NOT_COLUMNS if name in measured[1]] == []
+
+
+def test_the_training_carry_counter_counts_the_same_quick_deaths(
+    replays: dict[int, LoadedReplayBundle], measured: dict[int, dict[str, float]]
+) -> None:
+    compared = 0
+    for game, bundle in replays.items():
+        replay = bundle.replay
+        assert isinstance(replay, ReplayArtifactV5)
+        # Each frame's carrier slot for flags 0 and 1, with None (no carrier) as -1.
+        slots = jnp.asarray(
+            [
+                [-1 if slot is None else slot for slot in carriers]
+                for carriers in (
+                    frame.snapshot.capture_the_flag_flag_carrier_slots
+                    for frame in replay.frames
+                )
+            ],
+            jnp.int32,
+        )
+        held = jnp.zeros((1, 2), jnp.int32)
+        quick = [0, 0]
+        for tick, transition in enumerate(replay.transitions):
+            steps, held = _team_carry_steps(
+                held,
+                jnp.asarray([tick == 0]),
+                slots[tick][None],
+                slots[tick + 1][None],
+                jnp.asarray([True]),
+            )
+            # A carrier's death is its drop; a death on the capture tick drops
+            # nothing, and a pickup-tick death drops with carry_steps 0.
+            facts = transition.facts
+            assert isinstance(facts, TransitionFactsCaptureTheFlagV2)
+            dropped = facts.capture_the_flag_facts.flag_was_dropped_by_agent
+            for team in (0, 1):
+                if any(dropped[team * 5 : team * 5 + 5]) and int(steps[0, team]) <= 5:
+                    quick[team] += 1
+        for team, name in enumerate("ab"):
+            if int(slots[0, 1 - team]) == -1:
+                expected = measured[game][
+                    f"team_{name}_carries_ending_in_death_within_5_steps"
+                ]
+                assert quick[team] == expected, (game, name)
+                compared += quick[team]
+    # Game 4's carrier dies 1 tick after its steal, so one quick death is compared.
+    assert compared == 1

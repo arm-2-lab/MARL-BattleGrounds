@@ -242,14 +242,14 @@ _AMOUNT_SHAPES = {
     "effective_healing_during_ally_carries": (10,),
     "effective_priest_healing_received_carrying": (10,),
 }
-_FLAG_SHAPES = {
+_MEMORY_SHAPES = {
     # Memory: an open carry, by its carrier, from pickup to capture or drop.
     "carry_open": (10,),
     # Memory: [flag, slot] the slot carried this flag and dropped it by dying
     # since the flag last left its home.
     "dropped_since_home": (2, 10),
     # Memory: [Priest, ally] the Priest cast Freedom on the ally this tick; it
-    # acts on the next tick (the Priest rule, rule 10).
+    # acts on the next tick (the Priest rule).
     "freedom_pairs": (10, 10),
 }
 
@@ -261,7 +261,7 @@ def initialize_capture_the_flag() -> CaptureTheFlagTotals:
     -------
     CaptureTheFlagTotals
         A dict with fixed keys: int32 counts, float32 amounts and bool memory,
-        each with the shape declared beside its name. About 2 KB per game.
+        each with the shape declared beside its name. About 3.7 KB per game.
 
     Notes
     -----
@@ -277,7 +277,7 @@ def initialize_capture_the_flag() -> CaptureTheFlagTotals:
         {name: jnp.zeros(shape, jnp.float32) for name, shape in _AMOUNT_SHAPES.items()}
     )
     totals.update(
-        {name: jnp.zeros(shape, bool) for name, shape in _FLAG_SHAPES.items()}
+        {name: jnp.zeros(shape, bool) for name, shape in _MEMORY_SHAPES.items()}
     )
     return totals
 
@@ -396,7 +396,8 @@ def update_capture_the_flag(
     )
     freed = totals["freedom_pairs"] & freedom_protected[None, :]
     helped = ((effective > 0) | freed) & _SAME_TEAM & hitting[None, :]
-    attacking = hitting | helped.any(axis=1)
+    # The Priest rule admits an eligible teammate who is not the carrier.
+    attacking = hitting | (helped.any(axis=1) & ~carrying & tick.eligible)
     team_attacking = jnp.zeros(2, jnp.int32).at[_TEAM].add(_count(attacking))
     contributions = quantities.kill_contributions
 
@@ -546,7 +547,7 @@ def _measured(values: Array) -> MetricValues:
 
 
 def _mean(total: Array, observations: Array) -> MetricValues:
-    """Divide a total by its count; a count of 0 makes the mean blank (rule 7)."""
+    """Divide a total by its count; a count of 0 makes the mean blank."""
     valid = observations > 0
     return MetricValues(
         (total / jnp.where(valid, observations, 1)).astype(jnp.float32), valid
@@ -578,7 +579,7 @@ def capture_the_flag_data(totals: CaptureTheFlagTotals) -> CaptureTheFlagData:
     -----
     A carry still open at the end of the game counts in the duration mean with
     its ticks so far, and in neither "ending in" total. A count that only copies
-    other columns (a view) is never returned (rule 31): the carry duration and
+    other columns (a view) is never returned: the carry duration and
     carry speed counts, the distance-to-home count, and the solo ticks and team
     sums of Carrying, where a team has at most one carrier.
     """
@@ -595,7 +596,7 @@ def capture_the_flag_data(totals: CaptureTheFlagTotals) -> CaptureTheFlagData:
         data[("team", f"{stem}_mean")] = _mean(_team(total), _team(observations))
 
     def situated(stem: str, situation: str) -> str:
-        """Put a situation's slug last, after two underscores (rule 18)."""
+        """Put a situation's slug last, after two underscores."""
         return f"{stem}__{situation}"
 
     steals = totals["flag_steals"]
@@ -606,7 +607,7 @@ def capture_the_flag_data(totals: CaptureTheFlagTotals) -> CaptureTheFlagData:
     data[("team", "flag_pickups")] = _measured(
         _team(steals + totals["dropped_enemy_flag_pickups"])
     )
-    # Carrying's tick block (final/01, table 5): a team has at most one carrier,
+    # Carrying's tick block: a team has at most one carrier,
     # so its solo ticks and team sums are views, two or more is always blank, and
     # the headcount and solo share are 1 whenever there was a carrier.
     carrying = totals["steps_carrying"]
@@ -722,7 +723,7 @@ def capture_the_flag_data(totals: CaptureTheFlagTotals) -> CaptureTheFlagData:
         for size in range(MAX_ALLIES_NEAR + 1):
             both(situated(f"{stem}_{escort_split(size)}", "carrying"), split[:, size])
 
-    # The tick block (final/01, table 5) for each situation built so far.
+    # The tick block for each situation built so far.
     for situation, prefix in (
         (near, "steps_near_the_ally_carrier"),
         (

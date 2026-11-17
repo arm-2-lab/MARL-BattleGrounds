@@ -1294,10 +1294,12 @@ def _pack_values(
 ) -> MetricValues:
     """Pack grouped values and apply config-dependent availability masks.
 
-    data must contain all nonpriority scope/stem entries required by the catalog.
-    Preserve exact supplied priority values; mask inactive sources/recipients,
-    missing required classes, invalid target relationships and unavailable ratios.
-    Return one float32/bool vector pair without writing host tables.
+    data must contain all nonpriority scope/stem entries that task_mode's
+    column list needs (metric_columns_for_task_mode; a static Python int, the
+    same mode the totals were built with). Preserve exact supplied priority
+    values; mask inactive sources/recipients, missing required classes, invalid
+    target relationships and unavailable ratios. Return one float32/bool vector
+    pair in that mode's column order without writing host tables.
     """
     values: list[Array] = []
     valid: list[Array] = []
