@@ -109,7 +109,10 @@ def _noop(*args: object, **kwargs: object) -> None:
 def _writer_owner(tmp_path: Path) -> Any:  # noqa: ANN401
     owner = _owner(tmp_path)
     settings = SimpleNamespace(
-        input_scale=1.0, spawn_frame="left", parameter_sharing="all"
+        input_scale=1.0,
+        spawn_frame="left",
+        parameter_sharing="all",
+        messages="attention",
     )
     owner.config = SimpleNamespace(
         method="mappo",

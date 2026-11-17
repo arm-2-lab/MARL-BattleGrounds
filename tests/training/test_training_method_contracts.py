@@ -25,7 +25,8 @@ opponent_rows=22; only the existing content_binding may differ. In the schema di
 only actor_input and training_state go from 1 to 2, and the frozen pre-Red-Zone
 dictionary equals the recorded one. The schema-1 actor template equals the old actor
 layout exactly. Historical method settings gain only explicit parameter_sharing="all"
-(and QMIX reward_scale=1.0, which saved configs leave out at that value). The default
+(and QMIX reward_scale=1.0 and PPO messages="attention", which saved configs leave
+out at those values). The default
 ``config_to_dict`` equals the recorded one plus the explicitly listed history/partner
 defaults, retain_all_actors=False and "red_zone_depth": 5.0, placed right after
 score_threshold_curriculum. Older settings remain exact. The original fixture is not
@@ -257,6 +258,7 @@ def test_the_capture_settings_are_the_recorded_ones() -> None:
     assert asdict(PPOConfig(**settings["ppo"])) == {
         **settings["ppo"],
         "parameter_sharing": "all",
+        "messages": "attention",
     }
     assert asdict(QMIXConfig(**settings["qmix"])) == {
         **settings["qmix"],
