@@ -6,7 +6,8 @@ PQNConfig accepts only finite positive real numbers and PQNConfig's
 ``reward_scale`` 10 equals, bit for bit, the same update at scale 1 on a batch
 whose rewards were multiplied by 10, for both QMIX and PQN-VDN, and differs
 from the unscaled update. ``saved_settings`` leaves these later settings out
-while they hold the value older runs used, so config_to_dict keeps historical
+while they hold the value older runs used (and PPOConfig's ``messages`` while
+it holds "attention"), so config_to_dict keeps historical
 bytes, and the checkpoint settings checks accept a block saved before the
 settings existed or one stating their old values, while a changed value is
 written, read back and rejected against the old block. A LayerNorm network
@@ -186,7 +187,9 @@ def test_pqn_reward_scale_multiplies_the_rewards_one_update_learns_from() -> Non
 
 def test_saved_settings_keep_old_bytes_and_old_blocks_still_match() -> None:
     ppo = PPOConfig()
-    assert saved_settings(ppo) == dataclasses.asdict(ppo)
+    assert saved_settings(ppo) == {
+        k: v for k, v in dataclasses.asdict(ppo).items() if k != "messages"
+    }
     old_qmix, old_pqn = (
         saved_settings(qmix.QMIXConfig()),
         saved_settings(pqn.PQNConfig()),
