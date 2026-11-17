@@ -46,6 +46,9 @@ actor-only warm-start checks. Grouped learner state restores exactly at update
 zero for PPO, QMIX and PQN; these cases do not claim trained-state equivalence.
 Artifact relocation keeps historical exposure only with the same checked receipt
 and exact inference registration. Changed or missing receipts do not bypass checks.
+A carry saved before the reward component totals restores without migration. A
+reward's carry_steps counter is saved with the carry: a nonzero counter restores
+exactly into a template whose counter is zero, as a resume does.
 """
 
 from __future__ import annotations
@@ -2391,6 +2394,55 @@ def test_pre_component_carry_payload_restores_without_migration(
     assert "component_keys" not in details["collection"].get("reward_identity", {})
     assert details["actor_digest"] == tree_digest(state.carry.history.current_variables)
     assert _files(tmp_path) == before
+
+
+def test_a_held_flag_counter_survives_save_and_restore(
+    context: Context, tmp_path: Path
+) -> None:
+    from marl_battlegrounds.core.types import EnvState
+    from marl_battlegrounds.environment import TrainingFacts
+
+    def reward(
+        before: EnvState,
+        facts: TrainingFacts,
+        after: EnvState,
+        progress: jax.Array,
+        *,
+        carry_steps: jax.Array,
+    ) -> jax.Array:
+        return jnp.zeros(10, jnp.float32)
+
+    collection, state = context
+    collection, carry = collection_module.change_training_reward(
+        collection,
+        state.carry,
+        shaping=collection.shaping,
+        shaping_mode=collection.shaping_mode,
+        discount=float(state.carry.discount),
+        coefficient=float(state.carry.coefficient),
+        reward=reward,
+        reward_identity={"reference": "tests:carry_steps"},
+    )
+    # Game 0's Team A carrier has held the flag 3 ticks; the template's counter
+    # stays at zero, so only the saved value can bring the 3 back.
+    template = state._replace(carry=carry)
+    assert isinstance(carry.carry_steps, jax.Array)
+    held = carry.carry_steps.at[0].set(jnp.asarray([3, 0], jnp.int32))
+    state = state._replace(carry=carry._replace(carry_steps=held))
+    metadata = _metadata()
+    writer = _writer(tmp_path, collection, metadata)
+    try:
+        path = save_checkpoint(
+            tmp_path, collection, state, metadata=metadata, writer=writer, ppo=PPO
+        )
+    finally:
+        if writer is not None:
+            writer.close()
+    restored = restore_checkpoint(
+        path, collection, template, expected_metadata=_expected(metadata), ppo=PPO
+    )
+    np.testing.assert_array_equal(restored.state.carry.carry_steps, held)
+    _equal(restored.state, state)
 
 
 def test_undrained_component_window_restores_with_saved_shape(
