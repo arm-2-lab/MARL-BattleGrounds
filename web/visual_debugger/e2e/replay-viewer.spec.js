@@ -33,7 +33,10 @@ import { basename, dirname, join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { buildMetricSearchIndex, findMeasurements } from "../src/metric-search.js";
 import { REPLAY_PNG_RECORDED_FILTER_IDS } from "../src/replay-export.js";
-import { visualFiltersForProduct } from "../src/visual-filters.js";
+import {
+  visualFilterShownInMode,
+  visualFiltersForProduct,
+} from "../src/visual-filters.js";
 import { installWaapiAutopause } from "./support/choreography.js";
 import { expectServerShutdown } from "./support/live-debugger.js";
 import {
@@ -163,6 +166,14 @@ const FIXED_EXPORT_FONT_PATHS = new Set([
 // the list; live-only switches are not shown here).
 const REPLAY_VIEWER_FILTER_IDS = Object.freeze(
   visualFiltersForProduct("replay_viewer").map(({ id }) => id),
+);
+// The switches the panel lists, and counts, in this file's replays: they are
+// Team Deathmatch and combat games (task mode 1 or 0, which list the same
+// switches), so the Capture the Flag-only Flags switch is hidden.
+const LISTED_REPLAY_VIEWER_FILTERS = Object.freeze(
+  visualFiltersForProduct("replay_viewer").filter(({ id }) =>
+    visualFilterShownInMode(id, 1),
+  ),
 );
 // High Contrast is off here so the export checks also see the Moonlit surround.
 const REPRESENTATIVE_DISABLED_FILTERS = Object.freeze([
@@ -948,12 +959,12 @@ function expectedReplayPngProvenance(snapshot) {
         authorized_endpoint_digest_sha256:
           presentation.source.source_authorized_endpoint_digest_sha256,
       };
-  // Provenance version 5 records only the battlefield switches
-  // (REPLAY_PNG_RECORDED_FILTER_IDS) and the camera frame; these tests keep
-  // the camera on Whole Map, which is the painted map from (0, 0).
+  // Provenance version 6 (version 5 plus the Flags switch) records only the
+  // battlefield switches (REPLAY_PNG_RECORDED_FILTER_IDS) and the camera frame;
+  // these tests keep the camera on Whole Map, which is the painted map from (0, 0).
   return {
     schema_id: "marl_battlegrounds.replay_battlefield_png_provenance",
-    schema_version: 5,
+    schema_version: 6,
     product_kind: "replay_viewer",
     presentation_kind: presentation.presentation_kind,
     authority,
@@ -1358,7 +1369,7 @@ async function enableAllReplayVisualFilters(page) {
     await enableAll.click();
   }
   // Every listed switch plus Ranges: "96 Of 96 On".
-  const controls = REPLAY_VIEWER_FILTER_IDS.length + 1;
+  const controls = LISTED_REPLAY_VIEWER_FILTERS.length + 1;
   await expect(page.locator("#visual-filter-count")).toHaveText(
     `${controls} of ${controls} On`,
   );
@@ -1402,7 +1413,7 @@ async function installRepresentativeReplayPresentationState(page, options = {}) 
     await expect(input).toBeChecked();
     await input.uncheck();
   }
-  const controls = REPLAY_VIEWER_FILTER_IDS.length + 1;
+  const controls = LISTED_REPLAY_VIEWER_FILTERS.length + 1;
   await expect(page.locator("#visual-filter-count")).toHaveText(
     `${controls - REPRESENTATIVE_DISABLED_FILTERS.length} of ${controls} On`,
   );
@@ -3592,11 +3603,11 @@ test("SharedObs TDM metrics and numeric identities remain visible across POV cha
     // Every listed switch at its shipped default. Default Configuration never
     // touches Ranges (filter-controls.js), so the Ranges that Enable All
     // turned on stays on: "77 Of 96 On".
-    const shippedOn = visualFiltersForProduct("replay_viewer").filter(
+    const shippedOn = LISTED_REPLAY_VIEWER_FILTERS.filter(
       ({ defaultEnabled }) => defaultEnabled,
     ).length;
     await expect(page.locator("#visual-filter-count")).toHaveText(
-      `${shippedOn + 1} of ${REPLAY_VIEWER_FILTER_IDS.length + 1} On`,
+      `${shippedOn + 1} of ${LISTED_REPLAY_VIEWER_FILTERS.length + 1} On`,
     );
     await expect(page.locator("#replay-ranges-button")).toHaveAttribute(
       "aria-pressed",

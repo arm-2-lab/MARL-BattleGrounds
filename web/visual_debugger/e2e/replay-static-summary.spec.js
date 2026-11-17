@@ -10,6 +10,7 @@ import { expect, test } from "@playwright/test";
 import {
   DEFAULT_VISUAL_FILTER_STATE,
   VISUAL_FILTER_IDS,
+  visualFilterShownInMode,
   visualFiltersForProduct,
 } from "../src/visual-filters.js";
 import {
@@ -31,6 +32,12 @@ const FILTER_INPUT = 'input[type="checkbox"][data-visual-filter-id]';
 // The Visuals tab shows only the Replay Viewer's switches; the count line reads
 // "N of M On" where M adds one for the Ranges button.
 const REPLAY_FILTER_IDS = visualFiltersForProduct("replay_viewer").map(({ id }) => id);
+// The switches the panel lists, and counts, in this file's Team Deathmatch
+// replay: the Capture the Flag-only Flags switch is hidden, keeps its state and
+// cannot be clicked.
+const LISTED_REPLAY_FILTER_IDS = REPLAY_FILTER_IDS.filter((id) =>
+  visualFilterShownInMode(id, 1),
+);
 // Status lifecycle events paint nothing on the arena now, so the selective
 // filter proof turns off Ultimates, whose routes and cues are placed here.
 const SELECTIVE_FILTER = "ultimate_ability_effects";
@@ -1109,15 +1116,15 @@ test("paused replay installs a complete deterministic static summary at both sup
     "aria-pressed",
     "false",
   );
-  const defaultOn = REPLAY_FILTER_IDS.filter(
+  const defaultOn = LISTED_REPLAY_FILTER_IDS.filter(
     (id) => /** @type {Record<string, boolean>} */ (DEFAULT_VISUAL_FILTER_STATE)[id],
   ).length;
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${defaultOn} of ${REPLAY_FILTER_IDS.length + 1} On`,
+    `${defaultOn} of ${LISTED_REPLAY_FILTER_IDS.length + 1} On`,
   );
   // This full-summary proof explicitly requests every paint family while
   // keeping ranges and target selection off.
-  for (const filterId of REPLAY_FILTER_IDS) {
+  for (const filterId of LISTED_REPLAY_FILTER_IDS) {
     await setFilter(
       page,
       apiRequests,
@@ -1126,7 +1133,7 @@ test("paused replay installs a complete deterministic static summary at both sup
     );
   }
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${REPLAY_FILTER_IDS.length - 1} of ${REPLAY_FILTER_IDS.length + 1} On`,
+    `${LISTED_REPLAY_FILTER_IDS.length - 1} of ${LISTED_REPLAY_FILTER_IDS.length + 1} On`,
   );
 
   /** @type {Awaited<ReturnType<typeof staticDomSignature>> | null} */
