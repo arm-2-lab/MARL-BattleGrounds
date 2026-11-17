@@ -128,13 +128,17 @@ from marl_battlegrounds.training.opponents import (
     select_opponents,
 )
 from marl_battlegrounds.training.shaping import (
+    CARRY_STEPS_CONTRACT,
     RewardFunction,
     _add_reward_totals,
+    _empty_carry_steps,
     _empty_reward_totals,
     _prepare_reward,
     _reward_keyword,
     _reward_output,
     _RewardTotals,
+    _team_carry_steps,
+    _uses_carry_steps,
     _validate_reward_totals,
     team_potential_shaping,
     team_score_delta_shaping,
@@ -210,6 +214,11 @@ class TrainingCarry(NamedTuple):
     reward_totals is () for array-only/disabled feedback. Named components keep
     small per-lane sums/counts until a saved row drains the window. Recovery
     saves pending totals; no component array enters actor inputs or replay.
+    carry_steps is () unless the reward declares carry_steps; then int32 (B,2),
+    Team A then Team B, the ticks each team's current carrier has held the
+    enemy flag at the start of a tick so far (shaping._team_carry_steps). It
+    is zeroed on each game's first tick and saved with the carry, so resume is
+    exact.
     """
 
     env: Environment
@@ -232,6 +241,7 @@ class TrainingCarry(NamedTuple):
     partner_actions: tuple[ActorAction, ActorAction] | None = None
     frozen_host_values: tuple[Tree, ...] = ()
     reward_totals: _RewardTotals | tuple[()] = ()
+    carry_steps: Array | tuple[()] = ()
 
 
 class TrainingTransition(NamedTuple):
@@ -1485,7 +1495,9 @@ def _prepare_collection_reward(
     the learner's discount come from the producing carry. Empty components
     preserve legacy identities and allocate no counter state. Declared saved
     keys must match the traced keys; a changed schema fails before training or
-    recovery writes.
+    recovery writes. A reward that declares carry_steps, or a restore template
+    whose saved identity records it, traces with an int32 (2,) counter, and
+    the returned identity records carry_steps_contract.
     """
     if reward is None:
         return None, None, ()
@@ -1495,6 +1507,9 @@ def _prepare_collection_reward(
     saved_keys = _reward_component_keys(identity)
     accepts_config, _ = _reward_keyword(reward, "config")
     accepts_discount, _ = _reward_keyword(reward, "discount")
+    uses_steps = _reward_keyword(reward, "carry_steps")[0] or _uses_carry_steps(
+        identity
+    )
     prepared = _prepare_reward(reward)
 
     def scalar(value: Array | jax.ShapeDtypeStruct) -> jax.ShapeDtypeStruct:
@@ -1509,6 +1524,7 @@ def _prepare_collection_reward(
         carry.progress.rounds,
         jax.tree.map(scalar, carry.state.config),
         carry.discount,
+        jax.ShapeDtypeStruct((2,), jnp.int32) if uses_steps else None,
     )
     keys = tuple(output.components)
     checked = dict(identity)
@@ -1518,6 +1534,8 @@ def _prepare_collection_reward(
         checked["call_contract"] = "producing_config_keyword_v1"
     if accepts_discount:
         checked["discount_contract"] = "learner_discount_keyword_v1"
+    if uses_steps:
+        checked["carry_steps_contract"] = CARRY_STEPS_CONTRACT
     if keys:
         checked.update(component_schema=1, component_keys=list(keys))
     return prepared, checked, keys
@@ -1540,8 +1558,11 @@ def change_training_reward(
     parent, then clears stored shaped experience when its objective changed.
     This helper changes only reward settings and optional facts in the static
     environment handle. Games, observations, memory, keys and progress remain
-    unchanged. Shape tracing checks callback output and refreshes padding data;
-    it executes no numerical reset or step. Unsupported callback shape/dtype or
+    unchanged, and so does a carry_steps counter both rewards use. A child
+    that starts using carry_steps gets a counter of 0, so carries in progress
+    at the boundary count from it; one that stops drops the counter. Shape
+    tracing checks callback output and refreshes padding data; it executes no
+    numerical reset or step. Unsupported callback shape/dtype or
     non-JSON identity fails before a changed collection is returned.
     """
     if type(shaping) is not bool:
@@ -1578,6 +1599,15 @@ def change_training_reward(
         changed = changed._replace(
             reward_totals=_empty_reward_totals(
                 changed.state.episode_id.shape[0], len(component_keys)
+            )
+        )
+    has_counter = not isinstance(changed.carry_steps, tuple)
+    if _uses_carry_steps(reward_identity) != has_counter:
+        # A child that starts using the counter starts it at 0, so a carry in
+        # progress at the boundary counts from there; one that stops drops it.
+        changed = changed._replace(
+            carry_steps=_empty_carry_steps(
+                changed.state.episode_id.shape[0], reward_identity
             )
         )
     return replace(
@@ -2242,7 +2272,8 @@ def init_training_collection(
         reward, reward_identity, carry, shape[4][4], shape[4][1]
     )
     carry = carry._replace(
-        reward_totals=_empty_reward_totals(schedule.num_envs, len(component_keys))
+        reward_totals=_empty_reward_totals(schedule.num_envs, len(component_keys)),
+        carry_steps=_empty_carry_steps(schedule.num_envs, reward_identity),
     )
     collection = TrainingCollection(
         actor,
@@ -2555,7 +2586,9 @@ def _real_step(
     """Collect one already-checked decision and advance accounting afterward.
 
     A variables hook, when present, sets the shared current variables used for
-    this one decision only; the returned carry keeps the stored variables.
+    this one decision only; the returned carry keeps the stored variables. A
+    carry_steps counter, when present, is read for this tick's reward and
+    advanced from the carrier slots before and after the tick.
     """
     before = carry.state
     acting = carry
@@ -2638,11 +2671,21 @@ def _real_step(
         )[:, 0]
     custom = None
     reward_totals = carry.reward_totals
+    carry_steps = carry.carry_steps
+    steps = None
+    if not isinstance(carry_steps, tuple):
+        steps, carry_steps = _team_carry_steps(
+            carry_steps,
+            before.episode_start,
+            before.core_state.capture_the_flag_flag_carrier_slots,
+            state.core_state.capture_the_flag_flag_carrier_slots,
+            valid,
+        )
     if collection.reward is not None:
         assert info.training_facts is not None
         output = jax.vmap(
             partial(_reward_output, collection.reward),
-            in_axes=(0, 0, 0, None, 0, None),
+            in_axes=(0, 0, 0, None, 0, None, 0),
         )(
             before.core_state,
             info.training_facts,
@@ -2650,6 +2693,7 @@ def _real_step(
             carry.progress.rounds,
             before.config,
             carry.discount,
+            steps,
         )
         custom = output.adjustments[:, :5]
         if collection.reward_component_keys:
@@ -2737,6 +2781,7 @@ def _real_step(
         tracking=tracking,
         progress=progress,
         reward_totals=reward_totals,
+        carry_steps=carry_steps,
     ), (row, info, trace)
 
 

@@ -10,10 +10,12 @@ moves a team's score, and this feedback, by 2 instead of 1. There is no
 separate Red Zone reward. These pure adjustments belong to learner feedback,
 never actor inputs or official benchmark scores. Custom reward_adjustments
 uses selected Core facts and the existing training-round clock. A reward may
-also declare keyword-only config (the producing game's settings) and discount
-(the learner's discount per transition, which potential-based feedback needs).
-validate_reward checks its scalar output before collection; learners own
-runtime finite checks.
+also declare keyword-only config (the producing game's settings), discount
+(the learner's discount per transition, which potential-based feedback needs)
+and carry_steps (how long each team's flag carrier has held the enemy flag,
+which no single tick shows). Collection keeps the carry_steps counter, and
+pays its cost, only for a reward that declares it. validate_reward checks its
+scalar output before collection; learners own runtime finite checks.
 resolve_reward loads a declared callback once and records available code evidence.
 """
 
@@ -57,11 +59,96 @@ class RewardOutput(NamedTuple):
 type RewardFunction = Callable[..., Array | RewardOutput]
 
 
+CARRY_STEPS_CONTRACT = "team_carry_steps_v1"
+"""Reward-identity value recorded when a reward declares carry_steps."""
+
+
+def _uses_carry_steps(identity: Mapping[str, object] | None) -> bool:
+    """Return whether a reward identity records the carry_steps contract."""
+    return identity is not None and (
+        identity.get("carry_steps_contract") == CARRY_STEPS_CONTRACT
+    )
+
+
+def _empty_carry_steps(
+    num_envs: int, identity: Mapping[str, object] | None
+) -> Array | tuple[()]:
+    """Return a fresh carry_steps counter, or () when the reward does not use one.
+
+    The counter is int32 (num_envs, 2), all 0: no team has a carrier yet. The
+    empty tuple adds no leaves, so a run whose reward does not declare
+    carry_steps keeps its collection carry and checkpoint layout.
+    """
+    if not _uses_carry_steps(identity):
+        return ()
+    return jnp.zeros((num_envs, 2), jnp.int32)
+
+
+def _team_carry_steps(
+    held: Array,
+    starting: Array,
+    carriers_before: Array,
+    carriers_after: Array,
+    valid: Array,
+) -> tuple[Array, Array]:
+    """Count how long each team's carrier has held the enemy flag, one tick on.
+
+    Parameters
+    ----------
+    held : Array
+        Int32 (B, 2) counter kept from the previous tick, Team A then Team B:
+        the ticks the team's current carrier had held the enemy flag at the
+        start of a tick, before this one. 0 when the team has no carrier.
+    starting : Array
+        Bool (B,): this tick is the first of its game (EnvironmentState's
+        episode_start). The counter starts from 0, so a game that begins with
+        a carrier counts from its first tick.
+    carriers_before, carriers_after : Array
+        Int32 (B, 2) Core capture_the_flag_flag_carrier_slots before and
+        after this tick (the producing successor, never an AutoReset
+        replacement), indexed by flag; -1 means nobody carries it. Team A's
+        carrier holds flag 1, so the team order is the flag order reversed.
+    valid : Array
+        Bool (B,): this tick is a real transition. Padding keeps the counter.
+
+    Returns
+    -------
+    steps : Array
+        This tick's carry_steps, int32 (B, 2): held + 1 when the team had a
+        carrier at the start of the tick, else 0. A pickup on tick p followed
+        by a death on tick p + k reads k on the death tick, the same count as
+        the evaluation metric "carries ending in death within n ticks".
+    kept : Array
+        Int32 (B, 2), the counter for the next tick: steps while the same
+        agent still carries after the tick, else 0 (a capture, a drop or no
+        carrier).
+
+    Notes
+    -----
+    Pure JAX; the whole counting rule lives here. Training's counter and the
+    metric's carry count are deliberate copies of one rule, kept in step by a
+    test in tests/evaluation/metrics/test_capture_the_flag_carry_metrics.py.
+    A steps value of 0 means either no carrier at the start of the tick or a
+    carry that began this tick: Core lets an agent pick the flag up and be
+    killed on the same tick, and then the carrier slot reads -1 before and
+    after it. A reward therefore detects a carrier's death through Core's drop
+    fact (capture_the_flag_facts.flag_was_dropped_by_agent) and tests
+    steps <= n with 0 allowed; a death on a capture tick drops nothing.
+    """
+    held = jnp.where(starting[:, None], 0, held)
+    team_before = carriers_before[:, ::-1]
+    carrying = team_before >= 0
+    steps = jnp.where(carrying, held + 1, 0)
+    continues = carrying & (carriers_after[:, ::-1] == team_before)
+    kept = jnp.where(valid[:, None], jnp.where(continues, steps, 0), held)
+    return steps, kept
+
+
 def _reward_keyword(reward: RewardFunction, name: str) -> tuple[bool, bool]:
     """Inspect one optional keyword-only reward argument during host setup.
 
-    name is "config" or "discount". Return whether the reward accepts that
-    argument and whether it is required. A named argument must be
+    name is "config", "discount" or "carry_steps". Return whether the reward
+    accepts that argument and whether it is required. A named argument must be
     keyword-only; **kwargs alone does not opt in. Signature errors propagate
     before training. No callback is executed.
     """
@@ -78,9 +165,9 @@ def _reward_keyword(reward: RewardFunction, name: str) -> tuple[bool, bool]:
 def _prepare_reward(reward: RewardFunction) -> RewardFunction:
     """Bind argument routing once for collection, without calling the reward.
 
-    Prepared callbacks accept optional config and discount. Old callbacks
-    receive exactly their four positional arguments. A reward that declares
-    config or discount receives the supplied value; a missing required one
+    Prepared callbacks accept optional config, discount and carry_steps. Old
+    callbacks receive exactly their four positional arguments. A reward that
+    declares one of them receives the supplied value; a missing required one
     raises ValueError. A private marker avoids repeated inspection during
     numerical tracing.
     """
@@ -90,6 +177,7 @@ def _prepare_reward(reward: RewardFunction) -> RewardFunction:
         return reward
     accepts_config, requires_config = _reward_keyword(reward, "config")
     accepts_discount, requires_discount = _reward_keyword(reward, "discount")
+    accepts_steps, requires_steps = _reward_keyword(reward, "carry_steps")
 
     @wraps(reward)
     def prepared(
@@ -100,6 +188,7 @@ def _prepare_reward(reward: RewardFunction) -> RewardFunction:
         *,
         config: EnvConfig | None = None,
         discount: Array | None = None,
+        carry_steps: Array | None = None,
     ) -> Array | RewardOutput:
         """Call the original reward once with its declared argument contract."""
         keywords: dict[str, EnvConfig | Array] = {}
@@ -111,6 +200,10 @@ def _prepare_reward(reward: RewardFunction) -> RewardFunction:
             keywords["discount"] = discount
         elif requires_discount:
             raise ValueError("This reward requires the learner's discount")
+        if accepts_steps and carry_steps is not None:
+            keywords["carry_steps"] = carry_steps
+        elif requires_steps:
+            raise ValueError("This reward requires the team carry_steps counter")
         return reward(before, facts, after, progress, **keywords)
 
     setattr(prepared, "_marl_prepared_reward", True)  # noqa: B010
@@ -136,8 +229,9 @@ def resolve_reward(
         The callable and its JSON-ready declaration. The record includes the
         reference, existing bytecode/default evidence, the defining module's
         source hash when readable, and the completed-rounds progress clock,
-        plus ``call_contract`` when the reward declares config and
-        ``discount_contract`` when it declares discount.
+        plus ``call_contract`` when the reward declares config,
+        ``discount_contract`` when it declares discount and
+        ``carry_steps_contract`` when it declares carry_steps.
         A reward function that carries a ``reward_identity`` attribute (a
         dict that survives a JSON round trip) declares its own record
         instead: the result is the reference followed by a copy of that dict,
@@ -200,6 +294,7 @@ def resolve_reward(
         source_digest = None
     accepts_config, _ = _reward_keyword(reward, "config")
     accepts_discount, _ = _reward_keyword(reward, "discount")
+    accepts_steps, _ = _reward_keyword(reward, "carry_steps")
     identity: dict[str, object] = {
         "reference": reference,
         "callable": _callable_evidence(reward),
@@ -213,6 +308,8 @@ def resolve_reward(
         identity["call_contract"] = "producing_config_keyword_v1"
     if accepts_discount:
         identity["discount_contract"] = "learner_discount_keyword_v1"
+    if accepts_steps:
+        identity["carry_steps_contract"] = CARRY_STEPS_CONTRACT
     if hasattr(reward, "__wrapped__"):
         from marl_battlegrounds._method_loading import (
             _reference_identity,  # pyright: ignore[reportPrivateUsage]
@@ -233,6 +330,7 @@ def reward_adjustments(
     *,
     config: EnvConfig | None = None,
     discount: Array | None = None,
+    carry_steps: Array | None = None,
 ) -> Array:
     """Apply one custom training reward to one producing transition.
 
@@ -242,8 +340,8 @@ def reward_adjustments(
         Pure JAX function reward(before, facts, after, progress). Return one
         float32 (10,) adjustment in global slot order, or RewardOutput with
         fixed named parts. The function owns how dead/inactive agents are
-        treated. It may explicitly accept keyword-only config and discount.
-        Old callbacks receive only the original four arguments.
+        treated. It may explicitly accept keyword-only config, discount and
+        carry_steps. Old callbacks receive only the original four arguments.
     before, after : EnvState
         Exact public Environment.training_state views before and after the same
         action. Pass the producing successor, never an AutoReset replacement.
@@ -269,6 +367,19 @@ def reward_adjustments(
         declare a required keyword-only discount argument, which
         potential-based feedback needs: it pays discount * phi(after) -
         phi(before). A change of value reuses the compiled program.
+    carry_steps : Array or None, default=None
+        Int32 (2,), Team A then Team B: how many ticks the team's current
+        carrier has held the enemy flag at the start of a tick, this tick
+        included; 0 when the team has no carrier at the start of this tick,
+        which includes a carry that began this tick. A pickup on tick p and a
+        death on tick p + k read k on the death tick, as the evaluation metric
+        "carries ending in death within n ticks" counts; a carrier killed on
+        its pickup tick reads 0. To see every such death, gate on Core's drop
+        fact (facts.capture_the_flag_facts.flag_was_dropped_by_agent) and test
+        carry_steps <= n with 0 allowed. Collection keeps the counter across
+        ticks, zeroes it on each game's first tick and saves it with its
+        carry. Required only by callbacks that declare a required keyword-only
+        carry_steps argument.
 
     Returns
     -------
@@ -295,7 +406,7 @@ def reward_adjustments(
     Arbitrary custom feedback need not preserve the native training objective.
     """
     return _reward_output(
-        reward, before, facts, after, progress, config, discount
+        reward, before, facts, after, progress, config, discount, carry_steps
     ).adjustments
 
 
@@ -307,6 +418,7 @@ def _reward_output(
     progress: Array,
     config: EnvConfig | None = None,
     discount: Array | None = None,
+    carry_steps: Array | None = None,
 ) -> RewardOutput:
     """Call and normalize one reward, sharing validation with public helpers.
 
@@ -330,8 +442,19 @@ def _reward_output(
             raise ValueError(f"{name} must be a scalar")
         if getattr(value, "dtype", None) != dtype:
             raise TypeError(f"{name} must have {jnp.dtype(dtype)} dtype")
+    if carry_steps is not None:
+        if np.shape(carry_steps) != (2,):
+            raise ValueError("carry_steps must have shape (2,)")
+        if getattr(carry_steps, "dtype", None) != jnp.int32:
+            raise TypeError("carry_steps must have int32 dtype")
     result = _prepare_reward(reward)(
-        before, facts, after, progress, config=config, discount=discount
+        before,
+        facts,
+        after,
+        progress,
+        config=config,
+        discount=discount,
+        carry_steps=carry_steps,
     )
     adjustment = result.adjustments if isinstance(result, RewardOutput) else result
     components: Mapping[str, Array] = (
@@ -380,6 +503,7 @@ def validate_reward(
     *,
     config: EnvConfig | None = None,
     discount: Array | None = None,
+    carry_steps: Array | None = None,
 ) -> None:
     """Trace a custom reward's scalar contract before collection starts.
 
@@ -394,6 +518,9 @@ def validate_reward(
     discount : Array or None, default=None
         Float32 scalar learner discount for callbacks that explicitly accept
         it, as in reward_adjustments.
+    carry_steps : Array or None, default=None
+        Int32 (2,) team carry counter for callbacks that explicitly accept it,
+        as in reward_adjustments.
 
     Returns
     -------
@@ -421,6 +548,7 @@ def validate_reward(
         progress,
         config,
         discount,
+        carry_steps,
     )
 
 

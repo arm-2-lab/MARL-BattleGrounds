@@ -2355,8 +2355,10 @@ def test_pre_component_carry_payload_restores_without_migration(
         )
         state = state._replace(carry=carry)
     assert state.carry.reward_totals == ()
-    historical_type = namedtuple("HistoricalTrainingCarry", state.carry._fields[:-1])  # pyright: ignore[reportUntypedNamedTuple]
-    old_state = state._replace(carry=historical_type(*state.carry[:-1]))
+    # A carry saved before the component totals lacks them and every later field.
+    old_fields = state.carry._fields[: state.carry._fields.index("reward_totals")]
+    historical_type = namedtuple("HistoricalTrainingCarry", old_fields)  # pyright: ignore[reportUntypedNamedTuple]
+    old_state = state._replace(carry=historical_type(*state.carry[: len(old_fields)]))
     assert checkpoints._layout(old_state) == checkpoints._layout(state)  # pyright: ignore[reportPrivateUsage]
     original_payload = checkpoints._state_payload  # pyright: ignore[reportPrivateUsage]
     _equal(original_payload(old_state), original_payload(state))
