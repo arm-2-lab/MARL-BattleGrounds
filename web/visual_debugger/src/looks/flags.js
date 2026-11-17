@@ -37,6 +37,11 @@
  * capture mark. With the Flags switch off, the look draws plain pennants and
  * plain bases, and no rings, arcs, numbers, outlines, pulses or marks.
  *
+ * Hover cards: each base, on a ring band around its spawn pad (the pad keeps
+ * its own card in the middle), and each flag the page shows at the END of the
+ * tick, on its cloth, carry a Symbol Tip ("Flag Base", "Flag") with the
+ * team, the state and the reach in words (flagTip, baseTip).
+ *
  * Who calls it: `scene.js`, once per part. `visual-filters.js` reads PAINT_PARTS.
  * The scorebug's flag chips (`match-summary.js`) draw the same pennant
  * (pennantGeometry) and wait for the same beat (flagChange).
@@ -49,6 +54,13 @@
  * pennant. It never reads a researcher view or a match summary. No timers or CSS
  * animations.
  */
+import {
+  canonicalAgentIdentity,
+  teamLabelFromId,
+  tickCountText,
+} from "../agent-identity.js";
+import { unitsText } from "../display.js";
+import { createSymbolDescriptor, registerTooltipOwner } from "../tooltip.js";
 import {
   arcPath,
   asArray,
@@ -93,6 +105,16 @@ export const FOOTPRINT = Object.freeze({
   notch: 0.62,
   carriedOffsetUnits: 0.12,
   baseRimUnits: 0.66,
+  // The base's hover band starts at the spawn pad's hover circle (spawns.js
+  // rimUnits), so the pad keeps its own card inside it, and ends this far
+  // outside the larger of the rim and the capture ring, in world units.
+  baseHitInnerUnits: 0.56,
+  baseHitMarginUnits: 0.12,
+  // A pennant's hover circle: centered on its cloth, this share of its height.
+  pennantHitShare: 0.5,
+  // The base's hover band is never thinner than this, in px at the reference
+  // scale, so it stays easy to find at every capture reach.
+  baseHitMinimumPx: 14,
   teamBRimGapPx: 1.5,
   away: 0.4,
   pulseUnits: 0.9,
@@ -384,24 +406,106 @@ function unseenCarryOffset(start, end, transform) {
  * A carried copy that names its carrier rides that body's glide
  * (data-glide-follow), and a glide carries a node from the body's START spot to
  * its END spot, because the page holds the END state. So the copy stands at the
- * carrier's END body position in this scene (bodies maps presentation keys to
- * world [x, y], or null), and it stays on the carrier for the whole tick: on a
+ * carrier's END body position in this scene (agents maps presentation keys to
+ * this scene's agent rows), and it stays on the carrier for the whole tick: on a
  * carrier who dies (until the fall beat) and on one who captures (until the
- * score beat). A carrier missing from this scene's bodies leaves the copy at its
+ * score beat). A carrier missing from this scene's agents leaves the copy at its
  * START spot, following nobody, so it never slides away from the body. Any other
  * start row is returned unchanged.
  *
  * @param {Record<string, any>} start The flag at the tick's start.
- * @param {ReadonlyMap<unknown, Pair | null>} bodies
+ * @param {ReadonlyMap<unknown, Record<string, any>>} agents
  * @returns {Record<string, any>}
  */
-function beforeCopy(start, bodies) {
+function beforeCopy(start, agents) {
   const key = start.carrier_presentation_key;
   if (start.state !== "carried" || typeof key !== "string") return start;
-  const end = bodies.get(key);
+  const end = worldPair(agents.get(key)?.position);
   return end
     ? { ...start, position: end }
     : { ...start, carrier_presentation_key: null };
+}
+
+/**
+ * Return a flag's hover card words: its team, its state and its touch reach,
+ * with a one-sentence note on what happens next. Pure.
+ *
+ * flag is a scene flag row; view supplies reach (the interaction distance) and
+ * agents (this scene's agent rows by presentation key). A carrier is named as
+ * its roster row names it ("Agent 3 Rogue, Team A") only when this scene names
+ * it; in Agent POV an unseen carrier stays "Carried", and the note says it is
+ * out of sight. A dropped flag gives its ticks until it goes home. Lengths use
+ * display.js unitsText ("1 unit", "0.75 units").
+ *
+ * @param {Record<string, any>} flag
+ * @param {Record<string, any>} view
+ * @returns {{facts: ReadonlyArray<{label: string, value: string}>, note: string}}
+ */
+function flagTip(flag, view) {
+  const team = teamLabelFromId(flag.team_id) ?? "This team";
+  const enemy = teamLabelFromId(flag.team_id === 1 ? 2 : 1) ?? "The other team";
+  const agent =
+    flag.state === "carried" && typeof flag.carrier_presentation_key === "string"
+      ? view.agents.get(flag.carrier_presentation_key)
+      : undefined;
+  // The carrier as its roster row names it ("Agent 3 Rogue"), so the card and
+  // the roster point at the same champion even with two of one class.
+  const carrier = agent === undefined ? null : canonicalAgentIdentity(agent);
+  const ticks = Math.max(0, Math.trunc(finiteNumber(flag.countdown_steps)));
+  const state =
+    flag.state === "home"
+      ? "At Home"
+      : flag.state === "carried"
+        ? carrier
+          ? `Carried by ${carrier.chipText} ${carrier.classLabel}, ${carrier.teamLabel}`
+          : "Carried"
+        : `Dropped, goes home in ${tickCountText(ticks)}`;
+  const note =
+    flag.state === "home"
+      ? `${enemy} takes it by touching it, and scores by bringing it to ${enemy}'s base while ${enemy}'s own flag is home.`
+      : flag.state === "carried"
+        ? carrier
+          ? `It falls where its carrier falls; ${team} then sends it home by touching it.`
+          : "Its carrier is out of this champion's sight."
+        : `${team} sends it home by touching it, and ${enemy} picks it up by touching it; untouched, it goes home when the count runs out.`;
+  return Object.freeze({
+    facts: Object.freeze([
+      Object.freeze({ label: "Team", value: team }),
+      Object.freeze({ label: "State", value: state }),
+      Object.freeze({
+        label: "Touch Reach",
+        value: unitsText(view.reach),
+      }),
+    ]),
+    note,
+  });
+}
+
+/**
+ * Return a base's hover card words: its team, whether its flag is home and the
+ * capture reach, with the rule for scoring there. Pure.
+ *
+ * @param {Record<string, any>} flag The base's own flag, END row.
+ * @param {Record<string, any>} ctf The scene's capture_the_flag.
+ * @returns {{facts: ReadonlyArray<{label: string, value: string}>, note: string}}
+ */
+function baseTip(flag, ctf) {
+  const team = teamLabelFromId(flag.team_id) ?? "This team";
+  const enemy = teamLabelFromId(flag.team_id === 1 ? 2 : 1) ?? "the other team";
+  return Object.freeze({
+    facts: Object.freeze([
+      Object.freeze({ label: "Team", value: team }),
+      Object.freeze({
+        label: "Its Flag",
+        value: flag.state === "home" ? "At Home" : "Away",
+      }),
+      Object.freeze({
+        label: "Capture Reach",
+        value: unitsText(ctf.capture_distance),
+      }),
+    ]),
+    note: `${team} scores by bringing ${enemy}'s flag here while ${team}'s own flag is home.`,
+  });
 }
 
 /**
@@ -470,30 +574,37 @@ function flagDrawing(flag, part, view, flagHold, glideFrom = null) {
     side > 0 ? view.transform.worldWidth : 0,
     0,
   ]).x;
-  const pennant = (/** @type {Pair} */ foot, /** @type {boolean} */ outlined) =>
-    Object.freeze({
+  // Only what the page shows at the END of the tick gets a hover card: a
+  // "before" copy fades out at its beat.
+  const tipped = flagHold?.side !== "before";
+  const pennant = (/** @type {Pair} */ foot, /** @type {boolean} */ outlined) => {
+    // At or near its home the cloth would pass the floor's edge, so the pole
+    // moves in just far enough to keep it on the floor.
+    const x =
+      side > 0
+        ? Math.min(foot[0], floorEdge - cloth)
+        : Math.max(foot[0], floorEdge + cloth);
+    const low = foot[1] - FOOTPRINT.pennantLow * height;
+    return Object.freeze({
       kind: "flag-pennant",
       teamId,
       state: flag.state,
-      // At or near its home the cloth would pass the floor's edge, so the pole
-      // moves in just far enough to keep it on the floor.
-      ...pennantGeometry(
-        teamId,
-        [
-          side > 0
-            ? Math.min(foot[0], floorEdge - cloth)
-            : Math.max(foot[0], floorEdge + cloth),
-          foot[1],
-        ],
-        height,
-        side,
-      ),
+      ...pennantGeometry(teamId, [x, foot[1]], height, side),
       outlined,
       follow: flag.state === "carried" ? carrier : null,
       glideFrom: flag.state === "carried" && carrier === null ? glideFrom : null,
       u: view.u,
       hold: flagHold,
+      hit: tipped
+        ? Object.freeze({
+            cx: pathNumber(x + (side * cloth) / 2),
+            cy: pathNumber((foot[1] - height + low) / 2),
+            r: pathNumber(FOOTPRINT.pennantHitShare * height),
+          })
+        : null,
+      tip: tipped ? flagTip(flag, view) : null,
     });
+  };
   if (part === "ground") {
     if (flag.state === "dropped" && view.marks && reach > 0) {
       const share =
@@ -593,6 +704,11 @@ export function records(input) {
     Number.isInteger(input.returnTicks) && Number(input.returnTicks) > 0
       ? Number(input.returnTicks)
       : null;
+  const agents = new Map(
+    asArray(input.scene?.agents)
+      .filter(isRecord)
+      .map((agent) => [agent.presentation_key, agent]),
+  );
   const view = {
     transform,
     ppu,
@@ -600,7 +716,9 @@ export function records(input) {
     u: scale / FOOTPRINT.referencePpu,
     marks: switchOn(input.filters, "flags", true),
     reach: ctf.interaction_distance,
+    capture: ctf.capture_distance,
     returnTicks,
+    agents,
   };
   const flags = asArray(ctf.flags)
     .map(usableFlag)
@@ -609,11 +727,6 @@ export function records(input) {
     asArray(input.flagTrajectories)
       .filter(isRecord)
       .map((row) => [row.team_id, usableFlag(row.transition_start)]),
-  );
-  const bodies = new Map(
-    asArray(input.scene?.agents)
-      .filter(isRecord)
-      .map((agent) => [agent.presentation_key, worldPair(agent.position)]),
   );
   /** @type {LookRecord[]} */
   const result = [];
@@ -630,7 +743,7 @@ export function records(input) {
     if (change !== null && start !== null) {
       result.push(
         ...flagDrawing(
-          beforeCopy(start, bodies),
+          beforeCopy(start, agents),
           part,
           view,
           hold(change, "before", 1),
@@ -727,9 +840,18 @@ function baseRecord(flag, start, view, ctf) {
     !view.marks || row.state === "home" ? 1 : FOOTPRINT.away;
   const change = flagChange(start, flag);
   const strength = strengthOf(flag);
+  const inner = FOOTPRINT.baseHitInnerUnits * view.ppu;
+  const outer = Math.max(
+    (Math.max(FOOTPRINT.baseRimUnits, finiteNumber(ctf.capture_distance)) +
+      FOOTPRINT.baseHitMarginUnits) *
+      view.ppu,
+    inner + FOOTPRINT.baseHitMinimumPx * view.u,
+  );
   return Object.freeze({
     kind: "flag-base",
     teamId: flag.team_id,
+    hit: circlePath(c, inner) + circlePath(c, outer),
+    tip: baseTip(flag, ctf),
     rim,
     rimWidth: (flag.team_id === 2 ? 1 : 2) * view.u,
     rimOpacity: flag.team_id === 2 ? 1 : 0.95,
@@ -777,6 +899,34 @@ function team(record) {
 }
 
 /**
+ * Append a record's transparent hover shape, with its Symbol Tip, to its group.
+ *
+ * Only a record with a hit gets one (a base, and a pennant the page shows at
+ * the END of the tick). tag is "path" for a base's band (even-odd fill, so the
+ * spawn pad inside keeps its own card) or "circle" for a pennant's cloth; name
+ * ends the shape's label ("Team B's Flag", "Team A's Flag Base"). The flag
+ * layers stay hidden from assistive technology, so the label serves only the
+ * hover card. DOM change and tooltip registration only.
+ *
+ * @param {SVGElement} group
+ * @param {LookRecord} record
+ * @param {Document} doc
+ * @param {"path" | "circle"} tag
+ * @param {string} name
+ */
+function appendHit(group, record, doc, tag, name) {
+  if (!record.hit) return;
+  const hit = svgNode(doc, tag, {
+    class: `${record.kind}__hit`,
+    role: "img",
+    "aria-label": `${teamLabelFromId(record.teamId) ?? "A Team"}'s ${name}`,
+    ...(tag === "path" ? { "fill-rule": "evenodd" } : {}),
+  });
+  group.append(hit);
+  registerTooltipOwner(hit, tooltip(record));
+}
+
+/**
  * Build one record's node and its children, without geometry. DOM only.
  *
  * @param {LookRecord} record
@@ -795,6 +945,7 @@ function nodeFor(record, doc) {
       svgNode(doc, "path", { class: "flag-base__ring" }),
       svgNode(doc, "path", { class: "flag-base__rim" }),
     );
+    appendHit(group, record, doc, "path", "Flag Base");
     return group;
   }
   if (record.kind === "flag-countdown") {
@@ -821,6 +972,7 @@ function nodeFor(record, doc) {
       svgNode(doc, "path", { class: "flag-pennant__pole" }),
       svgNode(doc, "path", { class: "flag-pennant__shape" }),
     );
+    appendHit(group, record, doc, "circle", "Flag");
     return group;
   }
   if (record.kind === "flag-ticks") {
@@ -839,6 +991,24 @@ function nodeFor(record, doc) {
     });
   }
   return null;
+}
+
+/**
+ * Write a record's hover shape geometry onto its hit child, when it has one: a
+ * base's band (path d) or a pennant's circle (cx, cy, r). DOM change only.
+ *
+ * @param {Element} node
+ * @param {LookRecord} record
+ */
+function writeHit(node, record) {
+  const hit = [...node.children].find((child) =>
+    child.getAttribute("class")?.endsWith("__hit"),
+  );
+  if (!hit || !record.hit) return;
+  setNodeAttributes(
+    hit,
+    typeof record.hit === "string" ? { d: record.hit } : record.hit,
+  );
 }
 
 /**
@@ -863,6 +1033,7 @@ function writeGeometry(node, record) {
       "stroke-width": record.rimWidth,
       "stroke-opacity": record.rimOpacity,
     });
+    writeHit(node, record);
     writeHold(node, record.hold, record.strength);
   } else if (record.kind === "flag-countdown") {
     setNodeAttributes(first, { d: record.track, "stroke-width": 1.2 * u });
@@ -875,6 +1046,7 @@ function writeGeometry(node, record) {
       d: record.shape,
       "stroke-width": (record.outlined ? 1.6 : 1) * u,
     });
+    writeHit(node, record);
     writeHold(node, record.hold, 1);
   } else if (record.kind === "flag-ticks") {
     setNodeAttributes(node, {
@@ -1002,13 +1174,18 @@ export function update(nodes, records) {
 }
 
 /**
- * Return the Symbol Tip of a record: always null, because flags and bases carry
- * no hover card (their layers are hidden from assistive technology, and the
- * scorebug's flag chips say each flag's state in words). Pure.
+ * Return the Symbol Tip of a record: the "Flag" card of a pennant the page
+ * shows at the END of the tick, the "Flag Base" card of a base, else null. The
+ * facts and note come from the record (flagTip and baseTip). Pure.
  *
- * @param {LookRecord} _record
- * @returns {null}
+ * @param {LookRecord} record
  */
-export function tooltip(_record) {
-  return null;
+export function tooltip(record) {
+  if (!isRecord(record?.tip)) return null;
+  return createSymbolDescriptor({
+    symbol: record.kind === "flag-base" ? "flag_base" : "flag",
+    id: `${record.kind}:${record.teamId}`,
+    facts: record.tip.facts,
+    note: record.tip.note,
+  });
 }

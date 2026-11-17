@@ -36,6 +36,7 @@
  * switches; never a champion, a researcher view or a match summary. No collision
  * or sight is computed. Static: no timers, no animations.
  */
+import { unitsText } from "../display.js";
 import { createSymbolDescriptor, registerTooltipOwner } from "../tooltip.js";
 import {
   asArray,
@@ -315,19 +316,6 @@ function stoneNumber(row, index) {
     typeof row.obstacle_id === "string" ? row.obstacle_id : "",
   );
   return match ? String(Number(match[1])) : String(index);
-}
-
-/**
- * Write a length in world units for a tooltip: "1 unit", "0.5 units",
- * "2 units". The value is rounded to 3 decimals; a value that is not a finite
- * number counts as 0. Pure.
- *
- * @param {number} value World units.
- * @returns {string}
- */
-function unitsText(value) {
-  const rounded = Number(finiteNumber(value).toFixed(3));
-  return `${rounded} ${rounded === 1 ? "unit" : "units"}`;
 }
 
 /**

@@ -7,6 +7,7 @@
  * left, Moon Silver for the poles and Ink for their shadows. Stroke widths, dash
  * lengths, font sizes and opacities are written by the look as attributes (they
  * follow the screen scale and the flag's state); no rule here animates anything.
+ * Only the hover shapes take the pointer.
  */
 .flag-base,
 .flag-countdown,
@@ -15,6 +16,16 @@
 .flag-pulse,
 .flag-mark {
   pointer-events: none;
+}
+
+/* The hover shapes of a base (its ring band) and a flag (its cloth): unseen, but
+   they take the pointer, so each shows its Symbol Tip. */
+.flag-base__hit,
+.flag-pennant__hit {
+  fill: var(--ink);
+  fill-opacity: 0;
+  stroke: none;
+  pointer-events: visiblePainted;
 }
 
 .flag-base__zone {

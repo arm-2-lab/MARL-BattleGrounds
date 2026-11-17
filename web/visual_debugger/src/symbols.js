@@ -986,6 +986,27 @@ export const SYMBOLS = Object.freeze([
     { aliases: ["x2", "double_point"] },
   ),
   symbol(
+    "flag_base",
+    "Zones",
+    "Flag Base",
+    "Capture the Flag: each team's flag home. A team scores by bringing the enemy's flag here while its own flag is home; the ring shows how close the carrier must come.",
+    {
+      aliases: ["flag_home"],
+      numberSources: [
+        source(
+          "AuthorizedCaptureTheFlagFlagV1",
+          "home_position",
+          "Where the flag's home is",
+        ),
+        source(
+          "AuthorizedCaptureTheFlagV1",
+          "capture_distance",
+          "How close a carrier must come to score",
+        ),
+      ],
+    },
+  ),
+  symbol(
     "waystone",
     "Zones",
     "Spawn Pad",
@@ -1051,9 +1072,9 @@ export const SYMBOLS = Object.freeze([
     "flag",
     "HUD Marks",
     "Flag",
-    "Capture the Flag: a flag is home on its base, carried by an enemy, or dropped where its carrier fell. A dropped flag goes home when its team touches it or its ticks run out. In Agent POV a carried flag can move with no champion seen under it.",
+    "Capture the Flag: a flag is home on its base, carried by an enemy, or dropped where its carrier fell.",
     {
-      aliases: ["flag_chip", "flag_base", "capture_the_flag"],
+      aliases: ["flag_chip", "capture_the_flag"],
       numberSources: [
         source("AuthorizedCaptureTheFlagFlagV1", "state", "Where each flag is"),
         source(

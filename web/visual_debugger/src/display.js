@@ -110,3 +110,18 @@ export function formatLifeNumber(value) {
   const tenths = Math.ceil(value * 10 - 1e-9) / 10;
   return tenths >= 10 ? "10" : tenths.toFixed(1);
 }
+
+/**
+ * Write a length in world units for a tooltip: "1 unit", "0.5 units",
+ * "2 units". The value is rounded to 3 decimals; a value that is not a finite
+ * number counts as 0. The one owner of how a hover card writes a length (the
+ * stones' sizes, the flags' reaches). Pure.
+ *
+ * @param {unknown} value World units.
+ * @returns {string}
+ */
+export function unitsText(value) {
+  const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const rounded = Number(number.toFixed(3));
+  return `${rounded} ${rounded === 1 ? "unit" : "units"}`;
+}

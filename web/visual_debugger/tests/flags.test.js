@@ -25,7 +25,13 @@
  * carried one trails behind its carrier and never flips at the middle, and at
  * home its cloth ends on the floor's edge; and the carrier words ("Carrying Team B's
  * flag", carryingWords and carriedFlagTeam) only for a carrier the scene names,
- * with the agent inspector's Carrying row from them.
+ * with the agent inspector's Carrying row from them; and the hover cards: a
+ * base's (team, its flag, capture reach, the scoring rule) on a ring band that
+ * leaves the spawn pad's card in the middle and is never thinner than 14 px at
+ * the reference scale, and a flag's (team; at home, carried by the champion its
+ * roster row names, or dropped with the ticks until it goes home; touch reach;
+ * a note per state, and "out of sight" for an unnamed carrier), with no card on
+ * a copy that fades out at its beat.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -42,6 +48,8 @@ class FakeElement {
     /** @type {FakeElement[]} */
     this.children = [];
     this.textContent = "";
+    /** @type {FakeElement | null} */
+    this.parentElement = null;
   }
   /** @param {string} name @param {unknown} value */
   setAttribute(name, value) {
@@ -52,12 +60,20 @@ class FakeElement {
     return this.attributes.get(name) ?? null;
   }
   /** @param {string} name */
+  hasAttribute(name) {
+    return this.attributes.has(name);
+  }
+  /** @param {string} name */
   removeAttribute(name) {
     this.attributes.delete(name);
   }
   /** @param {...FakeElement} nodes */
   append(...nodes) {
+    for (const node of nodes) node.parentElement = this;
     this.children.push(...nodes);
+  }
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
   }
 }
 
@@ -141,12 +157,137 @@ test("no flags outside Capture the Flag or without a transform", () => {
     );
   }
   assert.deepEqual(flags.build([], doc), []);
-  assert.equal(
-    flags.tooltip(
-      draw("ground", { scene: scene(flag(1, "home"), flag(2, "home")) })[0],
-    ),
-    null,
+});
+
+test("flags and bases explain themselves on hover, in every state", () => {
+  /** @param {Record<string, any> | null} descriptor */
+  const card = (descriptor) => {
+    if (!descriptor) return null;
+    const rows = descriptor.rows.map((/** @type {any} */ row) => [
+      row.label,
+      row.value,
+    ]);
+    return {
+      title: descriptor.title,
+      rows: rows.filter((/** @type {string[]} */ row) => row[0] !== "Note"),
+      note: rows.find((/** @type {string[]} */ row) => row[0] === "Note")?.[1],
+    };
+  };
+  const base = {
+    ...scene(flag(1, "home"), flag(2, "carried", CARRIED_BY_KEY)),
+    agents: [
+      {
+        presentation_key: "key-hunter",
+        public_agent_id: "agent-2",
+        display_agent_id: "2",
+        team_id: 1,
+        class_id: 3,
+        position: [4.7, 6],
+      },
+    ],
+  };
+  const ground = draw("ground", { scene: base });
+  const above = draw("above", { scene: base });
+  const [baseA, baseB] = ofKind(ground, "flag-base");
+  assert.deepEqual(card(flags.tooltip(baseA)), {
+    title: "Flag Base",
+    rows: [
+      ["Team", "Team A"],
+      ["Its Flag", "At Home"],
+      ["Capture Reach", "1.25 units"],
+    ],
+    note: "Team A scores by bringing Team B's flag here while Team A's own flag is home.",
+  });
+  assert.equal(card(flags.tooltip(baseB))?.rows[1][1], "Away");
+  const [homeFlag] = ofKind(ground, "flag-pennant");
+  assert.deepEqual(card(flags.tooltip(homeFlag))?.rows, [
+    ["Team", "Team A"],
+    ["State", "At Home"],
+    ["Touch Reach", "0.75 units"],
+  ]);
+  assert.match(
+    String(card(flags.tooltip(homeFlag))?.note),
+    /^Team B takes it by touching it/u,
   );
+  const [carried] = ofKind(above, "flag-pennant");
+  assert.equal(
+    card(flags.tooltip(carried))?.rows[1][1],
+    "Carried by Agent 2 Hunter, Team A",
+  );
+  // An unnamed carrier (Agent POV: one the team cannot see) stays unnamed.
+  const unseen = ofKind(
+    draw("above", { scene: scene(flag(1, "home"), flag(2, "carried")) }),
+    "flag-pennant",
+  )[0];
+  assert.deepEqual(
+    [card(flags.tooltip(unseen))?.rows[1][1], card(flags.tooltip(unseen))?.note],
+    ["Carried", "Its carrier is out of this champion's sight."],
+  );
+  const dropped = ofKind(
+    draw("ground", { scene: scene(flag(1, "home"), flag(2, "dropped")) }),
+    "flag-pennant",
+  )[1];
+  assert.equal(
+    card(flags.tooltip(dropped))?.rows[1][1],
+    "Dropped, goes home in 28 ticks",
+  );
+  assert.match(
+    String(card(flags.tooltip(dropped))?.note),
+    /when the count runs out\.$/u,
+  );
+  // Only what the page shows at the END of the tick has a card.
+  const start = flag(2, "carried", { ...CARRIED_BY_KEY, position: [1, 5.2] });
+  const capture = draw("above", {
+    scene: { ...scene(flag(1, "home"), flag(2, "home")), agents: base.agents },
+    flagTrajectories: [
+      { team_id: 2, transition_start: start, successor: flag(2, "home") },
+    ],
+  });
+  assert.equal(flags.tooltip(ofKind(capture, "flag-pennant")[0]), null);
+  for (const record of [
+    ...ofKind(ground, "flag-countdown"),
+    ...ofKind(above, "flag-ticks"),
+  ]) {
+    assert.equal(flags.tooltip(record), null);
+  }
+  // The built nodes carry a labeled hover shape: the base a ring band whose
+  // middle stays the spawn pad's, the flag a circle on its cloth.
+  const nodes = /** @type {FakeElement[]} */ (
+    /** @type {unknown} */ (flags.build([baseA, homeFlag], doc))
+  );
+  const hits = nodes.map((node) => node.children.at(-1));
+  assert.deepEqual(
+    hits.map((hit) => [
+      hit?.tagName,
+      hit?.getAttribute("class"),
+      hit?.getAttribute("aria-label"),
+    ]),
+    [
+      ["path", "flag-base__hit", "Team A's Flag Base"],
+      ["circle", "flag-pennant__hit", "Team A's Flag"],
+    ],
+  );
+  assert.equal(hits[0]?.getAttribute("fill-rule"), "evenodd");
+  assert.equal(hits[0]?.getAttribute("d")?.match(/M/gu)?.length, 2);
+  assert.ok(Number(hits[1]?.getAttribute("r")) > 0);
+  // At a 0.75 capture reach the band would be only about 0.3 units wide, so it
+  // keeps its minimum width (14 px at the reference scale) and stays easy to find.
+  const narrow = ofKind(
+    draw("ground", {
+      scene: {
+        ...scene(flag(1, "home"), flag(2, "home")),
+        capture_the_flag: {
+          ...scene(flag(1, "home"), flag(2, "home")).capture_the_flag,
+          capture_distance: 0.75,
+        },
+      },
+    }),
+    "flag-base",
+  )[0];
+  const [inner, outer] = [...String(narrow.hit).matchAll(/a(-?[\d.]+) /gu)]
+    .map((match) => Number(match[1]))
+    .filter((_, index) => index % 2 === 0);
+  assert.ok(outer - inner >= 14 * narrow.u - 0.01, `band ${outer - inner} px`);
 });
 
 test("bases show their flag's state by strength, and Team B is double-lined", () => {
