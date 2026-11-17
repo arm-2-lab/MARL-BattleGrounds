@@ -36,7 +36,11 @@ import pytest
 from pydantic import ValidationError
 from scripts.dev.visual_debugger.scenarios import vision_moment_scenario
 from tests.evaluation.replays.test_evaluation_pov import _runtime_provenance
-from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import (
+    debugger_test_launch_specification,
+    tdm_context,
+    tdm_frame,
+)
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -115,14 +119,14 @@ def games() -> dict[str, tuple[DebuggerSession, ...]]:
 
 
 def _replay_of(sessions: tuple[DebuggerSession, ...]) -> LoadedReplay:
-    context = sessions[-1].evaluation_context
+    context = tdm_context(sessions[-1].evaluation_context)
     provenance = _runtime_provenance().model_copy(
         update={"package_version": context.code_revision.package_version}
     )
     return LoadedReplay(
         build_replay_v4(
             context,
-            [session.current_evaluation_frame for session in sessions],
+            [tdm_frame(session.current_evaluation_frame) for session in sessions],
             [
                 session.incoming_evaluation_view.transition
                 for session in sessions[1:]

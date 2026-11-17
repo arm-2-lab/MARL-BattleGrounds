@@ -18,7 +18,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import (
+    debugger_test_launch_specification,
+    tdm_frame,
+)
 
 from marl_battlegrounds._battle_client import control
 from marl_battlegrounds._battle_client.evaluation_bridge import (
@@ -173,13 +176,16 @@ def test_built_in_scenario_trajectory_matches_public_evaluator(
     assert result.status == "complete"
     replay = load_replay(result.replay_paths[0]).replay
     _same_frame(
-        session.current_evaluation_frame, cast(EvaluationFrameV3, replay.frames[0])
+        tdm_frame(session.current_evaluation_frame),
+        cast(EvaluationFrameV3, replay.frames[0]),
     )
     for transition, frame in zip(replay.transitions, replay.frames[1:], strict=True):
         session = control.submit_interactive(session)
         assert session.incoming_evaluation_view is not None
         assert session.incoming_evaluation_view.transition.facts == transition.facts
-        _same_frame(session.current_evaluation_frame, cast(EvaluationFrameV3, frame))
+        _same_frame(
+            tdm_frame(session.current_evaluation_frame), cast(EvaluationFrameV3, frame)
+        )
     assert session.episode_sealed
 
 
@@ -251,7 +257,9 @@ def test_custom_initializer_actions_and_memory_match_evaluator_and_restart(
         assert session.system_memory is not None
         assert session.incoming_evaluation_view is not None
         assert session.incoming_evaluation_view.transition.facts == transition.facts
-        _same_frame(session.current_evaluation_frame, cast(EvaluationFrameV3, frame))
+        _same_frame(
+            tdm_frame(session.current_evaluation_frame), cast(EvaluationFrameV3, frame)
+        )
         np.testing.assert_array_equal(session.system_memory.team_a, eval_records[index])
         np.testing.assert_array_equal(live_records[index], eval_records[index])
     assert len(live_records) == len(eval_records) == len(replay.transitions) + 1

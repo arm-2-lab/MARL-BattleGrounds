@@ -17,6 +17,7 @@ import jax
 import pytest
 from pydantic import ValidationError
 from scripts.dev.visual_debugger.scenarios import get_scenario
+from tests.helpers.visual_debugger_fixtures import tdm_context
 
 import marl_battlegrounds._battle_client.evaluation_bridge as evaluation_bridge
 import marl_battlegrounds._battle_client.recording as debugger_recording
@@ -93,24 +94,26 @@ def _context(
 ) -> EvaluationEpisodeContextV4:
     scenario = get_scenario(scenario_name)
     config, _state = scenario.build_scenario()
-    return build_debugger_evaluation_context_v1(
-        _launch(root_seed=root_seed, capture_profile=capture_profile),
-        scenario=scenario,
-        config=config,
-        run_generation=run_generation,
-        action_source_kind=action_source_kind,
-        team_a_controller=team_a_controller,
-        team_b_controller=team_b_controller,
-        execution_information_mode=(
-            execution_information_mode
-            if execution_information_mode is not None
-            else "shared_obs"
-            if any(
-                controller in ("reactive_tdm", "scenario_5")
-                for controller in (team_a_controller, team_b_controller)
-            )
-            else "no_shared_obs"
-        ),
+    return tdm_context(
+        build_debugger_evaluation_context_v1(
+            _launch(root_seed=root_seed, capture_profile=capture_profile),
+            scenario=scenario,
+            config=config,
+            run_generation=run_generation,
+            action_source_kind=action_source_kind,
+            team_a_controller=team_a_controller,
+            team_b_controller=team_b_controller,
+            execution_information_mode=(
+                execution_information_mode
+                if execution_information_mode is not None
+                else "shared_obs"
+                if any(
+                    controller in ("reactive_tdm", "scenario_5")
+                    for controller in (team_a_controller, team_b_controller)
+                )
+                else "no_shared_obs"
+            ),
+        )
     )
 
 
@@ -686,15 +689,17 @@ def test_registered_map_layout_identity_names_the_approved_source() -> None:
         )
 
     def context_with(map_id: int | None) -> EvaluationEpisodeContextV4:
-        return build_debugger_evaluation_context_v1(
-            _launch(),
-            scenario=scenario_with(map_id),
-            config=config,
-            run_generation=0,
-            action_source_kind="manual",
-            team_a_controller="manual",
-            team_b_controller="manual",
-            execution_information_mode="no_shared_obs",
+        return tdm_context(
+            build_debugger_evaluation_context_v1(
+                _launch(),
+                scenario=scenario_with(map_id),
+                config=config,
+                run_generation=0,
+                action_source_kind="manual",
+                team_a_controller="manual",
+                team_b_controller="manual",
+                execution_information_mode="no_shared_obs",
+            )
         )
 
     registered = context_with(41)

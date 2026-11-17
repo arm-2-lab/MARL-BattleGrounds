@@ -1,4 +1,9 @@
-"""Build shared debugger scenarios and rejected-action fixtures for public tests."""
+"""Build shared debugger scenarios and rejected-action fixtures for public tests.
+
+tdm_context and tdm_frame check that a live session's evaluation records are Team
+Deathmatch's (context V4, frame V3) and return them under those types, for tests
+whose games are Team Deathmatch and whose helpers take only its records.
+"""
 
 from collections.abc import Sequence
 
@@ -17,6 +22,8 @@ from marl_battlegrounds._battle_client.model import (
     ActorCommand,
     DebuggerScenario,
     DebuggerSession,
+    LiveEvaluationContext,
+    LiveEvaluationFrame,
     ScenarioFrame,
 )
 from marl_battlegrounds.core.config import (
@@ -39,8 +46,22 @@ from marl_battlegrounds.core.types import (
     EnvConfig,
 )
 from marl_battlegrounds.evaluation.catalog import build_code_revision_v1
+from marl_battlegrounds.evaluation.models import (
+    EvaluationEpisodeContextV4,
+    EvaluationFrameV3,
+)
 
 _TEST_DIGEST = "a" * 64
+
+
+def tdm_context(context: LiveEvaluationContext) -> EvaluationEpisodeContextV4:
+    assert isinstance(context, EvaluationEpisodeContextV4)
+    return context
+
+
+def tdm_frame(frame: LiveEvaluationFrame) -> EvaluationFrameV3:
+    assert isinstance(frame, EvaluationFrameV3)
+    return frame
 
 
 def debugger_test_launch_specification(

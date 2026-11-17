@@ -36,7 +36,11 @@ import pytest
 from pydantic import ValidationError
 from scripts.dev.visual_debugger.scenarios import vision_moment_scenario
 from tests.evaluation.replays.test_evaluation_pov import _runtime_provenance
-from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import (
+    debugger_test_launch_specification,
+    tdm_context,
+    tdm_frame,
+)
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -199,8 +203,18 @@ def test_live_session_keeps_ten_ticks_of_scores_and_reset_clears_them(
     fall_game: tuple[DebuggerSession, ...],
 ) -> None:
     start, scored, *_ = fall_game
-    assert start.current_evaluation_frame.snapshot.team_deathmatch_scores == (2, 4)
-    assert scored.current_evaluation_frame.snapshot.team_deathmatch_scores == (3, 4)
+    assert tdm_frame(
+        start.current_evaluation_frame
+    ).snapshot.team_deathmatch_scores == (
+        2,
+        4,
+    )
+    assert tdm_frame(
+        scored.current_evaluation_frame
+    ).snapshot.team_deathmatch_scores == (
+        3,
+        4,
+    )
     for session in fall_game:
         index = session.current_evaluation_frame.frame_index
         assert len(session.recent_scores) == min(MOMENTUM_TICKS, index)
@@ -230,14 +244,14 @@ def test_every_live_view_carries_the_same_scores_ten_ticks_ago(
 
 
 def _replay_of(sessions: tuple[DebuggerSession, ...]) -> LoadedReplay:
-    context = sessions[-1].evaluation_context
+    context = tdm_context(sessions[-1].evaluation_context)
     provenance = _runtime_provenance().model_copy(
         update={"package_version": context.code_revision.package_version}
     )
     return LoadedReplay(
         build_replay_v4(
             context,
-            [session.current_evaluation_frame for session in sessions],
+            [tdm_frame(session.current_evaluation_frame) for session in sessions],
             [
                 session.incoming_evaluation_view.transition
                 for session in sessions[1:]

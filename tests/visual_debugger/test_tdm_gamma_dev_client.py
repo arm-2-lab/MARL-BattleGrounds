@@ -66,7 +66,10 @@ import pytest
 from pydantic import ValidationError
 from scripts.dev.visual_debugger.scenarios import get_scenario
 from tests.helpers.scenario_controller_fixtures import load_scenario_1
-from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import (
+    debugger_test_launch_specification,
+    tdm_context,
+)
 
 import marl_battlegrounds._battle_client.control as control
 import marl_battlegrounds._battle_client.evaluation_bridge as evaluation_bridge
@@ -252,15 +255,17 @@ def _context(
 ) -> EvaluationEpisodeContextV4:
     source = get_scenario("arena_5v5") if scenario is None else scenario
     config, _state = source.build_scenario()
-    return build_debugger_evaluation_context_v1(
-        debugger_test_launch_specification(7),
-        scenario=source,
-        config=config,
-        run_generation=0,
-        action_source_kind=team_controller_action_source(team_a, team_b),
-        team_a_controller=team_a,
-        team_b_controller=team_b,
-        execution_information_mode=mode,
+    return tdm_context(
+        build_debugger_evaluation_context_v1(
+            debugger_test_launch_specification(7),
+            scenario=source,
+            config=config,
+            run_generation=0,
+            action_source_kind=team_controller_action_source(team_a, team_b),
+            team_a_controller=team_a,
+            team_b_controller=team_b,
+            execution_information_mode=mode,
+        )
     )
 
 
@@ -476,7 +481,7 @@ def test_gamma_is_admitted_on_team_b_with_shared_obs() -> None:
             "tdm_gamma",
         )
         assert session.evaluation_context.execution_information_mode == "shared_obs"
-        aggregation = _aggregation(session.evaluation_context)
+        aggregation = _aggregation(tdm_context(session.evaluation_context))
         assert aggregation["team_a_controller"] == team_a
         assert aggregation["team_b_controller"] == "tdm_gamma"
         assert aggregation["action_source"] == (
@@ -579,7 +584,7 @@ def test_control_accepts_gamma_on_team_a_and_keeps_the_old_session() -> None:
             team_b,
         )
         assert installed.evaluation_context.execution_information_mode == "shared_obs"
-        aggregation = _aggregation(installed.evaluation_context)
+        aggregation = _aggregation(tdm_context(installed.evaluation_context))
         assert aggregation["team_a_controller"] == "tdm_gamma"
         assert aggregation["team_b_controller"] == team_b
         assert _tree_equal(installed.state, session.state)
@@ -588,7 +593,10 @@ def test_control_accepts_gamma_on_team_a_and_keeps_the_old_session() -> None:
         "tdm_gamma",
         "manual",
     )
-    assert _aggregation(created.evaluation_context)["action_source"] == "mixed"
+    assert (
+        _aggregation(tdm_context(created.evaluation_context))["action_source"]
+        == "mixed"
+    )
     # DebuggerSession accepts the controller itself; this copy fails only
     # because its saved context still describes the old manual Team A.
     with pytest.raises(ValueError, match="must join its evaluation context"):
@@ -745,7 +753,7 @@ def test_reset_and_reselection_keep_gamma_selected(
     assert _tree_equal(restarted.key, initial.key)
     assert restarted.current_evaluation_frame.frame_index == 0
     assert restarted.incoming_evaluation_view is None
-    _assert_gamma_team_b_rows(restarted.evaluation_context)
+    _assert_gamma_team_b_rows(tdm_context(restarted.evaluation_context))
     assert (
         restarted.evaluation_context.identity.episode_id
         != initial.evaluation_context.identity.episode_id
@@ -780,14 +788,14 @@ def test_reset_and_reselection_keep_gamma_selected(
     assert manual.team_b_controller == "manual"
     assert reselected.team_b_controller == "tdm_gamma"
     assert reselected.run_generation == restarted.run_generation + 2
-    _assert_gamma_team_b_rows(reselected.evaluation_context)
+    _assert_gamma_team_b_rows(tdm_context(reselected.evaluation_context))
     switched = control.switch_scenario(
         reselected,
         replace(reselected.scenario, name="renamed_gamma_copy", title="Renamed"),
     )
     assert switched.team_b_controller == "tdm_gamma"
     assert switched.scenario.name == "renamed_gamma_copy"
-    _assert_gamma_team_b_rows(switched.evaluation_context)
+    _assert_gamma_team_b_rows(tdm_context(switched.evaluation_context))
 
 
 @pytest.mark.parametrize("team_a", _V6_TEAM_A_CONTROLLERS)

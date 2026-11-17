@@ -16,6 +16,7 @@ from scripts.dev.visual_debugger.no_shared_visual import (
 from scripts.dev.visual_debugger.presentation_protocol import (
     LiveNoSharedObsAuthorizedPresentationFrameV1,
 )
+from tests.helpers.visual_debugger_fixtures import tdm_context, tdm_frame
 from tests.visual_debugger.test_visual_debugger_live_presentation import (
     _step_once,  # pyright: ignore[reportPrivateUsage]
     _switch_to_pov,  # pyright: ignore[reportPrivateUsage]
@@ -158,8 +159,8 @@ def test_live_no_shared_excludes_oracle_ids_and_diagnostics() -> None:
     }
     # A public Capture the Flag rule setting; None in this Team Deathmatch game.
     assert match_summary["flag_return_steps"] is None
-    context = service.session.evaluation_context
-    frame = service.session.current_evaluation_frame
+    context = tdm_context(service.session.evaluation_context)
+    frame = tdm_frame(service.session.current_evaluation_frame)
     assert match_summary["schema_version"] == 1
     assert match_summary["episode_id"] == context.identity.episode_id
     assert match_summary["source_frame_index"] == frame.frame_index

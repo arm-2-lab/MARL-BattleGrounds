@@ -29,7 +29,11 @@ from tests.helpers.evaluation_fixtures import (
     captured_evaluation_trajectory,
     neutral_action,
 )
-from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import (
+    debugger_test_launch_specification,
+    tdm_context,
+    tdm_frame,
+)
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -1205,14 +1209,14 @@ def test_real_death_and_respawn_keep_recipient_self_authorized_in_live_and_repla
         show_ranges=True,
         verbose_logging=False,
     )
-    frames = [session.current_evaluation_frame]
+    frames = [tdm_frame(session.current_evaluation_frame)]
     transitions: list[EvaluationTransitionV1] = []
     carriers: list[ActorPovAdjacentTransitionSlice] = []
     for _ in range(3):
         session = submit_next_script_frame(session)
         view = session.incoming_evaluation_view
         assert view is not None and type(view.transition) is EvaluationTransitionV1
-        frames.append(session.current_evaluation_frame)
+        frames.append(tdm_frame(session.current_evaluation_frame))
         transitions.append(view.transition)
         carriers.append(
             build_live_no_shared_obs_visual_adjacent_slice_v1(
@@ -1346,7 +1350,7 @@ def test_real_death_and_respawn_keep_recipient_self_authorized_in_live_and_repla
         session.evaluation_context.code_revision.package_version
     )
     replay = build_replay_v4(
-        session.evaluation_context,
+        tdm_context(session.evaluation_context),
         frames,
         transitions,
         runtime_provenance=RuntimeProvenanceV1.model_validate(runtime_payload),

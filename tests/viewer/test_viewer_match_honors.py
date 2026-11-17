@@ -37,7 +37,11 @@ import pytest
 from pydantic import BaseModel, ValidationError
 from scripts.dev.visual_debugger.scenarios import vision_moment_scenario
 from tests.evaluation.replays.test_evaluation_pov import _runtime_provenance
-from tests.helpers.visual_debugger_fixtures import debugger_test_launch_specification
+from tests.helpers.visual_debugger_fixtures import (
+    debugger_test_launch_specification,
+    tdm_context,
+    tdm_frame,
+)
 
 from marl_battlegrounds._battle_client.control import (
     create_session,
@@ -241,14 +245,17 @@ def test_live_and_replay_honors_follow_each_view(
     assert pov == oracle
     team_b = getattr(_presentation(ended, "pov", focus=6), "match_honors", None)
     assert team_b == oracle
-    context = ended.evaluation_context
+    context = tdm_context(ended.evaluation_context)
     provenance = _runtime_provenance().model_copy(
         update={"package_version": context.code_revision.package_version}
     )
     loaded = LoadedReplay(
         build_replay_v4(
             context,
-            [start.current_evaluation_frame, ended.current_evaluation_frame],
+            [
+                tdm_frame(start.current_evaluation_frame),
+                tdm_frame(ended.current_evaluation_frame),
+            ],
             [ended.incoming_evaluation_view.transition],  # pyright: ignore[reportOptionalMemberAccess]
             runtime_provenance=provenance,
         )

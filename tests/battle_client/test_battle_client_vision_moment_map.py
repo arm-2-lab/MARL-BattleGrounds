@@ -22,6 +22,7 @@ import re
 
 import jax
 import pytest
+from tests.helpers.visual_debugger_fixtures import tdm_context
 
 from marl_battlegrounds._battle_client.evaluation_bridge import (
     build_debugger_evaluation_context_v1,
@@ -80,15 +81,17 @@ def _context(config: EnvConfig, *, declared: bool) -> EvaluationEpisodeContextV4
         ),
         capture_profile="debug",
     )
-    return build_debugger_evaluation_context_v1(
-        launch,
-        scenario=_scenario(config, declared=declared),
-        config=config,
-        run_generation=0,
-        action_source_kind="manual",
-        team_a_controller="manual",
-        team_b_controller="manual",
-        execution_information_mode="shared_obs",
+    return tdm_context(
+        build_debugger_evaluation_context_v1(
+            launch,
+            scenario=_scenario(config, declared=declared),
+            config=config,
+            run_generation=0,
+            action_source_kind="manual",
+            team_a_controller="manual",
+            team_b_controller="manual",
+            execution_information_mode="shared_obs",
+        )
     )
 
 

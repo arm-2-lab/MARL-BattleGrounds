@@ -41,6 +41,7 @@ from tests.helpers.evaluation_fixtures import (
 from tests.helpers.evaluation_fixtures import (
     historical_step as step,
 )
+from tests.helpers.visual_debugger_fixtures import tdm_context, tdm_frame
 
 from marl_battlegrounds.evaluation._metrics.metrics import build_evaluation_observer_v1
 from marl_battlegrounds.evaluation._recording.capture import (
@@ -441,8 +442,11 @@ def _one_step_devclient_replay(
         tuple(int(value) for value in advanced.state.team_deathmatch_scores),
     )
     replay = build_replay_v4(
-        session.evaluation_context,
-        (session.current_evaluation_frame, advanced.current_evaluation_frame),
+        tdm_context(session.evaluation_context),
+        (
+            tdm_frame(session.current_evaluation_frame),
+            tdm_frame(advanced.current_evaluation_frame),
+        ),
         (view.transition,),
         runtime_provenance=_runtime_provenance().model_copy(
             update={"package_version": revision.package_version}

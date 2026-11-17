@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -112,7 +112,7 @@ def _session(setup: BattleSetup, *, recorded: bool = False) -> DebuggerSession:
 @contextmanager
 def _recorded_game(
     setup: BattleSetup, tmp_path: Path
-) -> Iterator[tuple[DebuggerService, SystemWorker, DebuggerReplayRecorder]]:
+) -> Generator[tuple[DebuggerService, SystemWorker, DebuggerReplayRecorder]]:
     session = _session(setup, recorded=True)
     context = session.evaluation_context
     recorder = DebuggerReplayRecorder(
