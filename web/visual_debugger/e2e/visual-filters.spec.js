@@ -5,7 +5,9 @@
  * (DevClient combat screen) switches, 66 of the BattleClient's 83 (it leaves
  * Panel Tokens out: no docked panels) and 76 of the 95 Replay Viewer switches,
  * including Cooldown Effects and Red Zone Floors; the Replay Viewer starts with
- * Ranges off ("76 Of 96 On"). There is no Broadcast preset. Default
+ * Ranges off ("76 Of 96 On"). A mode-only switch is listed only in its
+ * modes' games (the Flags in Capture the Flag, the two Red Zone switches outside
+ * it; SWITCH_TASK_MODES): its row stays, hidden, and the count leaves it out. There is no Broadcast preset. Default
  * Configuration, Enable All and Disable All change only local paint and the
  * Ranges setting (the side panels are compared with every champion name read
  * the same way: Panel Tokens, which Enable All and Disable All also flip, only
@@ -27,6 +29,7 @@ import { REPLAY_AUTOPLAY_CADENCE_MS } from "../src/replay-controls.js";
 import {
   VISUAL_FILTER_IDS,
   VISUAL_FILTER_REGISTRY,
+  visualFilterShownInMode,
   visualFiltersForProduct,
 } from "../src/visual-filters.js";
 import { startDebugger, stopDebugger } from "./support/live-debugger.js";
@@ -76,6 +79,26 @@ async function shownFilters(page) {
     ({ id }) =>
       product !== "combat_debugger" || developerDrawer || id !== "panel_tokens",
   );
+}
+
+/**
+ * Keep the switches the page's game lists: a mode-only switch (the Flags, the
+ * Red Zone pair; SWITCH_TASK_MODES) keeps its row but is hidden, with no name or
+ * hover card, outside its modes' games. The page names its game's mode on the
+ * match strip, read without waiting; with no game yet, the switches shown before
+ * one are kept.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {ReturnType<typeof visualFiltersForProduct>} filters
+ */
+async function listedInMode(page, filters) {
+  const modeText = await page.evaluate(
+    () =>
+      document.querySelector("[data-task-mode]")?.getAttribute("data-task-mode") ??
+      null,
+  );
+  const taskMode = modeText === null ? null : Number(modeText);
+  return filters.filter(({ id }) => visualFilterShownInMode(id, taskMode));
 }
 
 /** @type {Awaited<ReturnType<typeof exportReplayArtifacts>> | null} */
@@ -416,15 +439,17 @@ async function expectFilterSurface(page, disabledIds = [], rangesEnabled = true)
       })),
     ),
   );
+  // Every switch keeps its row; the count covers the ones the game lists.
+  const listed = await listedInMode(page, shown);
   const enabledCount =
-    shown.filter(({ id }) => !expectedDisabled.has(id)).length +
+    listed.filter(({ id }) => !expectedDisabled.has(id)).length +
     (rangesEnabled ? 1 : 0);
   await expect(page.locator("#visual-filter-count")).toHaveText(
-    `${enabledCount} of ${shown.length + 1} On`,
+    `${enabledCount} of ${listed.length + 1} On`,
   );
   const enableAll = page.locator("#enable-all-visual-filters-button");
   const disableAll = page.locator("#disable-all-visual-filters-button");
-  if (enabledCount === shown.length + 1) {
+  if (enabledCount === listed.length + 1) {
     await expect(enableAll).toBeDisabled();
   } else {
     await expect(enableAll).toBeEnabled();
@@ -465,7 +490,7 @@ async function expectVisualFilterHelp(page) {
     "combat_debugger";
   const sectionHelp = (await page.locator("#visual-filters-help").textContent()) ?? "";
   const descriptions = new Set();
-  const shown = await shownFilters(page);
+  const shown = await listedInMode(page, await shownFilters(page));
   for (const { id, label, help: registryHelp, defaultEnabled } of shown) {
     const helpId = `visual-filter-${id.replaceAll("_", "-")}-help`;
     const option = page.locator(
