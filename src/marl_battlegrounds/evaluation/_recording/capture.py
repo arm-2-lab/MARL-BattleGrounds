@@ -9,7 +9,9 @@ neutral games, and context V5 uses frame V4 and transition V2 for Capture the
 Flag; context V3 uses frame V2 and older contexts keep frame V1.
 capture_initial_evaluation_frame and capture_evaluation_transition_unit pick
 those versions from the context, for every mode; the versioned functions are
-fixed wrappers around them.
+fixed wrappers around them. reconstruct_env_state_v1 and
+reconstruct_transition_facts_v1 rebuild Core's state and facts from every frame
+and facts version, Capture the Flag's included.
 """
 
 from __future__ import annotations
@@ -1581,15 +1583,17 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
     EnvState
         Unbatched EnvState with the recorded simulator tick, ten global slots,
         two team rows, float32 position/health, int32 counters/actions, and bool flags.
-        The Capture the Flag and King of the Hills fields hold their neutral
-        values (neutral_objective_fields): the supported frames record only
-        Team Deathmatch and neutral games.
+        A Team Deathmatch or neutral frame (V1 to V3) leaves every Capture the
+        Flag and King of the Hills field neutral (neutral_objective_fields). A
+        Capture the Flag frame V4 restores its four flag fields, with a missing
+        carrier (None) as Core's -1, and Team Deathmatch's scores as (0, 0),
+        the value Core keeps in that mode; its King of the Hills fields stay
+        neutral.
 
     Raises
     ------
     TypeError
-        The frame is a Capture the Flag frame V4 (no reader needs its state
-        yet), or a recorded integer field contains a non-integer value.
+        A recorded integer field contains a non-integer value.
     ValueError
         Integers exceed int32 or floating values cannot be represented
         exactly as finite float32.
@@ -1605,13 +1609,20 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
         _wire_int32_array,  # pyright: ignore[reportPrivateUsage]
     )
 
-    if type(frame) is EvaluationFrameV4:
-        raise TypeError("a Capture the Flag frame cannot be rebuilt into a state yet")
     values = frame.snapshot.model_dump(exclude={"schema_id", "schema_version"})
     values["step_count"] = frame.simulator_step_count
-    # The supported frames record Team Deathmatch games, whose objective fields
-    # are always neutral.
+    # Fields a frame does not record are neutral: every objective field in a
+    # Team Deathmatch or neutral game, and King of the Hills' in a Capture the
+    # Flag game, which also keeps Team Deathmatch's scores at zero.
     arrays: dict[str, jax.Array] = neutral_objective_fields(EnvState, host=host)
+    if type(frame) is EvaluationFrameV4:
+        values["team_deathmatch_scores"] = (0, 0)
+        values["capture_the_flag_flag_carrier_slots"] = tuple(
+            -1 if slot is None else slot
+            for slot in values["capture_the_flag_flag_carrier_slots"]
+        )
+        for name in GlobalAnalysisSnapshotCaptureTheFlagV2.model_fields:
+            arrays.pop(name, None)
     for name in EnvState._fields:
         if name in arrays:
             continue
@@ -1622,7 +1633,12 @@ def reconstruct_env_state_v1(frame: EvaluationFrame, *, host: bool = False) -> E
         else:
             convert = (
                 _wire_float32_array
-                if name in ("agent_positions", "current_health")
+                if name
+                in (
+                    "agent_positions",
+                    "current_health",
+                    "capture_the_flag_flag_positions",
+                )
                 else _wire_int32_array
             )
             arrays[name] = convert(
@@ -1655,7 +1671,7 @@ def _neutral_objective_facts_on_host() -> tuple[
 
 
 def _reconstruct_transition_facts(
-    source: TransitionFactsV1,
+    source: TransitionFactsV1 | TransitionFactsCaptureTheFlagV2,
     *,
     host: bool = False,
 ) -> TransitionFacts:
@@ -1663,8 +1679,10 @@ def _reconstruct_transition_facts(
 
     Parameters
     ----------
-    source : TransitionFactsV1
-        Exact TransitionFactsV1 with fixed global-slot and channel axes.
+    source : TransitionFactsV1 or TransitionFactsCaptureTheFlagV2
+        Exact TransitionFactsV1 (a Team Deathmatch or neutral game) or
+        TransitionFactsCaptureTheFlagV2 (a Capture the Flag game), with fixed
+        global-slot and channel axes.
     host : bool
         If false, construct JAX arrays on the default device. If true, return
         NumPy arrays for later batched transfer. Defaults to false.
@@ -1674,15 +1692,18 @@ def _reconstruct_transition_facts(
     TransitionFacts
         Unbatched Core TransitionFacts with bool, int32, and float32 leaves.
         Absent recipient routes are restored from None to Core's -1 sentinel.
-        The Capture the Flag and King of the Hills records are Core's neutral
-        ones (build_reset_capture_the_flag_facts and
-        build_reset_king_of_the_hills_facts): V1 records hold only Team
-        Deathmatch games. With host=True they are shared read-only arrays.
+        Records a game's mode does not use are Core's neutral ones
+        (build_reset_capture_the_flag_facts, build_reset_king_of_the_hills_facts,
+        and a Team Deathmatch outcome of 0, ongoing): from V1, the Capture the
+        Flag and King of the Hills records; from V2, the Team Deathmatch and
+        King of the Hills records, which capture requires to be neutral in a
+        Capture the Flag game. With host=True the shared neutral records are
+        read-only arrays.
 
     Raises
     ------
     TypeError
-        source is not the exact declared V1 record type.
+        source is neither exact declared record type.
 
     Notes
     -----
@@ -1702,7 +1723,8 @@ def _reconstruct_transition_facts(
             return cast(jax.Array, np.asarray(value, dtype=dtype))
         return jnp.asarray(value, dtype=np.dtype(dtype))
 
-    _require_exact_type(source, TransitionFactsV1, name="transition_facts_v1")
+    if type(source) is not TransitionFactsCaptureTheFlagV2:
+        _require_exact_type(source, TransitionFactsV1, name="transition_facts_v1")
 
     def action(model: JointActionV1) -> Action:
         """Restore the three recorded action heads as length-ten int32 arrays.
@@ -1808,10 +1830,24 @@ def _reconstruct_transition_facts(
             build_reset_king_of_the_hills_facts(),
         )
     )
+    team_deathmatch_outcome = 0
+    if isinstance(source, TransitionFactsCaptureTheFlagV2):
+        flags = source.capture_the_flag_facts
+        capture_the_flag_facts = CaptureTheFlagTransitionFacts(
+            *(
+                array(getattr(flags, name), dtype=jnp.bool_)
+                for name in CaptureTheFlagTransitionFacts._fields[:4]
+            ),
+            flag_was_automatically_returned_by_team=array(
+                flags.flag_was_automatically_returned_by_team, dtype=jnp.bool_
+            ),
+            outcome=array(flags.outcome, dtype=jnp.int32),
+        )
+    else:
+        team_deathmatch_outcome = source.team_deathmatch_facts.outcome
     physical = source.physical_facts
     aura = source.aura_facts
     lifecycle = source.status_lifecycle_facts
-    team_deathmatch = source.team_deathmatch_facts
     return TransitionFacts(
         has_transition=array(source.has_transition, dtype=jnp.bool_),
         transition_start_step_count=array(
@@ -1881,7 +1917,7 @@ def _reconstruct_transition_facts(
             ),
         ),
         team_deathmatch_facts=TeamDeathmatchTransitionFacts(
-            outcome=array(team_deathmatch.outcome, dtype=jnp.int32),
+            outcome=array(team_deathmatch_outcome, dtype=jnp.int32),
         ),
         capture_the_flag_facts=capture_the_flag_facts,
         king_of_the_hills_facts=king_of_the_hills_facts,
