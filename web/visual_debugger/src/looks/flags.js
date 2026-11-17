@@ -29,7 +29,9 @@
  * (capture, return by touch, return by timer), so it lands when the scorebug
  * steps up; "fall", keyed by the carrier, for a drop; "impact" for a pickup and
  * for a grab and fall. A carried pennant carries `data-glide-follow`, so it rides
- * its carrier's glide; a carried pennant whose carrier this view cannot see
+ * its carrier's glide; so does the "before" copy of a carried flag that changes
+ * (its carrier dies or captures), drawn at the carrier's END spot, so the flag
+ * stays on the carrier until the beat; a carried pennant whose carrier this view cannot see
  * slides between its two public spots (animationSpecs), so it never steps
  * while bodies glide. A paused frame, a seek and a PNG export show END plus the
  * capture mark. With the Flags switch off, the look draws plain pennants and
@@ -39,7 +41,8 @@
  * The scorebug's flag chips (`match-summary.js`) draw the same pennant
  * (pennantGeometry) and wait for the same beat (flagChange).
  *
- * Boundary: records reads only this audience's arena scene (`capture_the_flag`),
+ * Boundary: records reads only this audience's arena scene (`capture_the_flag`,
+ * and a named carrier's body in `agents`),
  * this audience's flag trajectories (start and end of the tick) and the return
  * ticks, a public rule setting the caller passes in. In Agent POV the scene names
  * a carrier only when the view sees it, so an unseen carrier gets a plain
@@ -376,6 +379,32 @@ function unseenCarryOffset(start, end, transform) {
 }
 
 /**
+ * Return the flag row a changed flag's "before" copy is drawn from. Pure.
+ *
+ * A carried copy that names its carrier rides that body's glide
+ * (data-glide-follow), and a glide carries a node from the body's START spot to
+ * its END spot, because the page holds the END state. So the copy stands at the
+ * carrier's END body position in this scene (bodies maps presentation keys to
+ * world [x, y], or null), and it stays on the carrier for the whole tick: on a
+ * carrier who dies (until the fall beat) and on one who captures (until the
+ * score beat). A carrier missing from this scene's bodies leaves the copy at its
+ * START spot, following nobody, so it never slides away from the body. Any other
+ * start row is returned unchanged.
+ *
+ * @param {Record<string, any>} start The flag at the tick's start.
+ * @param {ReadonlyMap<unknown, Pair | null>} bodies
+ * @returns {Record<string, any>}
+ */
+function beforeCopy(start, bodies) {
+  const key = start.carrier_presentation_key;
+  if (start.state !== "carried" || typeof key !== "string") return start;
+  const end = bodies.get(key);
+  return end
+    ? { ...start, position: end }
+    : { ...start, carrier_presentation_key: null };
+}
+
+/**
  * Return a frozen beat hold. Pure.
  *
  * @param {{beat: "impact" | "fall" | "score", key: string | null}} change
@@ -509,8 +538,9 @@ function flagDrawing(flag, part, view, flagHold, glideFrom = null) {
 /**
  * Return the drawing records of this look for one part.
  *
- * input.scene is this audience's arena scene; only its `capture_the_flag` is
- * read (null outside Capture the Flag, which gives []): `flags` (Team A's flag,
+ * input.scene is this audience's arena scene; its `capture_the_flag` is read
+ * (null outside Capture the Flag, which gives []), and its `agents` only for a
+ * named carrier's END position (presentation_key and position): `flags` (Team A's flag,
  * then Team B's: team_id, state "home" | "carried" | "dropped", position and
  * home_position as world [x, y], carrier_presentation_key or null,
  * countdown_steps), `capture_distance` and `interaction_distance` (world units).
@@ -524,7 +554,8 @@ function flagDrawing(flag, part, view, flagHold, glideFrom = null) {
  *
  * Records, each frozen with a `kind`. Ground: {kind: "flag-base", teamId, rim,
  * rimWidth, rimOpacity, ring, zone, u, strength, hold} per flag, then per flag
- * its "before" copy (when it changed) and its END drawing:
+ * its "before" copy (when it changed; a carried one at its carrier's END body
+ * position from input.scene.agents, see beforeCopy) and its END drawing:
  * {kind: "flag-countdown", teamId, track, arc, u, hold} and {kind:
  * "flag-pennant", teamId, state, pole, shape, outlined, follow, glideFrom, u,
  * hold} (glideFrom: null, or the px offset back to the START spot of a carried
@@ -579,6 +610,11 @@ export function records(input) {
       .filter(isRecord)
       .map((row) => [row.team_id, usableFlag(row.transition_start)]),
   );
+  const bodies = new Map(
+    asArray(input.scene?.agents)
+      .filter(isRecord)
+      .map((agent) => [agent.presentation_key, worldPair(agent.position)]),
+  );
   /** @type {LookRecord[]} */
   const result = [];
   if (part === "ground") {
@@ -592,7 +628,14 @@ export function records(input) {
     const start = starts.get(flag.team_id) ?? null;
     const change = flagChange(start, flag);
     if (change !== null && start !== null) {
-      result.push(...flagDrawing(start, part, view, hold(change, "before", 1)));
+      result.push(
+        ...flagDrawing(
+          beforeCopy(start, bodies),
+          part,
+          view,
+          hold(change, "before", 1),
+        ),
+      );
     }
     result.push(
       ...flagDrawing(

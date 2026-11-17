@@ -8,10 +8,14 @@
  * carried pennant outlined and following its carrier only when the view names
  * the carrier, a dropped flag's ticks left); this tick's changes (a capture goes
  * home at "score" with a "before" copy on the carrier, a pulse on its base and
- * the capture mark at the capturer's base; a drop waits for the start carrier's
- * "fall", or shows at once when the view did not name it; a pickup and a grab and
- * fall wait for "impact", the base dimming with the pickup; a countdown alone is
- * no change); the Flags switch off (plain pennants and bases, no rings, numbers,
+ * the capture mark at the capturer's base; a carried flag stays on its carrier
+ * for a carry's whole life (pickup, carried move, death, capture: every carried
+ * pennant stands at the carrier's END spot, so its glide keeps it on the body;
+ * with no body in the scene, which is the Agent POV case of a carrier seen at
+ * the tick's start and not at its end, a changing copy stays at its start spot);
+ * a drop waits for the start carrier's "fall", or shows at once when the view did
+ * not name it; a pickup and a grab and fall wait for "impact", the base dimming
+ * with the pickup; a countdown alone is no change); the Flags switch off (plain pennants and bases, no rings, numbers,
  * outlines, pulses or marks); and build() nodes, beat-hold attributes, export
  * safety and update() reprojection; a pennant whose carrier the view cannot
  * see slides between its public spots in a played tick with normal motion and
@@ -243,7 +247,10 @@ test("a dropped flag shows its countdown arc and its ticks left", () => {
 test("a capture goes home at the score beat, with a pulse and the capture mark", () => {
   const start = flag(2, "carried", { ...CARRIED_BY_KEY, position: [1, 5.2] });
   const input = {
-    scene: scene(flag(1, "home"), flag(2, "home")),
+    scene: {
+      ...scene(flag(1, "home"), flag(2, "home")),
+      agents: [{ presentation_key: "key-hunter", position: [0.9, 5.2] }],
+    },
     flagTrajectories: [
       { team_id: 1, transition_start: flag(1, "home"), successor: flag(1, "home") },
       { team_id: 2, transition_start: start, successor: flag(2, "home") },
@@ -292,6 +299,71 @@ test("a capture goes home at the score beat, with a pulse and the capture mark",
       Math.hypot(x0 - home.x, y0 - home.y) - 0.85 * transform.worldLengthToScreen(1),
     ) < 0.01,
   );
+});
+
+test("a carried flag stays on its carrier for a carry's whole life", () => {
+  // Every carried pennant drawn in a tick rides its carrier's glide, and a glide
+  // carries a rider from the body's START spot to its END spot, so each one must
+  // stand at the carrier's END spot: the pickup, a carried move, a death and a
+  // capture. With no body in the scene a changing copy stays at its start spot.
+  /** @param {[number, number]} position */
+  const carriedAt = (position) =>
+    ofKind(
+      draw("above", {
+        scene: scene(
+          flag(1, "home"),
+          flag(2, "carried", { ...CARRIED_BY_KEY, position }),
+        ),
+      }),
+      "flag-pennant",
+    )[0];
+  const carried = (/** @type {[number, number]} */ position) =>
+    flag(2, "carried", { ...CARRIED_BY_KEY, position });
+  /** @type {Array<[string, Record<string, any>, Record<string, any>, [number, number]]>} */
+  const ticks = [
+    ["pickup", flag(2, "home"), carried([18.6, 4.7]), [18.6, 4.7]],
+    ["move", carried([10, 5]), carried([9.4, 5.3]), [9.4, 5.3]],
+    [
+      "death",
+      carried([5.5, 6.5]),
+      flag(2, "dropped", { position: [4.7, 6] }),
+      [4.7, 6],
+    ],
+    ["capture", carried([1, 6.4]), flag(2, "home"), [0.9, 5.4]],
+  ];
+  for (const [name, start, successor, endAt] of ticks) {
+    const flagTrajectories = [{ team_id: 2, transition_start: start, successor }];
+    const base = scene(flag(1, "home"), successor);
+    const riding = ofKind(
+      draw("above", {
+        scene: {
+          ...base,
+          agents: [{ presentation_key: "key-hunter", position: endAt }],
+        },
+        flagTrajectories,
+      }),
+      "flag-pennant",
+    );
+    assert.equal(riding.length, 1, name);
+    assert.deepEqual(
+      [riding[0].state, riding[0].follow],
+      ["carried", "key-hunter"],
+      name,
+    );
+    assert.equal(riding[0].pole, carriedAt(endAt).pole, name);
+    if (name === "death" || name === "capture") {
+      assert.equal(riding[0].hold.side, "before", name);
+      const [alone] = ofKind(
+        draw("above", { scene: base, flagTrajectories }),
+        "flag-pennant",
+      );
+      assert.deepEqual(
+        [alone.follow, alone.pole],
+        [null, carriedAt(/** @type {[number, number]} */ (start.position)).pole],
+        name,
+      );
+    }
+  }
 });
 
 test("a drop waits for its carrier's fall, or shows at once when unnamed", () => {
@@ -525,7 +597,10 @@ test("carrier words name the carried flag only when the scene names the carrier"
 test("build gives export-safe nodes with beat holds, and update reprojects them", () => {
   const start = flag(2, "carried", { ...CARRIED_BY_KEY, position: [1, 5.2] });
   const input = {
-    scene: scene(flag(1, "dropped"), flag(2, "home")),
+    scene: {
+      ...scene(flag(1, "dropped"), flag(2, "home")),
+      agents: [{ presentation_key: "key-hunter", position: [0.9, 5.2] }],
+    },
     flagTrajectories: [
       { team_id: 2, transition_start: start, successor: flag(2, "home") },
     ],
