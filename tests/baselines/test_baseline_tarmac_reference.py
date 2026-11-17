@@ -35,6 +35,7 @@ setting kept. Other methods refuse a messages choice.
 
 # pyright: reportPrivateUsage=false
 import functools
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -58,6 +59,7 @@ from marl_battlegrounds.baselines.inputs import (
     encode_training_state,
 )
 from marl_battlegrounds.environment import make
+from marl_battlegrounds.evaluation.policy_execution import SystemOutput
 from marl_battlegrounds.training import TrainResult
 
 GAMES, TICKS, START = 32, 104, 52
@@ -103,10 +105,13 @@ def test_one_tick_matches_a_numpy_reference(messages: str) -> None:
     senders[0, 2] = False
     flags, valid = np.zeros((3, 5), bool), np.ones((3, 5), bool)
     flags[1, 3], valid[2, 4] = True, False
-    memory, output = ppo.TarMACRNN(messages=messages).apply(
-        {"params": _cell()},
-        jnp.asarray(carry),
-        (embedding[None], flags[None], valid[None], senders[None]),
+    memory, output = cast(
+        tuple[Array, Array],
+        ppo.TarMACRNN(messages=messages).apply(
+            {"params": _cell()},
+            jnp.asarray(carry),
+            (embedding[None], flags[None], valid[None], senders[None]),
+        ),
     )
     weights = jax.tree.map(np.asarray, _cell())
 
@@ -147,17 +152,20 @@ def test_gradient_is_finite_on_a_first_tick_with_no_valid_sender() -> None:
     senders = jnp.ones((2, 2, 5, 5), bool).at[0].set(False)
 
     def loss(params: ppo.Tree) -> Array:
-        memory, logits = ppo.TarMACActor().apply(
-            params,
-            jnp.asarray(generator.normal(size=(2, 5, 128)), jnp.float32),
-            features,
-            starts,
-            jnp.ones((2, 2, 5), bool),
-            senders,
+        memory, logits = cast(
+            tuple[Array, Array],
+            ppo.TarMACActor().apply(
+                params,
+                jnp.asarray(generator.normal(size=(2, 5, 128)), jnp.float32),
+                features,
+                starts,
+                jnp.ones((2, 2, 5), bool),
+                senders,
+            ),
         )
         return jnp.sum(logits) + jnp.sum(memory)
 
-    gradient = jax.grad(loss)(_learner().actor_params)
+    gradient = cast(ppo.Tree, jax.grad(loss)(_learner().actor_params))
     assert all(bool(jnp.all(jnp.isfinite(leaf))) for leaf in jax.tree.leaves(gradient))
 
 
@@ -203,10 +211,12 @@ def _played() -> dict[str, Any]:
     composed = marl_bgs.team(tarmac, "random", slots=[[0, 2], [1, 3, 4]])
     observations, state = env.reset(jax.random.key(3))
     inputs = env.policy_inputs(observations, state)
+    assert composed.init is not None
     memory = composed.init(
         composed.variables, inputs, jax.random.split(jax.random.key(5), GAMES)
     )
-    apply, step = jax.jit(composed.apply), jax.jit(env.step)
+    apply = cast(Callable[..., SystemOutput], jax.jit(composed.apply))
+    step = cast(Callable[..., Any], jax.jit(env.step))
     played: dict[str, Any] = {"first": inputs}
     rows: dict[str, list[Any]] = {
         name: []
@@ -377,7 +387,11 @@ def test_replay_matches_play_on_a_block_with_every_masked_kind() -> None:
         patch.setattr(ppo, "update_minibatch", capture)
         with pytest.raises(_CapturedError):
             ppo.update_ppo(_sharp(), batch, jax.random.key(6), CONFIG, method="tarmac")
-    group = jax.tree.map(lambda value: value[0], captured[0])
+
+    def first(value: Array) -> Array:
+        return value[0]
+
+    group = jax.tree.map(first, captured[0])
 
     def gap(senders: Array) -> float:
         logits = ppo._actor_logits(
