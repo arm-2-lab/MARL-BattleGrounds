@@ -1017,7 +1017,13 @@ test("replay metrics accept recipient totals and require clear metadata and vers
       (await getReplayMetrics("capability", 1, "cursor", "csv")).filename,
       filename,
     );
+    filename = "ctf-metrics__episode-episode-001__schema-1__cursor__frame-1.csv";
+    assert.equal(
+      (await getReplayMetrics("capability", 1, "cursor", "csv")).filename,
+      filename,
+    );
     for (const invalid of [
+      "koth-metrics__episode-episode-001__schema-1__cursor__frame-1.csv",
       "tdm-metrics-cursor-frame-1.csv",
       "tdm-metrics__episode-../episode__schema-3__cursor__frame-1.csv",
       "tdm-metrics__episode-episode-001__schema-3__cursor__frame-2.csv",

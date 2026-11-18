@@ -7,8 +7,15 @@ in the schema even when inactive. Run/roster identity stays separate from
 numeric columns. Import builds immutable catalog tables once on the host.
 Schema versions protect names/order; presentation reuses existing values.
 FULL_METRIC_NAMES_BY_SCHEMA_VERSION owns the saved full-column order of every
-readable current-format scalar schema (14 before the Red Zone columns, 15
-now), so readers never apply new offsets to old files.
+readable current-format Team Deathmatch scalar schema ("marlbg.tdm.scalar", 14
+before the Red Zone columns, 15 now), so readers never apply new offsets to old
+files. A Capture the Flag game's files carry "marlbg.ctf.scalar", version 1. The
+schema functions (metric_columns_for_task_mode, metric_schema_for_task_mode,
+writes_metric_schema, saved_metric_names, all_metric_columns_by_name) are the one
+place every writer and reader asks which columns and schema a mode writes and
+which columns a saved schema lists. They import the Capture the Flag catalog
+(_metrics/capture_the_flag_catalog.py, which builds on this module and imports no
+JAX) only when first asked for it.
 The catalog also owns two comparison rules: ``mirror_metric`` names each
 column's twin for the other team, and ``MetricColumn.summary_weight`` names the
 column that weights each game when games are combined (filled once at import;
@@ -22,6 +29,8 @@ from dataclasses import dataclass, replace
 from functools import cache
 from types import MappingProxyType
 from typing import Literal, cast
+
+from marl_battlegrounds._task_settings import TASK_MODES
 
 type MetricScope = Literal[
     "episode", "team", "agent", "team_recipient", "source_recipient", "ally_pair"
@@ -5366,6 +5375,151 @@ FULL_METRIC_NAMES_BY_SCHEMA_VERSION: Mapping[int, tuple[str, ...]] = MappingProx
         15: FULL_METRIC_NAMES,
     }
 )
+CAPTURE_THE_FLAG_METRIC_SCHEMA_ID = "marlbg.ctf.scalar"
+"""The metric schema name a Capture the Flag game's saved result files carry."""
+CAPTURE_THE_FLAG_METRIC_SCHEMA_VERSION = 1
+"""The version of a Capture the Flag game's saved column order that new files carry.
+A change to that order needs a new version, with version 1's reader kept."""
+
+
+def metric_schema_for_task_mode(task_mode: int) -> tuple[str, int]:
+    """Return the metric schema that new result files of one task mode carry.
+
+    Parameters
+    ----------
+    task_mode : int
+        A Core TASK_MODE_* value, such as a handle's fixed task mode
+        (_task_settings.TASK_MODES gives each task name's).
+
+    Returns
+    -------
+    tuple of (str, int)
+        The schema name and version: ("marlbg.ctf.scalar", 1) for TASK_MODE_CTF,
+        and ("marlbg.tdm.scalar", 15), METRIC_SCHEMA_ID and METRIC_SCHEMA_VERSION,
+        for every other mode. saved_metric_names gives each one's columns.
+    """
+    if task_mode == TASK_MODES["ctf"]:
+        return CAPTURE_THE_FLAG_METRIC_SCHEMA_ID, CAPTURE_THE_FLAG_METRIC_SCHEMA_VERSION
+    return METRIC_SCHEMA_ID, METRIC_SCHEMA_VERSION
+
+
+def metric_columns_for_task_mode(task_mode: int) -> tuple[MetricColumn, ...]:
+    """Return the full column list of a game of one task mode.
+
+    Parameters
+    ----------
+    task_mode : int
+        The game's static task mode: TASK_MODE_CTF (3) gives a Capture the Flag
+        game's columns; every other mode gives METRIC_COLUMNS, Team Deathmatch's.
+
+    Returns
+    -------
+    tuple of MetricColumn
+        The columns full_values returns, in order; their names are the saved list
+        of metric_schema_for_task_mode(task_mode). Both lists start with the
+        PRIORITY_METRIC_COLUMNS.
+    """
+    if task_mode == TASK_MODES["ctf"]:
+        return _capture_the_flag_metric_columns()
+    return METRIC_COLUMNS
+
+
+WRITTEN_METRIC_SCHEMAS: tuple[tuple[str, int], ...] = tuple(
+    dict.fromkeys(metric_schema_for_task_mode(mode) for mode in TASK_MODES.values())
+)
+"""The (schema name, version) pairs new files carry, one per task mode's schema."""
+
+
+def writes_metric_schema(schema_id: object, schema_version: object) -> bool:
+    """Say whether new files carry one metric schema (WRITTEN_METRIC_SCHEMAS).
+
+    schema_id and schema_version are a saved file's values as read from JSON, of
+    any type; a bool is never a version. False also covers an older schema this
+    code reads but no longer writes, such as Team Deathmatch's 14.
+    """
+    return (
+        type(schema_version) is int
+        and (schema_id, schema_version) in WRITTEN_METRIC_SCHEMAS
+    )
+
+
+def saved_metric_names(
+    schema_id: object, schema_version: object
+) -> tuple[str, ...] | None:
+    """Return the full-report column order that one saved metric schema lists.
+
+    Parameters
+    ----------
+    schema_id, schema_version : object
+        A saved file's "metric_schema_id" and "metric_schema_version" values, as
+        read from JSON (any type; a bool is never a version).
+
+    Returns
+    -------
+    tuple of str or None
+        The saved column names in file order for each schema a reader accepts:
+        "marlbg.tdm.scalar" 14 (today's Team Deathmatch order without the 44 Red
+        Zone columns) and 15 (FULL_METRIC_NAMES), and "marlbg.ctf.scalar" 1
+        (_metrics/capture_the_flag_catalog.py's capture_the_flag_metric_columns).
+        None for any other pair, which readers refuse. Every list starts with the
+        PRIORITY_METRIC_COLUMNS' names.
+
+    Notes
+    -----
+    Host-only. A Capture the Flag file written before the "marlbg.ctf.scalar"
+    schema existed says "marlbg.tdm.scalar" 15 and is read as that: Team
+    Deathmatch's columns, as it was written.
+    """
+    if type(schema_version) is not int:
+        return None
+    if schema_id == METRIC_SCHEMA_ID:
+        return FULL_METRIC_NAMES_BY_SCHEMA_VERSION.get(schema_version)
+    if (schema_id, schema_version) == (
+        CAPTURE_THE_FLAG_METRIC_SCHEMA_ID,
+        CAPTURE_THE_FLAG_METRIC_SCHEMA_VERSION,
+    ):
+        return _capture_the_flag_metric_names()
+    return None
+
+
+def _capture_the_flag_metric_columns() -> tuple[MetricColumn, ...]:
+    """Return capture_the_flag_metric_columns(), imported on first use.
+
+    The Capture the Flag catalog builds on this module, so it is imported here,
+    only when Capture the Flag columns are asked for; it imports no JAX either.
+    That function caches its list.
+    """
+    from marl_battlegrounds.evaluation._metrics.capture_the_flag_catalog import (
+        capture_the_flag_metric_columns,
+    )
+
+    return capture_the_flag_metric_columns()
+
+
+@cache
+def _capture_the_flag_metric_names() -> tuple[str, ...]:
+    """Return the Capture the Flag columns' names, built once."""
+    return tuple(column.name for column in _capture_the_flag_metric_columns())
+
+
+@cache
+def all_metric_columns_by_name() -> Mapping[str, MetricColumn]:
+    """Return every column a saved full table can hold, by name.
+
+    Returns
+    -------
+    Mapping of str to MetricColumn
+        METRIC_COLUMNS_BY_NAME (Team Deathmatch's) plus Capture the Flag's own
+        columns. A Capture the Flag game shares every other column with Team
+        Deathmatch as the same MetricColumn record, so a name has one meaning.
+        Readers use it to read any saved table by its column names.
+    """
+    columns = dict(METRIC_COLUMNS_BY_NAME)
+    for column in _capture_the_flag_metric_columns():
+        columns.setdefault(column.name, column)
+    return MappingProxyType(columns)
+
+
 METRIC_COLUMNS_BY_NAME = MappingProxyType(
     {column.name: column for column in METRIC_COLUMNS}
 )
@@ -5380,8 +5534,9 @@ _SIGN_CHANGING_METRICS = frozenset({"score_difference"})
 @cache
 def _mirror_table() -> Mapping[str, tuple[str, int]]:
     """Build every column's mirrored twin once, from its scope and subjects."""
+    columns = all_metric_columns_by_name()
     table: dict[str, tuple[str, int]] = {}
-    for column in METRIC_COLUMNS:
+    for column in columns.values():
         if column.scope == "team":
             subjects: tuple[int, ...] = (3 - column.subjects[0],)
         elif column.scope == "team_recipient":
@@ -5390,7 +5545,7 @@ def _mirror_table() -> Mapping[str, tuple[str, int]]:
         else:
             subjects = tuple((slot + 5) % 10 for slot in column.subjects)
         twin = _prefix(column.scope, subjects) + column.stem
-        if twin not in METRIC_COLUMNS_BY_NAME:
+        if twin not in columns:
             raise ValueError(f"{column.name} has no mirrored column {twin}")
         sign = -1 if column.name in _SIGN_CHANGING_METRICS else 1
         table[column.name] = (twin, sign)
@@ -5410,8 +5565,9 @@ def mirror_metric(name: str) -> tuple[str, int]:
     Parameters
     ----------
     name : str
-        Exact metric column name from ``METRIC_COLUMNS``. Identity columns such
-        as ``team_a_policy`` are not metrics.
+        Exact metric column name from ``all_metric_columns_by_name`` (Team
+        Deathmatch's and Capture the Flag's). Identity columns such as
+        ``team_a_policy`` are not metrics.
 
     Returns
     -------

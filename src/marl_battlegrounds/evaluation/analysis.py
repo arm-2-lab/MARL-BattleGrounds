@@ -8,9 +8,10 @@ Full metrics require a matching recorded mechanics catalog. This computes the
 current scalar schema from captured facts. replay_metrics is the public route:
 one saved game's final values by column name, for any replay, including games
 played by people in the BattleClient. A Capture the Flag game (replay V5) is
-measured by its own columns (metric_columns_for_task_mode). Historical stored
-metric reports
-keep their own recorded schemas and are not overwritten or relabeled. A
+measured by its own columns (metric_columns_for_task_mode) and its exports name
+the "marlbg.ctf.scalar" schema (metric_schema_for_task_mode). Historical stored
+metric reports keep their own recorded schemas and are not overwritten or
+relabeled. A
 recording saved before the Red Zone rule (its context does not hold
 ResolvedEnvConfigV2) shows all 44 Red Zone columns as unavailable, never as
 invented zeros.
@@ -58,7 +59,6 @@ from marl_battlegrounds.evaluation._metrics.full_metrics import (
     FullTotals,
     full_values,
     initialize_full,
-    metric_columns_for_task_mode,
     update_full,
 )
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationEpisodeCompletionV1
@@ -66,7 +66,6 @@ from marl_battlegrounds.evaluation._recording.capture import (
     reconstruct_env_state_v1,
     reconstruct_transition_facts_v1,
 )
-from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.catalog import (
     build_static_mechanics_catalog_v1,
     reconstruct_env_config_v1,
@@ -74,17 +73,17 @@ from marl_battlegrounds.evaluation.catalog import (
 from marl_battlegrounds.evaluation.metric_catalog import (
     CAPTURE_THE_FLAG_METRIC_TOPICS,
     METRIC_COLUMNS,
-    METRIC_SCHEMA_ID,
-    METRIC_SCHEMA_VERSION,
     METRIC_TOPICS,
     METRIC_VIEW_LABELS,
     PRIORITY_METRIC_COLUMNS,
     STATUS_LABELS,
     MetricColumn,
+    metric_columns_for_task_mode,
     metric_guidance,
     metric_locations,
     metric_order_key,
     metric_primary_location,
+    metric_schema_for_task_mode,
     metric_search_facts,
     metric_search_terms,
     metric_topic_text,
@@ -205,7 +204,7 @@ def _values(
     )
     if not full:
         return priority
-    return full_values(carry.diagnostics, config, priority, task_mode=task_mode)
+    return full_values(carry.diagnostics, config, priority)
 
 
 @partial(jax.jit, static_argnames=("full", "task_mode"))
@@ -268,7 +267,6 @@ def _scan_block(
                     previous.state,
                     row.action_mask,
                     row.info,
-                    task_mode=task_mode,
                 )
                 if full
                 else previous.diagnostics,
@@ -323,6 +321,11 @@ class ReplayAnalysis:
         Recorded completion description for the final captured frame.
     columns : tuple[MetricColumn, ...]
         Ordered metric catalog entries represented by the stored arrays.
+    task_mode : int
+        TASK_MODE_CTF for a Capture the Flag game, TASK_MODE_TDM for every other
+        game (Team Deathmatch or the neutral combat mode), read once from the
+        recorded resolved config. It picks the columns, the topics and the
+        metric schema the catalog and metadata name (metric_schema_for_task_mode).
     frame_count : object
         Number of captured frames, including the initial frame.
 
@@ -340,6 +343,7 @@ class ReplayAnalysis:
     context: EvaluationEpisodeContext
     completion: EvaluationEpisodeCompletionV1
     columns: tuple[MetricColumn, ...]
+    task_mode: int
     _step_counts: tuple[int, ...]
     _values: NDArray[np.float32]
     _valid: NDArray[np.bool_]
@@ -429,7 +433,7 @@ class ReplayAnalysis:
                 for topic in METRIC_TOPICS
                 + (
                     CAPTURE_THE_FLAG_METRIC_TOPICS
-                    if self.context.resolved_env_config.task_mode == TASK_MODE_CTF
+                    if self.task_mode == TASK_MODE_CTF
                     else ()
                 )
                 if (
@@ -809,9 +813,10 @@ class ReplayAnalysis:
         analysis object. This catalog contains no current-frame metric values.
         """
         class_names = self.context.static_mechanics_catalog.class_name_by_id
+        schema_id, schema_version = metric_schema_for_task_mode(self.task_mode)
         return {
-            "metric_schema_id": METRIC_SCHEMA_ID,
-            "metric_schema_version": METRIC_SCHEMA_VERSION,
+            "metric_schema_id": schema_id,
+            "metric_schema_version": schema_version,
             "source_replay_digest": self.source_replay_digest,
             "analysis_source_digest": self.analysis_source_digest,
             "topics": self._topics,
@@ -860,13 +865,14 @@ class ReplayAnalysis:
         time.
         """
         context = self.context
+        schema_id, schema_version = metric_schema_for_task_mode(self.task_mode)
         metadata: dict[str, object] = {
             "episode_id": context.identity.episode_id,
             "scope": scope,
             "frame_index": selected,
             "simulator_step_count": self._step_counts[selected],
-            "metric_schema_id": METRIC_SCHEMA_ID,
-            "metric_schema_version": METRIC_SCHEMA_VERSION,
+            "metric_schema_id": schema_id,
+            "metric_schema_version": schema_version,
             "source_replay_digest": self.source_replay_digest,
             "analysis_source_digest": self.analysis_source_digest,
             "completion_state": self.completion.completion_state
@@ -1075,9 +1081,13 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
         )
     digest = _source_digest()
     config = reconstruct_env_config_v1(context)
-    # Capture the Flag games (replay V5) measure their own columns; every other
-    # replay is a Team Deathmatch or neutral game.
-    task_mode = TASK_MODE_CTF if isinstance(replay, ReplayArtifactV5) else TASK_MODE_TDM
+    # A Capture the Flag game measures its own columns; every other recorded game
+    # (Team Deathmatch or the neutral combat mode) measures Team Deathmatch's.
+    task_mode = (
+        TASK_MODE_CTF
+        if context.resolved_env_config.task_mode == TASK_MODE_CTF
+        else TASK_MODE_TDM
+    )
     initial = reconstruct_env_state_v1(replay.frames[0], host=True)
     carry, first = cast(
         tuple[_Carry, MetricValues],
@@ -1164,6 +1174,7 @@ def analyze_replay(bundle: LoadedReplayBundle, *, full: bool = False) -> ReplayA
         context=context,
         completion=replay.completion,
         columns=columns,
+        task_mode=task_mode,
         _step_counts=tuple(frame.simulator_step_count for frame in replay.frames),
         _values=scalars,
         _valid=valid,

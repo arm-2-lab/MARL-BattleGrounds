@@ -1055,10 +1055,12 @@ def prepare_recording_fork(
     costs separates history reads from open-prefix preparation. Byte counts are
     logical file/prefix bytes, not physical filesystem traffic.
     """
+    from marl_battlegrounds.evaluation.metric_catalog import (
+        saved_metric_names,
+        writes_metric_schema,
+    )
     from marl_battlegrounds.evaluation.run_writer import (
         _INPUT_PROJECTIONS,
-        METRIC_SCHEMA_ID,
-        METRIC_SCHEMA_VERSION,
         RUN_SCHEMA_VERSION,
         _prepare_pass_identity,
         _recording_table_headers,
@@ -1066,10 +1068,17 @@ def prepare_recording_fork(
 
     started = time.monotonic()
     supplied, bundle, paths, saved, replays = _load_recording_bundle(parent_dir, token)
+    # The parent's metric schema may be any one this writer writes; its tables
+    # are checked against that schema's headers. (The fork's child writer records
+    # its own task's schema.)
+    metric_schema = (saved.get("metric_schema_id"), saved.get("metric_schema_version"))
+    if not writes_metric_schema(*metric_schema):
+        raise ValueError("Parent recording schemas differ from this writer")
+    full_metric_names = cast(tuple[str, ...], saved_metric_names(*metric_schema))
     schemas = {
         "schema_version": RUN_SCHEMA_VERSION,
-        "metric_schema_id": METRIC_SCHEMA_ID,
-        "metric_schema_version": METRIC_SCHEMA_VERSION,
+        "metric_schema_id": metric_schema[0],
+        "metric_schema_version": metric_schema[1],
         "actor_input_projections": _INPUT_PROJECTIONS,
     }
     for field, bundle_field in (
@@ -1115,7 +1124,9 @@ def prepare_recording_fork(
     if any(row["episode_id"] in completed for row in replays):
         raise ValueError("Parent recording repeats a completed game as an open replay")
     history_started = time.monotonic()
-    _check_tables(parent_dir, saved, bundle["tables"], _recording_table_headers())
+    _check_tables(
+        parent_dir, saved, bundle["tables"], _recording_table_headers(full_metric_names)
+    )
     _check_completed_replays(parent_dir, original)
     history_seconds = time.monotonic() - history_started
     prefixes_started = time.monotonic()

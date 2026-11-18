@@ -3,7 +3,7 @@
 The approved inventory of 28 October owns every Capture the
 Flag column's name, label, description and direction. _INVENTORY_ROWS holds the rows
 this build measures, copied word for word (with the decided capture reach, 0.75);
-rows the inventory flags as views (copies of other columns) are never shipped
+rows the inventory flags as views (copies of other columns) are never shipped.
 _WRITTEN_ROWS writes out the rows the inventory gives as one text for
 several columns: the whole-game closest ally, each situation's tick block, and the
 approved carries ending in death within 5, 10 and 20 ticks.
@@ -12,26 +12,53 @@ slots, team_{t} to Team A and Team B, agent_{i}_to_agent_{j} to the 50 ordered p
 of teammates (the 10 pairs of an agent with itself stay blank), and {n} to escort
 sizes 0 to 4 ("with_1_ally_near" for one). capture_the_flag_metric_columns is a
 Capture the Flag game's full
-list: Team Deathmatch's columns without the Red Zone, then these. Healing given is
-a Priest's alone, so those columns name the Priest as their required class (the
-class rule). Capture the Flag stays out of the public exports until version
-1.1.0.
+list: Team Deathmatch's columns without the Red Zone, then these. Saved result
+files name that list "marlbg.ctf.scalar", version 1 (metric_catalog's
+metric_schema_for_task_mode); a change to the list needs a new version, with version
+1's reader kept. Healing given is a Priest's alone, so those columns name the Priest
+as their required class (the class rule). This module also owns the sizes the
+columns are cut by (MAX_ALLIES_NEAR, DEATH_WINDOWS, escort_split), which the
+measuring code in _metrics/capture_the_flag.py imports. It imports no JAX, so the
+result readers and writers can name a Capture the Flag file's columns without it.
+Capture the Flag stays out of the public exports until version 1.1.0.
 """
 
 from functools import cache
 from typing import Literal
 
-from marl_battlegrounds.core.types import PRIEST_CLASS_ID
-from marl_battlegrounds.evaluation._metrics.capture_the_flag import (
-    DEATH_WINDOWS,
-    MAX_ALLIES_NEAR,
-    escort_split,
-)
 from marl_battlegrounds.evaluation.metric_catalog import (
     METRIC_COLUMNS,
     MetricColumn,
     MetricScope,
 )
+
+MAX_ALLIES_NEAR = 4
+"""Most teammates that can be near an agent: a team has five slots."""
+
+DEATH_WINDOWS = (5, 10, 20)
+"""Carry lengths, in ticks, for the counts of carries ending in death within them."""
+
+_PRIEST_CLASS_ID = 5
+"""Core's PRIEST_CLASS_ID, written here because this module imports no JAX (a test
+pins the two together)."""
+
+
+def escort_split(size: int) -> str:
+    """Name one escort size as its column names write it.
+
+    Parameters
+    ----------
+    size : int
+        How many of the carrier's teammates were near it, 0 to MAX_ALLIES_NEAR.
+
+    Returns
+    -------
+    str
+        "with_1_ally_near" for one teammate, else "with_{size}_allies_near"
+        (for example "with_0_allies_near"), as the approved inventory names them.
+    """
+    return "with_1_ally_near" if size == 1 else f"with_{size}_allies_near"
+
 
 # (pattern, label, description, direction), from the inventory's Tables 1 and 2.
 _INVENTORY_ROWS: tuple[tuple[str, str, str, str], ...] = (
@@ -500,6 +527,67 @@ _INVENTORY_ROWS: tuple[tuple[str, str, str, str], ...] = (
         "enemy flag.",
         "Context dependent",
     ),
+    (
+        "agent_{i}_priest_freedom_applications_to_allies_who_are__carrying",
+        "Priest Freedom Applications to Allies Who Are Carrying",
+        "How many times this agent gave Freedom to a teammate who held the enemy "
+        "flag. Blank for agents that are not Priests.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_effective_priest_freedom_applications_to_allies_who_are__carrying",
+        "Effective Priest Freedom Applications to Allies Who Are Carrying",
+        "How many times this agent gave Freedom to a teammate who held the enemy flag "
+        "and, on the next tick, when the Freedom acted, it raised that teammate's "
+        "speed limit against a slow. Blank for agents that are not Priests.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_freedom_protected_steps__carrying",
+        "Ticks Freedom Beat a Slow While Carrying",
+        "How many ticks, while it held the enemy flag, Freedom let this agent move "
+        "faster despite a slow. When this agent is a Priest, its own Freedom counts.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_freedom_eligible_steps__carrying",
+        "Ticks With Freedom on This Agent While Carrying",
+        "How many ticks, while it held the enemy flag, this agent had Freedom on it "
+        "and was not stunned, slowed or not. When this agent is a Priest, its own "
+        "Freedom counts.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_freedom_protection_fraction__carrying",
+        "Share of Ticks With Freedom That Beat a Slow While Carrying",
+        "Of the ticks this agent had Freedom on it while it held the enemy flag, the "
+        "share on which Freedom let it move faster despite a slow.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_rescue_opportunities__carrying",
+        "Chances to Save This Agent While Carrying",
+        "How many times, while it held the enemy flag, this agent took damage that "
+        "would have killed it and its team's Priests had enough healing ready to save "
+        "it. When this agent is a Priest, its own healing counts.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_rescues__carrying",
+        "Times Rescued While Carrying",
+        "How many times, while it held the enemy flag, Priest healing saved this agent "
+        "from damage that would have killed it. When this agent is a Priest, its own "
+        "healing counts.",
+        "Context dependent",
+    ),
+    (
+        "agent_{i}_rescue_contributions_to_allies_who_are__carrying",
+        "Lethal Damage Rescue Contributions to Allies Who Are Carrying",
+        "How many times this agent's useful Priest healing helped save a teammate who "
+        "held the enemy flag from damage that would have killed it. Blank for agents "
+        "that are not Priests.",
+        "Context dependent",
+    ),
 )
 
 _NEAR = "near_the_ally_carrier"
@@ -673,6 +761,33 @@ _CARRYING_BLOCK_ROWS = tuple(
     )
 )
 
+# The inventory gives the team's three rescue rows one text; each gets its part.
+_TEAM_RESCUE_ROWS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "team_{t}_rescue_opportunities__carrying",
+        "Lethal Damage Rescue Opportunities While Carrying",
+        "For this team's carriers: how many times damage would have killed the "
+        "carrier while its Priests had enough healing ready. A carrying Priest's own "
+        "healing counts.",
+        "Context dependent",
+    ),
+    (
+        "team_{t}_rescues__carrying",
+        "Lethal Damage Rescues While Carrying",
+        "For this team's carriers: how many times Priest healing saved the carrier "
+        "from damage that would have killed it. A carrying Priest's own healing "
+        "counts.",
+        "Context dependent",
+    ),
+    (
+        "team_{t}_rescue_rate__carrying",
+        "Lethal Damage Rescue Rate While Carrying",
+        "For this team's carriers: the rescues divided by the rescue opportunities. "
+        "Blank when there was no rescue opportunity.",
+        "Context dependent",
+    ),
+)
+
 _WRITTEN_ROWS = (
     _CLOSEST_ALLY_ROWS
     + _CARRYING_BLOCK_ROWS
@@ -695,6 +810,7 @@ _WRITTEN_ROWS = (
         "never is; its own hits count while carrying.",
     )
     + _death_window_rows()
+    + _TEAM_RESCUE_ROWS
 )
 
 _DIRECTIONS: dict[str, Literal["higher", "lower", "descriptive"]] = {
@@ -713,6 +829,8 @@ _WEIGHTS: dict[str | tuple[MetricScope, str], str | None] = {
     "ally_carrier_healing_focus_fraction": (
         "effective_healing_done_to_allies_during_ally_carries"
     ),
+    "rescue_rate__carrying": "rescue_opportunities__carrying",
+    "freedom_protection_fraction__carrying": "freedom_eligible_steps__carrying",
     ("agent", "carry_duration_mean"): None,
     ("team", "carry_duration_mean"): "flag_pickups",
     "carry_speed_mean": None,
@@ -746,7 +864,7 @@ def _weight(stem: str, scope: MetricScope) -> str | None:
 def _unit(stem: str) -> str:
     """Name a stem's unit in the catalog's words."""
     if stem.endswith(("_fraction", "_participation")) or any(
-        part in stem for part in ("_fraction__", "_participation__")
+        part in stem for part in ("_fraction__", "_participation__", "_rate__")
     ):
         return "fraction"
     if stem.endswith("_observations") or "_observations__" in stem:
@@ -757,14 +875,27 @@ def _unit(stem: str) -> str:
         return "health"
     if "_mean" in stem or stem.endswith("_per_steal"):
         return "ratio"
-    if stem.startswith(("steps", "solo_steps", "agent_steps", "carry_steps")):
+    if stem.startswith(
+        (
+            "steps",
+            "solo_steps",
+            "agent_steps",
+            "carry_steps",
+            "freedom_protected_steps",
+            "freedom_eligible_steps",
+        )
+    ):
         return "agent_steps"
     return "count"
 
 
 def _family(stem: str) -> str:
-    """Name a stem's family: the carry (Table 1) or the escort (Table 2)."""
-    escort = ("ally_carrier", "closest_ally", "allies_near", _NEAR)
+    """Name a stem's family: the carry (Table 1) or the escort (Table 2).
+
+    Table 2 also holds the carrier's rescues and Freedom, and the Priests' part in
+    them.
+    """
+    escort = ("ally_carrier", "closest_ally", "allies_near", _NEAR, "rescue", "freedom")
     return "ally_carrier_support" if any(w in stem for w in escort) else "flag_carry"
 
 
@@ -786,6 +917,14 @@ def _escort(text: str, n: int, *, label: bool) -> str:
     return text
 
 
+_CARRIER_RESCUE_STEMS = (
+    "rescue_opportunities__carrying",
+    "rescues__carrying",
+    "rescue_rate__carrying",
+)
+"""The team's rescue rows for its carriers, which need a Priest on the team."""
+
+
 def _column(
     name: str,
     stem: str,
@@ -798,12 +937,20 @@ def _column(
     """Build one column's record, with its missing rule and its summary weight."""
     prefix = name[: len(name) - len(stem)]
     weight = _weight(stem, scope)
+    # A carrier's rescue chances need a Priest on its team, as in Team Deathmatch:
+    # the team's three rescue rows and an agent's chances are blank without one.
+    team_priest = (scope == "team" and stem in _CARRIER_RESCUE_STEMS) or (
+        scope == "agent" and stem == "rescue_opportunities__carrying"
+    )
     if scope == "team":
         who = f"nobody is playing on Team {'AB'[subjects[0] - 1]}"
     elif scope == "agent":
         who = "this agent was not included in this game"
     else:
         who = "either agent was not included in this game"
+    if team_priest:
+        letter = "AB"[subjects[0] - 1] if scope == "team" else "AB"[subjects[0] // 5]
+        who += f"; or Team {letter} has no Priest in the game"
     return MetricColumn(
         name=name,
         label=label,
@@ -815,11 +962,15 @@ def _column(
         missing_when=f"This measurement was not recorded; or {who}.",
         direction=_DIRECTIONS[direction],
         stem=stem,
-        # Healing given is a Priest's alone (the class rule).
-        required_class_id=PRIEST_CLASS_ID
+        # Healing, rescues and Freedom given are a Priest's alone (the class rule);
+        # a team's carrier rescue rows need a Priest on the team.
+        required_class_id=_PRIEST_CLASS_ID
         if "healing_done_to_allies" in stem
         or "excess_healing_to_allies" in stem
         or "healing_focus" in stem
+        or "rescue_contributions_to_allies" in stem
+        or "freedom_applications_to_allies" in stem
+        or (scope == "team" and team_priest)
         else None,
         summary_weight=None
         if weight is None

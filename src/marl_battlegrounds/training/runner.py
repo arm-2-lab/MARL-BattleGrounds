@@ -2317,6 +2317,7 @@ def _train(
                     root / "episodes",
                     phase="training",
                     policies=policies,
+                    task=config.task,
                     details=recording_details or None,
                 )
                 stack.callback(writer.close)
@@ -3029,6 +3030,7 @@ def _start_extension(
             pass_id=record["pass_id"],
             policies=policies,
             checkpoint_id=record["checkpoint_id"],
+            task=config.task,
             details=recording_details or None,
         )
         stack.callback(writer.close)

@@ -117,6 +117,7 @@ from marl_battlegrounds.evaluation._replays.replay import (
     build_replay_bundle_v1,
 )
 from marl_battlegrounds.evaluation.catalog import build_resolved_env_config_v1
+from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
 from marl_battlegrounds.evaluation.models import (
     AgentDiedEventV1,
     AgentRespawnedEventV1,
@@ -5084,7 +5085,7 @@ def test_metric_analysis_is_cached_across_scopes_cursors_and_pov(
     final, filename = service.metric_analysis(1, "final", "csv")
     assert filename is not None
     assert filename.startswith("tdm-metrics__episode-")
-    assert f"__schema-{replay_service_module.METRIC_SCHEMA_VERSION}__" in filename
+    assert f"__schema-{METRIC_SCHEMA_VERSION}__" in filename
     assert filename.endswith("__final__frame-2.csv")
     assert b"metric_schema_id" in final
     for row in initial_summary["statistics"]:

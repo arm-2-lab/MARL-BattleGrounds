@@ -24,6 +24,11 @@ from jax import Array
 
 from marl_battlegrounds.core.geometry import has_clear_line_of_sight
 from marl_battlegrounds.core.types import EnvConfig, EnvState, Info
+from marl_battlegrounds.evaluation._metrics.capture_the_flag_catalog import (
+    DEATH_WINDOWS,
+    MAX_ALLIES_NEAR,
+    escort_split,
+)
 from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
 from marl_battlegrounds.evaluation.combat_metrics import CombatQuantities
 from marl_battlegrounds.evaluation.metric_catalog import MetricScope
@@ -33,12 +38,6 @@ type CaptureTheFlagTotals = dict[str, Array]
 NEAR_DISTANCE = 3.0
 """Largest center-to-center distance, in map units, at which an agent is near a
 carrier or another agent (a chosen value, the same for every class)."""
-
-MAX_ALLIES_NEAR = 4
-"""Most teammates that can be near an agent: a team has five slots."""
-
-DEATH_WINDOWS = (5, 10, 20)
-"""Carry lengths, in ticks, for the counts of carries ending in death within them."""
 
 _SLOTS = jnp.arange(10)
 _TEAM = _SLOTS // 5
@@ -53,23 +52,6 @@ def _length(vectors: Array) -> Array:
 def _count(mask: Array) -> Array:
     """Return a boolean mask as int32 ones and zeros, for adding to a count."""
     return mask.astype(jnp.int32)
-
-
-def escort_split(size: int) -> str:
-    """Name one escort size as its column names write it.
-
-    Parameters
-    ----------
-    size : int
-        How many of the carrier's teammates were near it, 0 to MAX_ALLIES_NEAR.
-
-    Returns
-    -------
-    str
-        "with_1_ally_near" for one teammate, else "with_{size}_allies_near"
-        (for example "with_0_allies_near"), as the approved inventory names them.
-    """
-    return "with_1_ally_near" if size == 1 else f"with_{size}_allies_near"
 
 
 class CaptureTheFlagTick(NamedTuple):
@@ -198,6 +180,13 @@ _COUNT_SHAPES = {
     "flag_captures": (10,),
     "steps_carrying": (10,),
     "deaths_carrying": (10,),
+    "rescue_opportunities_carrying": (10,),
+    "rescues_carrying": (10,),
+    "rescue_contributions_to_carrying": (10,),
+    "freedom_protected_steps_carrying": (10,),
+    "freedom_eligible_steps_carrying": (10,),
+    "freedom_applications_to_carrying": (10,),
+    "effective_freedom_to_carrying": (10,),
     "carry_duration_steps": (10,),
     "carry_duration_observations": (10,),
     "carry_steps_ending_in_a_capture": (10,),
@@ -251,6 +240,10 @@ _MEMORY_SHAPES = {
     # Memory: [Priest, ally] the Priest cast Freedom on the ally this tick; it
     # acts on the next tick (the Priest rule).
     "freedom_pairs": (10, 10),
+    # Memory: the same casts on a teammate carrying at the start of the cast
+    # tick, the moment the reward's Freedom term reads; one counts as effective
+    # when it beats a slow on the next tick.
+    "freedom_pairs_to_carrying": (10, 10),
 }
 
 
@@ -289,6 +282,7 @@ def update_capture_the_flag(
     info: Info,
     quantities: CombatQuantities,
     freedom_protected: Array,
+    freedom_eligible: Array,
 ) -> CaptureTheFlagTotals:
     """Add one tick of a Capture the Flag game to its totals.
 
@@ -309,6 +303,9 @@ def update_capture_the_flag(
     freedom_protected : Array
         bool (10,): Freedom on the agent beat a slow this tick, as full metrics
         count it. With last tick's Freedom casts it says which Priest freed whom.
+    freedom_eligible : Array
+        bool (10,): the agent had Freedom on it this tick and could move (alive,
+        not stunned, no spawn shield), as full metrics count it.
 
     Returns
     -------
@@ -395,6 +392,7 @@ def update_capture_the_flag(
         recipient[:, None] == _SLOTS[None, :]
     )
     freed = totals["freedom_pairs"] & freedom_protected[None, :]
+    casts_to_carrier = casts & carrying[None, :] & _SAME_TEAM
     helped = ((effective > 0) | freed) & _SAME_TEAM & hitting[None, :]
     # The Priest rule admits an eligible teammate who is not the carrier.
     attacking = hitting | (helped.any(axis=1) & ~carrying & tick.eligible)
@@ -422,6 +420,30 @@ def update_capture_the_flag(
         flag_captures=totals["flag_captures"] + _count(captured),
         steps_carrying=totals["steps_carrying"] + _count(carrying),
         deaths_carrying=totals["deaths_carrying"] + _count(carrying & died),
+        # Rescues and Freedom on a carrier: the carrier's own counts, and
+        # each Priest's help to a teammate carrying at the start of the tick.
+        rescue_opportunities_carrying=totals["rescue_opportunities_carrying"]
+        + _count(quantities.rescue_opportunities & carrying),
+        rescues_carrying=totals["rescues_carrying"]
+        + _count(quantities.rescues & carrying),
+        rescue_contributions_to_carrying=totals["rescue_contributions_to_carrying"]
+        + _count(
+            (quantities.rescue_contributions & carrying[None, :] & _SAME_TEAM).any(
+                axis=1
+            )
+        ),
+        freedom_protected_steps_carrying=totals["freedom_protected_steps_carrying"]
+        + _count(freedom_protected & carrying),
+        freedom_eligible_steps_carrying=totals["freedom_eligible_steps_carrying"]
+        + _count(freedom_eligible & carrying),
+        freedom_applications_to_carrying=totals["freedom_applications_to_carrying"]
+        + _count(casts_to_carrier.any(axis=1)),
+        effective_freedom_to_carrying=totals["effective_freedom_to_carrying"]
+        + _count(
+            (totals["freedom_pairs_to_carrying"] & freedom_protected[None, :]).any(
+                axis=1
+            )
+        ),
         carry_duration_steps=totals["carry_duration_steps"]
         + jnp.where(closed, carry_steps, 0),
         carry_duration_observations=totals["carry_duration_observations"]
@@ -488,6 +510,7 @@ def update_capture_the_flag(
         ]
         + jnp.where(carrying, effective.sum(axis=0), 0.0),
         freedom_pairs=casts,
+        freedom_pairs_to_carrying=casts_to_carrier,
         steps_with_allies_near_carrying=totals["steps_with_allies_near_carrying"]
         + allies_near * _count(carrying)[:, None],
         flag_captures_with_allies_near=totals["flag_captures_with_allies_near"]
@@ -630,6 +653,42 @@ def capture_the_flag_data(totals: CaptureTheFlagTotals) -> CaptureTheFlagData:
     )
     both("flag_captures", captures)
     both(situated("deaths", "carrying"), totals["deaths_carrying"])
+    # Rescues and Freedom on the carrier (the reward test's terms e and d).
+    rescue_chances = totals["rescue_opportunities_carrying"]
+    rescues = totals["rescues_carrying"]
+    both(situated("rescue_opportunities", "carrying"), rescue_chances)
+    both(situated("rescues", "carrying"), rescues)
+    data[("team", situated("rescue_rate", "carrying"))] = _mean(
+        _team(rescues), _team(rescue_chances)
+    )
+    data[("agent", situated("rescue_contributions_to_allies_who_are", "carrying"))] = (
+        _measured(totals["rescue_contributions_to_carrying"])
+    )
+    data[
+        (
+            "agent",
+            situated(
+                "effective_priest_freedom_applications_to_allies_who_are",
+                "carrying",
+            ),
+        )
+    ] = _measured(totals["effective_freedom_to_carrying"])
+    data[("agent", situated("freedom_protected_steps", "carrying"))] = _measured(
+        totals["freedom_protected_steps_carrying"]
+    )
+    data[("agent", situated("freedom_eligible_steps", "carrying"))] = _measured(
+        totals["freedom_eligible_steps_carrying"]
+    )
+    data[("agent", situated("freedom_protection_fraction", "carrying"))] = _mean(
+        totals["freedom_protected_steps_carrying"],
+        totals["freedom_eligible_steps_carrying"],
+    )
+    data[
+        (
+            "agent",
+            situated("priest_freedom_applications_to_allies_who_are", "carrying"),
+        )
+    ] = _measured(totals["freedom_applications_to_carrying"])
     both_means(
         "carry_duration",
         totals["carry_duration_steps"]

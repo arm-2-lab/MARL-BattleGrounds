@@ -28,17 +28,19 @@ from uuid import uuid4
 
 import numpy as np
 
+from marl_battlegrounds._task_settings import TASK_MODES, TaskName, check_task_name
 from marl_battlegrounds.evaluation._metrics.scalar_reports import has_members
 from marl_battlegrounds.evaluation._replays.actor_projection import (
     NO_SHARED_OBS_ACTOR_PROJECTION_V4,
     SHARED_OBS_ACTOR_PROJECTION_V3,
 )
 from marl_battlegrounds.evaluation.metric_catalog import (
-    FULL_METRIC_NAMES,
-    METRIC_SCHEMA_ID,
-    METRIC_SCHEMA_VERSION,
     PRIORITY_METRIC_NAMES,
     PRIORITY_OUTCOME_CODES,
+    WRITTEN_METRIC_SCHEMAS,
+    metric_schema_for_task_mode,
+    saved_metric_names,
+    writes_metric_schema,
 )
 
 if TYPE_CHECKING:
@@ -219,18 +221,22 @@ def _json_value(value: object) -> object:
     return value
 
 
-def _recording_table_headers() -> dict[str, tuple[str, ...]]:
+def _recording_table_headers(
+    full_metric_names: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
     """Return the fixed CSV headers shared by writers and recording preflight.
 
-    Each call returns a new mapping. Summary tables get their headers only when
-    a tournament summary is written; a training checkpoint keeps them empty.
-    This reads no files and creates no writer.
+    full_metric_names is the run's full column list, saved_metric_names of the
+    metric schema its run_details.json records. Each call returns a new mapping.
+    Summary tables get their headers only when a tournament summary is written;
+    a training checkpoint keeps them empty. This reads no files and creates no
+    writer.
     """
     return {
         "episodes.csv": EPISODE_COLUMNS,
         "policy_assignments.csv": ASSIGNMENT_COLUMNS,
         "priority_metrics.csv": (*IDENTITY_COLUMNS, *PRIORITY_METRIC_NAMES),
-        "full_metrics.csv": (*IDENTITY_COLUMNS, *FULL_METRIC_NAMES),
+        "full_metrics.csv": (*IDENTITY_COLUMNS, *full_metric_names),
         "match_results.csv": MATCH_COLUMNS,
     }
 
@@ -576,7 +582,9 @@ class RunWriter:
         random suffix in snake_case. Collisions lengthen the suffix; no run is
         overwritten. Read the exact run identity from run_details.json.
     resume_from : str or pathlib.Path, optional
-        Existing run directory to recover. Its metric/input schema must match.
+        Existing run directory to recover. Its input schema must match, and its
+        metric schema must be one this writer writes (WRITTEN_METRIC_SCHEMAS); the
+        run keeps the metric schema it recorded.
         Saved start/source relationships are checked before table recovery.
     phase : str, default "evaluation"
         Nonempty pass label. "tournament" writes match rows and requires registered
@@ -596,6 +604,13 @@ class RunWriter:
     checkpoint_id : str, optional
         Caller-supplied checkpoint label; unrelated to the recording recovery
         token and absent when unknown.
+    task : {"tdm", "ctf"}, default "tdm"
+        The task a new run's games play. It picks the metric schema the run
+        records and the full_metrics.csv columns (metric_schema_for_task_mode):
+        a "ctf" run saves a Capture the Flag game's own columns. A resumed run
+        keeps its recorded schema whatever the task; evaluate refuses full
+        metrics of the other schema before any game. Every game written must have
+        its schema's full width.
     details : dict, optional
         JSON-compatible pass metadata. Source discovery is added only when capture
         needs it. Resume allows runtime_provenance, num_envs, chunk_size and
@@ -615,6 +630,8 @@ class RunWriter:
         Generated new-run identity or the identity read from the resumed directory.
     run_dir : pathlib.Path
         Directory owned and locked by this writer until close.
+    metric_schema : tuple of (str, int)
+        The metric schema name and version this run's files carry.
     completed_episode_ids : frozenset of int
         Durable completions for the current pass.
     paths : dict of str to pathlib.Path
@@ -652,6 +669,7 @@ class RunWriter:
         policies: dict[str, object] | None = None,
         checkpoint_id: str | None = None,
         buffer_size: int = 128,
+        task: TaskName = "tdm",
         details: dict[str, object] | None = None,
         _expected_run_id: str | None = None,
     ) -> None:
@@ -681,7 +699,9 @@ class RunWriter:
             "match_results.csv": [],
             **{name: [] for name in _SUMMARY_TABLES},
         }
-        self._headers = _recording_table_headers()
+        # This run's full_metrics.csv metric columns, from its metric schema.
+        self._full_metric_names: tuple[str, ...] = ()
+        self._headers: dict[str, tuple[str, ...]] = {}
         self._pending: list[tuple[str, int]] = []
         self._collector: ReplayCollector | None = None
         self._replay_ids: dict[str, int] = {}
@@ -720,6 +740,7 @@ class RunWriter:
             tuple[_ConfigValidationKey, str, tuple[int, ...] | None], int
         ] = {}
         self._lock = -1
+        task_mode = TASK_MODES[check_task_name(task)]
         if resume_from is None:
             root = Path(cast(str | Path, output_dir))
             if (root / "run_details.json").exists():
@@ -728,12 +749,13 @@ class RunWriter:
                 )
             root.mkdir(parents=True, exist_ok=True)
             run_id, self.run_dir = _new_run_directory(root, phase, policies)
+            schema_id, schema_version = metric_schema_for_task_mode(task_mode)
             self._details: dict[str, Any] = {
                 "schema_version": RUN_SCHEMA_VERSION,
                 "run_id": run_id,
                 "created_at": datetime.now(UTC).isoformat(),
-                "metric_schema_id": METRIC_SCHEMA_ID,
-                "metric_schema_version": METRIC_SCHEMA_VERSION,
+                "metric_schema_id": schema_id,
+                "metric_schema_version": schema_version,
                 "actor_input_projections": _INPUT_PROJECTIONS,
                 "configurations": {},
                 "systems": {},
@@ -742,6 +764,10 @@ class RunWriter:
                 "tables": {},
                 "details": {} if details is None else _json_value(details),
             }
+            self._full_metric_names = cast(
+                tuple[str, ...], saved_metric_names(schema_id, schema_version)
+            )
+            self._headers = _recording_table_headers(self._full_metric_names)
         else:
             self.run_dir = Path(resume_from)
         restoration = None
@@ -754,19 +780,26 @@ class RunWriter:
                 self._details = json.loads(
                     (self.run_dir / "run_details.json").read_bytes()
                 )
-                if (
-                    self._details.get("schema_version") != RUN_SCHEMA_VERSION
-                    or self._details.get("metric_schema_id") != METRIC_SCHEMA_ID
-                    or self._details.get("metric_schema_version")
-                    != METRIC_SCHEMA_VERSION
-                ):
+                recorded = (
+                    self._details.get("metric_schema_id"),
+                    self._details.get("metric_schema_version"),
+                )
+                if self._details.get(
+                    "schema_version"
+                ) != RUN_SCHEMA_VERSION or not writes_metric_schema(*recorded):
+                    written = " and ".join(
+                        f"{name} {version}" for name, version in WRITTEN_METRIC_SCHEMAS
+                    )
                     raise ValueError(
                         "run schema does not match this writer "
-                        "(recorded metric version "
-                        f"{self._details.get('metric_schema_version')}, "
-                        f"required {METRIC_SCHEMA_VERSION}); start a new run. "
-                        "Existing files have not been changed."
+                        f"(recorded metric schema {recorded[0]} version "
+                        f"{recorded[1]}; this writer writes {written}); "
+                        "start a new run. Existing files have not been changed."
                     )
+                self._full_metric_names = cast(
+                    tuple[str, ...], saved_metric_names(*recorded)
+                )
+                self._headers = _recording_table_headers(self._full_metric_names)
                 if self._details.get("actor_input_projections") != _INPUT_PROJECTIONS:
                     raise ValueError(
                         "run actor input contract differs from this writer; "
@@ -1930,6 +1963,18 @@ class RunWriter:
         return updates
 
     @property
+    def metric_schema(self) -> tuple[str, int]:
+        """Return the metric schema name and version this run's files carry.
+
+        A new run records its task's (metric_schema_for_task_mode); a resumed
+        run keeps the one it recorded. saved_metric_names gives its columns.
+        """
+        return (
+            str(self._details["metric_schema_id"]),
+            int(self._details["metric_schema_version"]),
+        )
+
+    @property
     def has_pending_numerical_starts(self) -> bool:
         """Report unresolved numerical starts without scanning episode history.
 
@@ -3035,7 +3080,7 @@ class RunWriter:
         indices = (index, index) if metric_indices is None else metric_indices
         for mode, values, names, metric_index in (
             ("priority", records.priority, PRIORITY_METRIC_NAMES, indices[0]),
-            ("full", records.full, FULL_METRIC_NAMES, indices[1]),
+            ("full", records.full, self._full_metric_names, indices[1]),
         ):
             if values is not None and metric_index >= 0:
                 cells = self._metric_cells(values, metric_index, names)
@@ -3065,7 +3110,9 @@ class RunWriter:
             },
         }
         for mode, cells in cells_by_mode.items():
-            names = PRIORITY_METRIC_NAMES if mode == "priority" else FULL_METRIC_NAMES
+            names = (
+                PRIORITY_METRIC_NAMES if mode == "priority" else self._full_metric_names
+            )
             for name, value in expected_measurements.items():
                 cell = cells[names.index(name)]
                 if cell != "" and cell != float(np.float32(value)):

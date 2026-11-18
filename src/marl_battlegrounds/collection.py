@@ -19,6 +19,7 @@ import numpy as np
 from jax import Array
 from numpy.typing import DTypeLike
 
+from marl_battlegrounds._task_settings import TASK_MODES
 from marl_battlegrounds.core.types import EnvConfig
 from marl_battlegrounds.environment import EpisodeInfo
 from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
@@ -35,8 +36,9 @@ from marl_battlegrounds.evaluation._recording.collection_types import (
 from marl_battlegrounds.evaluation._recording.recording_types import EpisodeStartRecords
 from marl_battlegrounds.evaluation._replays.replay_capture import ReplayPackets
 from marl_battlegrounds.evaluation.metric_catalog import (
-    FULL_METRIC_NAMES,
     PRIORITY_METRIC_NAMES,
+    metric_columns_for_task_mode,
+    saved_metric_names,
 )
 from marl_battlegrounds.evaluation.policy_execution import PolicyTrace
 
@@ -132,14 +134,19 @@ def _array_spec(
 
 
 def _prepare(
-    step_fn: StepFunction, carry: object, record_capacity: int | None
+    step_fn: StepFunction,
+    carry: object,
+    record_capacity: int | None,
+    full_width: int | None = None,
 ) -> _Prepared:
     """Trace pure output shapes, validate record structure and resolve capacities.
 
     This executes no numerical action. The callback is traced using the same
     (carry, None) arguments as direct scan. Source values and parameters remain
     inputs; only returned array shapes determine allocation. Invalid public
-    records or capacities fail before collection advances.
+    records or capacities fail before collection advances. full_width is the
+    number of full-metric columns the writer's run saves; None (the internal test
+    seam, which has no writer) accepts any task mode's width.
     """
     result: object = jax.eval_shape(step_fn, carry, None)
     if not isinstance(result, tuple) or len(cast(tuple[object, ...], result)) != 2:
@@ -183,16 +190,39 @@ def _prepare(
         np.int32,
         "info.config.agent_profile.class_ids",
     )
-    for name, width in (
-        ("priority", len(PRIORITY_METRIC_NAMES)),
-        ("full", len(FULL_METRIC_NAMES)),
+    # Full values are as wide as their game mode's column list, and a run saves
+    # one list, so a writer's width is checked here, before any game.
+    full_widths = (
+        [full_width]
+        if full_width is not None
+        else sorted(
+            {len(metric_columns_for_task_mode(mode)) for mode in TASK_MODES.values()}
+        )
+    )
+    for name, widths in (
+        ("priority", [len(PRIORITY_METRIC_NAMES)]),
+        ("full", full_widths),
     ):
         metric = getattr(info, name)
         if metric is not None:
             if not isinstance(metric, MetricValues):
                 raise TypeError(f"info.{name} must be MetricValues or None")
-            _array_spec(metric.values, (*leading, width), np.float32, f"{name}.values")
-            _array_spec(metric.valid, (*leading, width), np.bool_, f"{name}.valid")
+            shape = cast(tuple[int, ...], getattr(metric.values, "shape", ()))
+            if not shape or shape[-1] not in widths:
+                raise ValueError(
+                    f"{name}.values must have shape {(*leading, '<width>')} with "
+                    f"a width in {widths}"
+                    + (
+                        "; a RunWriter saves the full metrics of the task it was "
+                        "made with, so make it with this environment's task"
+                        if name == "full"
+                        else ""
+                    )
+                )
+            _array_spec(
+                metric.values, (*leading, shape[-1]), np.float32, f"{name}.values"
+            )
+            _array_spec(metric.valid, (*leading, shape[-1]), np.bool_, f"{name}.valid")
     if info.episode_tracking_error is not None:
         _array_spec(
             info.episode_tracking_error,
@@ -722,6 +752,7 @@ def _collect(
     record_capacity: int | None = None,
     output_steps: int | None = None,
     compiler_options: CompilerOptions = (),
+    full_width: int | None = None,
 ) -> tuple[Any, Any]:
     """Run the bounded numerical engine through a supplied internal drain.
 
@@ -732,12 +763,14 @@ def _collect(
     output_steps optionally reserves a larger returned tree; its suffix is zero
     and never reaches the drain. The real stopping cursor stays dynamic.
     compiler_options is the already checked immutable outer-JIT option list.
+    full_width is the drain's full-metric width, checked before any step (see
+    _prepare; None accepts any task mode's width).
     """
     total = _integer(num_steps, "num_steps")
     capacity = (
         total if output_steps is None else _integer(output_steps, "output_steps", total)
     )
-    prepared = _prepare(step_fn, carry, record_capacity)
+    prepared = _prepare(step_fn, carry, record_capacity, full_width)
     output = _zeros_from_shape(prepared.transition, capacity, 0)
     if not total:
         return carry, output
@@ -833,6 +866,9 @@ def collect_rollout(
     writer : RunWriter
         Open, healthy writer. Finish any earlier manual start-registration
         handoff before a nonempty collection. Existing dictionary schedules work.
+        With full metrics, make it with the environment's task (for example
+        RunWriter(..., task="ctf") for make("ctf", metrics="full")): its run saves
+        that task's full columns, and another width fails before any step.
     record_capacity : int or None, default None
         Start/completion/evidence capacity. None uses four environment batches;
         an explicit value must fit at least one batch. Booleans are rejected.
@@ -884,8 +920,12 @@ def collect_rollout(
         total if output_steps is None else _integer(output_steps, "output_steps", total)
     )
     _check_collection_writer(writer, has_steps=bool(total))
+    full_width = len(cast(tuple[str, ...], saved_metric_names(*writer.metric_schema)))
+    # Checked before collection owns the writer, so a refused record shape (such
+    # as another task's full width) leaves the writer healthy. The trace is
+    # cached, so _collect's own preparation reuses it.
+    prepared = _prepare(step_fn, carry, record_capacity, full_width)
     if not total:
-        prepared = _prepare(step_fn, carry, record_capacity)
         return carry, _zeros_from_shape(prepared.transition, capacity, 0)
     writer._collection_active = True  # pyright: ignore[reportPrivateUsage]
     try:
@@ -896,6 +936,7 @@ def collect_rollout(
             record_capacity=record_capacity,
             output_steps=capacity,
             compiler_options=options,
+            full_width=full_width,
             drain=partial(writer._write_collected, source_configs=source_configs),  # pyright: ignore[reportPrivateUsage]
         )
     except BaseException as error:

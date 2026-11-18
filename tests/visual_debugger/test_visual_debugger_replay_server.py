@@ -216,6 +216,7 @@ class _FakeReplayService:
         self.metric_catalog_started: Event | None = None
         self.metric_catalog_release: Event | None = None
         self.analysis_calls: list[tuple[int, str, str]] = []
+        self.metric_csv_task = "tdm"
         self.command_calls = 0
         self.cursor_mutations = 0
         self.private_replay = {
@@ -296,7 +297,8 @@ class _FakeReplayService:
             selected = 2 if scope == "final" else frame
             return (
                 b"metric_id,value\nexample,1\n",
-                f"tdm-metrics__episode-001__schema-3__{scope}__frame-{selected}.csv",
+                f"{self.metric_csv_task}-metrics__episode-001__schema-3__{scope}"
+                f"__frame-{selected}.csv",
             )
         return json.dumps({"frame_index": frame, "scope": scope}).encode(), None
 
@@ -2304,6 +2306,19 @@ def test_metric_analysis_http_preserves_explicit_scope_and_format(
             '__schema-3__cursor__frame-1.csv"'
         )
         assert payload == b"metric_id,value\nexample,1\n"
+        service.metric_csv_task = "ctf"
+        response, _ = _exchange(
+            server,
+            "GET",
+            "/api/replay/metrics/1/cursor.csv",
+            headers={_TOKEN_HEADER: _TOKEN},
+        )
+        assert response.status == HTTPStatus.OK
+        assert (
+            response.getheader("Content-Disposition")
+            == 'attachment; filename="ctf-metrics__episode-001'
+            '__schema-3__cursor__frame-1.csv"'
+        )
     else:
         assert response.getheader("Content-Type") == "application/json; charset=utf-8"
         assert json.loads(payload) == {"frame_index": 1, "scope": "cursor"}

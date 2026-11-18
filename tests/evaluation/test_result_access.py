@@ -8,6 +8,8 @@ schema: a saved schema-14 report keeps its 11,148 metric columns, and a
 schema-14 manifest cannot claim a schema-15 header. Head-to-head and matrix
 views preserve exact identities, directional points, physical spawn banks,
 missing cells and recorded interval limits without requiring combat metrics.
+Loading results, and reading the Capture the Flag columns' names, records and
+mirrored twins, imports no JAX.
 """
 
 import csv
@@ -307,6 +309,9 @@ def test_status_failed_then_resumed_success_and_restore_read_rejection(
 def test_load_module_does_not_import_jax_or_provider_modules() -> None:
     command = (
         "import sys; from marl_battlegrounds.evaluation.results import load_results; "
+        "from marl_battlegrounds.evaluation import metric_catalog as m; "
+        "m.saved_metric_names('marlbg.ctf.scalar', 1); m.all_metric_columns_by_name(); "
+        "m.mirror_metric('agent_0_steps__carrying'); "
         "assert 'jax' not in sys.modules; "
         "assert not any('policy_execution' in name for name in sys.modules)"
     )

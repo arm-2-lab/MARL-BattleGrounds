@@ -1,6 +1,6 @@
 """Check Capture the Flag's carry and carrier-support columns against worked values.
 
-Six hand-built games on map 0 (three champions a team, no walls, so every
+Twelve hand-built games on map 0 (three champions a team, no walls, so every
 agent sees every other) run for 4 ticks through evaluate_episodes, and
 replay_metrics(metrics="full") measures each saved replay. Nobody moves. Each
 agent heals its own team's first agent (slot 0 or 5) when it can, which only a
@@ -29,23 +29,47 @@ Game 6: Team A's Priest carries Team B's flag at (8, 5) and heals Team A's Mage,
 2 units away at 40 health, while that Mage hits Team B's Mage, which stands 2
 units from the carrier and hits back. The Mage is attacking enemies near the
 carrier every tick; the carrier never is, even through the Priest rule.
+Game 7: Team A's Mage has a start-state carry at (8, 5) at 10 health. Team B's
+Mage, 2 units away, hits it for 13 a tick, and Team A's Priest, 2 units away,
+heals it for 8: the heal saves it on tick 1, and it dies on tick 2, when the
+Priest's ready Ultimate could have saved it (a second chance).
+Game 8: Team A's Mage has a start-state carry at (8, 5), slowed for 5 ticks,
+and Team A's Priest, 2 units away, heals it every tick. A Priest's heal also
+gives Freedom, so from tick 2 Freedom beats the slow. Team B stands far away.
+Game 9: game 7's scene, but Team A is a Mage, a Warrior and a Hunter, with no
+Priest.
+Game 10: game 7's scene, but Team A is a Priest, a Mage and a Warrior, so the
+carrier is the Priest and heals itself; it is slowed for 5 ticks.
+Game 11: game 8 with a slow of 2 ticks.
+Game 12: game 1's steal, with Team A's Mage at 20 health, slowed for 5 ticks,
+and Team A's Priest 2 units away healing it from tick 1.
 
-Contracts: each game plays as scripted (carriers and deaths at the start of
-every tick). Position rows read the start of the tick, so a pickup counts from
-the next tick and a death tick still counts as carried. Each test ID names a
-game and a family of columns. carry: steals, pickups, carry ticks, captures,
+Contracts: games 1 to 8 and 10 to 12 play as scripted (carriers and deaths at
+the start of every tick). Position rows read the start of the tick, so a pickup
+counts from the next tick and a death tick still counts as carried. Each test ID
+names a game and a family of columns. carry: steals, pickups, carry ticks, captures,
 deaths, carry duration, captures per steal, carry ticks ending in a capture or
 a death, carry distance and speed, the capture-range count at each game's 0.75
 capture distance, distance to the flag home, and carries ending in death
 within 5, 10 and 20 ticks. escort: the escort-size splits ("with_1_ally_near"
 for one ally), distances to the carrier and the closest ally, and captures and
 deaths near the carrier. healing: healing to allies who are carrying and the
-carrier's share of a Priest's healing. own_healing: a carrying Priest's own
-healing, and Freedom. aura: aura cover of the carrier. carrier_combat: damage
-and kill contributions while carrying. situations and carrying_block: the tick
-blocks for Near the Ally Carrier, Attacking Enemies Near the Ally Carrier and
-Carrying. own_healing, aura and carrier_combat are columns a later packet
-builds, so they are expected to fail until it lands. Blanks are NaN: means
+carrier's share of a Priest's healing. rescue and freedom: a carrier's
+chances to be saved, its rescues and the rescue rate, the Priests' part in them,
+and the ticks Freedom beat a slow on a carrier with the Priests' effective
+Freedom (each also equals the carrier's whole-game count, since it carries on
+every tick); with no Priest on the team, the carrier's rescue chances and the
+team's three rescue cells are blank, as Team Deathmatch's are. A carrying
+Priest's own heal and Freedom count on the carrier's side and never as help to
+an ally. Freedom given to a carrier, and its effective share, read the carrier
+at the cast, so a cast on the pickup tick is neither; ticks with Freedom on the
+carrier are the base of the share that beat a slow. own_healing: a
+carrying Priest's own healing, and Freedom. aura: aura cover of the carrier.
+carrier_combat: damage and kill contributions while carrying. situations and
+carrying_block: the tick blocks for Near the Ally Carrier, Attacking Enemies
+Near the Ally Carrier and Carrying. own_healing, aura and carrier_combat are
+columns a later packet builds, so they are expected to fail until it lands.
+Blanks are NaN: means
 with nothing to average, healing by agents that are not Priests, an agent
 paired with itself. Views and pairs across teams are not columns. The training
 reward's carry_steps counter, run over each game's saved carrier slots with
@@ -65,7 +89,7 @@ import jax.numpy as jnp
 import pytest
 
 from marl_battlegrounds.core.env import reset
-from marl_battlegrounds.core.types import ActionMask, EnvState
+from marl_battlegrounds.core.types import ActionMask, EnvConfig, EnvState
 from marl_battlegrounds.evaluation._replays.replay_v5 import ReplayArtifactV5
 from marl_battlegrounds.evaluation.analysis import replay_metrics
 from marl_battlegrounds.evaluation.evaluate import EpisodeSpec, evaluate_episodes
@@ -84,6 +108,20 @@ _ROSTER: tuple[AgentClassName, ...] = ("mage", "warrior", "priest")
 _CONFIG = make_standard_capture_the_flag_config(
     map_id=0, team_a_roster=_ROSTER, team_b_roster=_ROSTER, max_steps=4
 )
+# Game 9's Team A has no Priest; game 10's Team A has its Priest in slot 0.
+_NO_PRIEST_CONFIG = make_standard_capture_the_flag_config(
+    map_id=0,
+    team_a_roster=("mage", "warrior", "hunter"),
+    team_b_roster=_ROSTER,
+    max_steps=4,
+)
+_PRIEST_FIRST_CONFIG = make_standard_capture_the_flag_config(
+    map_id=0,
+    team_a_roster=("priest", "mage", "warrior"),
+    team_b_roster=_ROSTER,
+    max_steps=4,
+)
+_CONFIGS = {9: _NO_PRIEST_CONFIG, 10: _PRIEST_FIRST_CONFIG}
 _FAR = {
     0: (3.0, 1.0),
     1: (3.0, 3.0),
@@ -118,8 +156,10 @@ def _start(
     carriers: Mapping[int, int] | None = None,
     countdowns: Mapping[int, int] | None = None,
     health: Mapping[int, int] | None = None,
+    slows: Mapping[int, int] | None = None,
+    config: EnvConfig = _CONFIG,
 ) -> EnvState:
-    state = reset(_CONFIG, jax.random.key(0))[0]
+    state = reset(config, jax.random.key(0))[0]
     where = state.agent_positions
     for slot, point in {**_FAR, **positions}.items():
         where = where.at[slot].set(jnp.asarray(point, jnp.float32))
@@ -135,12 +175,18 @@ def _start(
     current_health = state.current_health
     for slot, points in (health or {}).items():
         current_health = current_health.at[slot].set(points)
+    # Slows sit in the Warrior Charge channel (column 0 of the three), which
+    # lasts at most 5 ticks.
+    slow_durations = state.slow_durations
+    for slot, steps in (slows or {}).items():
+        slow_durations = slow_durations.at[slot, 0].set(steps)
     return state._replace(
         agent_positions=where,
         capture_the_flag_flag_positions=flag_positions,
         capture_the_flag_flag_carrier_slots=carrier_slots,
         capture_the_flag_dropped_flag_countdowns=flag_countdowns,
         current_health=current_health,
+        slow_durations=slow_durations,
         spawn_shield_durations=jnp.zeros_like(state.spawn_shield_durations),
     )
 
@@ -187,6 +233,55 @@ _GAMES = {
         carriers={1: 2},
         health={0: 40},
     ),
+    7: _start(
+        {0: (8.0, 5.0), 2: (8.0, 3.0), 5: (10.0, 5.0), 6: (17.0, 3.0), 7: (17.0, 9.0)},
+        flags={1: (8.0, 5.0)},
+        carriers={1: 0},
+        health={0: 10},
+    ),
+    8: _start(
+        {0: (8.0, 5.0), 2: (8.0, 3.0), 5: (17.0, 1.0), 6: (17.0, 3.0), 7: (17.0, 9.0)},
+        flags={1: (8.0, 5.0)},
+        carriers={1: 0},
+        health={0: 40},
+        slows={0: 5},
+    ),
+    9: _start(
+        {0: (8.0, 5.0), 2: (8.0, 3.0), 5: (10.0, 5.0), 6: (17.0, 3.0), 7: (17.0, 9.0)},
+        flags={1: (8.0, 5.0)},
+        carriers={1: 0},
+        health={0: 10},
+        config=_NO_PRIEST_CONFIG,
+    ),
+    10: _start(
+        {0: (8.0, 5.0), 5: (10.0, 5.0), 6: (17.0, 3.0), 7: (17.0, 9.0)},
+        flags={1: (8.0, 5.0)},
+        carriers={1: 0},
+        health={0: 10},
+        slows={0: 5},
+        config=_PRIEST_FIRST_CONFIG,
+    ),
+    11: _start(
+        {0: (8.0, 5.0), 2: (8.0, 3.0), 5: (17.0, 1.0), 6: (17.0, 3.0), 7: (17.0, 9.0)},
+        flags={1: (8.0, 5.0)},
+        carriers={1: 0},
+        health={0: 40},
+        slows={0: 2},
+    ),
+    12: _start(
+        {
+            0: (19.0, 5.0),
+            1: (17.0, 5.0),
+            2: (19.0, 3.0),
+            5: (12.0, 1.0),
+            6: (12.0, 9.0),
+            7: (12.0, 3.5),
+        },
+        flags={0: (12.0, 3.5)},
+        carriers={0: 7},
+        health={0: 20, 5: 20},
+        slows={0: 5},
+    ),
 }
 
 # At the start of ticks 1 to 4: (Team A's carrier, Team B's carrier, dead slots).
@@ -197,6 +292,11 @@ _TIMELINE: dict[int, list[tuple[int | None, int | None, list[int]]]] = {
     4: [(None, None, []), (0, None, []), (None, None, [0]), (None, None, [0])],
     5: [(None, 5, []), (2, None, [5]), (2, None, [5]), (2, None, [5])],
     6: [(2, None, []), (2, None, []), (2, None, []), (2, None, [])],
+    7: [(0, None, []), (0, None, []), (None, None, [0]), (None, None, [0])],
+    8: [(0, None, []), (0, None, []), (0, None, []), (0, None, [])],
+    10: [(0, None, []), (0, None, []), (None, None, [0]), (None, None, [0])],
+    11: [(0, None, []), (0, None, []), (0, None, []), (0, None, [])],
+    12: [(None, 7, []), (0, 7, []), (0, 7, []), (0, 7, [])],
 }
 
 
@@ -624,6 +724,102 @@ _EXPECTED: dict[tuple[int, str], dict[str, float]] = {
     (5, "carrying_block"): {
         "agent_2_step_participation__carrying": 1.0,
     },
+    # Tick 1: 13 damage on 10 health kills without healing; the Priest's 8 keeps
+    # the carrier alive at 5 (a chance and a rescue). Tick 2: 5 - 13 + 8 is 0,
+    # but the Priest's Ultimate heal was ready too and would have saved it, so it
+    # is a chance; this policy heals with Basic only, and the carrier dies. The
+    # carrier carries on both ticks, so its carrying cells equal its whole-game
+    # counts.
+    (7, "rescue"): {
+        "agent_0_rescue_opportunities__carrying": 2,
+        "agent_0_rescues__carrying": 1,
+        "agent_0_rescue_opportunities": 2,
+        "agent_0_rescues": 1,
+        "agent_0_deaths__carrying": 1,
+        "agent_2_rescue_contributions_to_allies_who_are__carrying": 1,
+        "agent_7_rescue_contributions_to_allies_who_are__carrying": 0,
+        "agent_0_rescue_contributions_to_allies_who_are__carrying": _BLANK,
+        "team_a_rescue_opportunities__carrying": 2,
+        "team_a_rescues__carrying": 1,
+        "team_a_rescue_rate__carrying": 0.5,
+        "team_b_rescue_opportunities__carrying": 0,
+        "team_b_rescues__carrying": 0,
+        "team_b_rescue_rate__carrying": _BLANK,
+        "agent_0_freedom_protected_steps__carrying": 0,
+        "agent_2_effective_priest_freedom_applications_to_allies_who_are__carrying": 0,
+    },
+    # Game 7's scene with no Priest on Team A: its carrier's rescue chances are
+    # blank, as Team Deathmatch's whole-game ones are; being rescued stays 0.
+    (9, "rescue"): {
+        "agent_0_rescue_opportunities__carrying": _BLANK,
+        "agent_0_rescue_opportunities": _BLANK,
+        "agent_0_rescues__carrying": 0,
+        "agent_0_rescues": 0,
+        "team_a_rescue_opportunities__carrying": _BLANK,
+        "team_a_rescues__carrying": _BLANK,
+        "team_a_rescue_rate__carrying": _BLANK,
+        "team_a_rescue_opportunities": _BLANK,
+        "team_a_rescues": _BLANK,
+        "team_b_rescues__carrying": 0,
+    },
+    # The Priest's heal gives Freedom each tick; from tick 2 it beats the slow on
+    # the carrier, so ticks 2 to 4 count, each from the Priest's cast the tick
+    # before. The carrier carries every tick, as in its whole-game count.
+    (8, "freedom"): {
+        "agent_0_freedom_protected_steps__carrying": 3,
+        "agent_0_freedom_protected_steps": 3,
+        "agent_2_effective_priest_freedom_applications_to_allies_who_are__carrying": 3,
+        "agent_7_effective_priest_freedom_applications_to_allies_who_are__carrying": 0,
+        "agent_1_effective_priest_freedom_applications_to_allies_who_are__carrying": (
+            _BLANK
+        ),
+        "agent_0_rescue_opportunities__carrying": 0,
+        "team_a_rescue_rate__carrying": _BLANK,
+        # Freedom is on the carrier at the start of ticks 2 to 4, from the casts
+        # of ticks 1 to 3; the cast of tick 4 counts, but has no next tick.
+        "agent_2_priest_freedom_applications_to_allies_who_are__carrying": 4,
+        "agent_0_freedom_eligible_steps__carrying": 3,
+        "agent_0_freedom_protection_fraction__carrying": 1.0,
+    },
+    # Game 7's scene with the carrier a Priest healing itself: its own heal saves
+    # it on tick 1, and on tick 2 its ready Ultimate is a second chance. Its own
+    # Freedom (cast tick 1) beats the slow on tick 2. None of it is help to an ally.
+    (10, "rescue"): {
+        "agent_0_rescue_opportunities__carrying": 2,
+        "agent_0_rescues__carrying": 1,
+        "agent_0_rescue_opportunities": 2,
+        "agent_0_rescues": 1,
+        "team_a_rescue_opportunities__carrying": 2,
+        "team_a_rescues__carrying": 1,
+        "team_a_rescue_rate__carrying": 0.5,
+        "agent_0_rescue_contributions_to_allies_who_are__carrying": 0,
+    },
+    (10, "freedom"): {
+        "agent_0_freedom_protected_steps__carrying": 1,
+        "agent_0_freedom_eligible_steps__carrying": 1,
+        "agent_0_freedom_protection_fraction__carrying": 1.0,
+        "agent_0_priest_freedom_applications_to_allies_who_are__carrying": 0,
+        "agent_0_effective_priest_freedom_applications_to_allies_who_are__carrying": 0,
+    },
+    # Game 8 with a 2-tick slow: Freedom is on the carrier on ticks 2 to 4, but
+    # the slow is left only on tick 2, so one of the four casts is effective.
+    (11, "freedom"): {
+        "agent_2_priest_freedom_applications_to_allies_who_are__carrying": 4,
+        "agent_2_effective_priest_freedom_applications_to_allies_who_are__carrying": 1,
+        "agent_0_freedom_eligible_steps__carrying": 3,
+        "agent_0_freedom_protected_steps__carrying": 1,
+        "agent_0_freedom_protection_fraction__carrying": 1 / 3,
+    },
+    # The Priest heals the Mage every tick from the tick it steals (tick 1). The
+    # cast of tick 1 lands before the carry, so it is not Freedom given to a
+    # carrier, though its Freedom beats the slow on the carried tick 2.
+    (12, "freedom"): {
+        "agent_2_priest_freedom_applications_to_allies_who_are__carrying": 3,
+        "agent_2_effective_priest_freedom_applications_to_allies_who_are__carrying": 2,
+        "agent_0_freedom_protected_steps__carrying": 3,
+        "agent_0_freedom_eligible_steps__carrying": 3,
+        "agent_0_flag_steals": 1,
+    },
 }
 
 # Families whose columns a later packet builds (the grid's cells and Freedom).
@@ -657,7 +853,7 @@ def replays(tmp_path_factory: pytest.TempPathFactory) -> dict[int, LoadedReplayB
         policy,
         policy,
         [
-            EpisodeSpec(game, _CONFIG, initial_state=start)
+            EpisodeSpec(game, _CONFIGS.get(game, _CONFIG), initial_state=start)
             for game, start in _GAMES.items()
         ],
         num_envs=len(_GAMES),

@@ -1235,7 +1235,7 @@ export async function getReplayMetrics(token, frameIndex, scope, format = "json"
   if (format === "csv") {
     const disposition = response.headers.get("content-disposition");
     const match =
-      /^attachment; filename="(tdm-metrics__episode-[A-Za-z0-9._-]{1,96}__schema-[1-9][0-9]*__(cursor|final)__frame-([0-9]+)\.csv)"$/u.exec(
+      /^attachment; filename="((?:tdm|ctf)-metrics__episode-[A-Za-z0-9._-]{1,96}__schema-[1-9][0-9]*__(cursor|final)__frame-([0-9]+)\.csv)"$/u.exec(
         disposition ?? "",
       );
     if (

@@ -1370,7 +1370,7 @@ class DebuggerRequestHandler(BaseHTTPRequestHandler):
                     if (
                         filename is None
                         or re.fullmatch(
-                            r"tdm-metrics__episode-[A-Za-z0-9._-]{1,96}"
+                            r"(?:tdm|ctf)-metrics__episode-[A-Za-z0-9._-]{1,96}"
                             r"__schema-[1-9][0-9]*__(cursor|final)__frame-[0-9]+\.csv",
                             filename,
                         )

@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from marl_battlegrounds._task_settings import task_for_mode
 from marl_battlegrounds.evaluation._metrics.metrics import EvaluationTransitionViewV1
 from marl_battlegrounds.evaluation._recording.events import (
     team_deathmatch_home_fall_slots_v1,
@@ -92,7 +93,7 @@ from marl_battlegrounds.evaluation._replays.replay_v5 import (
     ReplayArtifactV5,
     replay_reference_v5,
 )
-from marl_battlegrounds.evaluation.metric_catalog import METRIC_SCHEMA_VERSION
+from marl_battlegrounds.evaluation.metric_catalog import metric_schema_for_task_mode
 from marl_battlegrounds.evaluation.models import (
     AssignedPolicySlotV1,
     AssignedPolicySlotV2,
@@ -1191,9 +1192,13 @@ class ReplayViewerService:
         episode = _safe_metric_report_filename(
             self._context.identity.episode_id
         ).removesuffix(_METRIC_REPORT_SUFFIX)
+        # A Team Deathmatch game's file starts "tdm-metrics", a Capture the Flag
+        # game's "ctf-metrics", each with its own schema version.
+        task = task_for_mode(analysis.task_mode)
+        _, version = metric_schema_for_task_mode(analysis.task_mode)
         return (
             analysis.csv(frame_index, scope=scope).encode("utf-8"),
-            f"tdm-metrics__episode-{episode}__schema-{METRIC_SCHEMA_VERSION}"
+            f"{task}-metrics__episode-{episode}__schema-{version}"
             f"__{scope}__frame-{selected}.csv",
         )
 

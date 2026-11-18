@@ -60,7 +60,7 @@ from marl_battlegrounds.evaluation._replays.replay_capture import (
     capture_packets,
 )
 from marl_battlegrounds.evaluation.evaluation_conditions import OMITTED, Omitted
-from marl_battlegrounds.evaluation.metric_catalog import FULL_METRIC_NAMES
+from marl_battlegrounds.evaluation.metric_catalog import metric_columns_for_task_mode
 from marl_battlegrounds.policies.actor import (
     ActorAction,
     build_joint_action_from_actor_actions,
@@ -403,7 +403,10 @@ class EpisodeInfo(NamedTuple):
     priority : MetricValues | None
         Named metric values and validity flags, or None if disabled.
     full : MetricValues | None
-        Named full values and validity flags, or None if disabled.
+        Named full values and validity flags, or None if disabled. Their last
+        axis is the handle's mode's full column list,
+        len(metric_columns_for_task_mode(mode)): Capture the Flag games have
+        their own list.
     replay : ReplayPackets | None
         Selected numerical replay packets, or None if capture is disabled.
     decision_step : Array
@@ -984,7 +987,7 @@ class Environment:
             initialize_priority()
             if self.metrics != "none" or self._execution.full_capacity
             else None,
-            initialize_full(config, core_state)
+            initialize_full(config, core_state, task_mode=self._execution.task_mode)
             if self.metrics == "full" or self._execution.full_capacity
             else None,
             build_default_shared_obs_information_availability(
@@ -1462,10 +1465,8 @@ class Environment:
         totals = update_full(
             state.full, state.config, state.core_state, state.action_mask, facts
         )
-        empty = MetricValues(
-            jnp.zeros(len(FULL_METRIC_NAMES), jnp.float32),
-            jnp.zeros(len(FULL_METRIC_NAMES), bool),
-        )
+        width = len(metric_columns_for_task_mode(self._execution.task_mode))
+        empty = MetricValues(jnp.zeros(width, jnp.float32), jnp.zeros(width, bool))
         values = cast(
             MetricValues,
             jax.lax.cond(
@@ -1495,7 +1496,10 @@ class Environment:
         """
         if state.full is None:
             return successor, result
-        shape = (*state.episode_id.shape, len(FULL_METRIC_NAMES))
+        shape = (
+            *state.episode_id.shape,
+            len(metric_columns_for_task_mode(self._execution.task_mode)),
+        )
         empty = MetricValues(jnp.zeros(shape, jnp.float32), jnp.zeros(shape, bool))
         selected = state.collect_full_metrics & ~state.done.done
         if self.num_envs is None:

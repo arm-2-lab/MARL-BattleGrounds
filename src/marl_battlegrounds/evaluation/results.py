@@ -43,6 +43,7 @@ from marl_battlegrounds.evaluation._metrics.scalar_reports import (
     iter_policy_assignments,
     iter_scalar_rows,
     iter_summary_rows,
+    readable_result_schema,
 )
 from marl_battlegrounds.evaluation._recording.sampling_evidence import (
     CONDITIONAL_INTERVAL_ASSUMPTION,
@@ -50,12 +51,12 @@ from marl_battlegrounds.evaluation._recording.sampling_evidence import (
 )
 from marl_battlegrounds.evaluation.metric_catalog import (
     FULL_METRIC_NAMES,
-    FULL_METRIC_NAMES_BY_SCHEMA_VERSION,
-    METRIC_COLUMNS_BY_NAME,
     METRIC_SCHEMA_ID,
     METRIC_SCHEMA_VERSION,
     PRIORITY_METRIC_NAMES,
+    all_metric_columns_by_name,
     mirror_metric,
+    saved_metric_names,
 )
 from marl_battlegrounds.evaluation.run_writer import (
     ASSIGNMENT_COLUMNS,
@@ -219,20 +220,11 @@ def _stamp(path: Path) -> tuple[int, int, int, int]:
 def _schema(manifest: Mapping[str, Any]) -> None:
     """Reject unsupported host/scalar pairs before opening any table.
 
-    Host schema 1 accepts scalar schemas 1 to 13. Host schema 2 accepts each
-    scalar schema that FULL_METRIC_NAMES_BY_SCHEMA_VERSION lists (14 and 15).
-    Raises ValueError for any other pair, a different metric schema ID or a
-    pending recording restore.
+    The accepted pairs are scalar_reports.readable_result_schema's, the one
+    rule both readers use. Raises ValueError for any other pair, an unknown
+    metric schema ID or a pending recording restore.
     """
-    host, scalar = manifest.get("schema_version"), manifest.get("metric_schema_version")
-    if manifest.get("metric_schema_id") != METRIC_SCHEMA_ID or not (
-        type(host) is int
-        and type(scalar) is int
-        and (
-            (host == 2 and scalar in FULL_METRIC_NAMES_BY_SCHEMA_VERSION)
-            or (host == 1 and 1 <= scalar <= 13)
-        )
-    ):
+    if not readable_result_schema(manifest):
         raise ValueError("unsupported result host/scalar schema pair")
     if "recording_restore" in manifest:
         raise ValueError(
@@ -243,15 +235,18 @@ def _schema(manifest: Mapping[str, Any]) -> None:
 def _headers(manifest: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
     """Return the raw table headers that a checked manifest's version expects.
 
-    A host-schema-2 manifest gets the full-report header of its own scalar
-    schema from FULL_METRIC_NAMES_BY_SCHEMA_VERSION, so a saved schema-14 table
-    reads with its 11,148 original columns. Host schema 1 keeps the current
-    headers; its tables are always read by their stored headers. Call only
-    after _schema has accepted the manifest.
+    A host-schema-2 manifest gets the full-report header of its own metric
+    schema from saved_metric_names, so a saved schema-14 table reads with its
+    11,148 original columns and a Capture the Flag table with its own list.
+    Host schema 1 keeps the current headers; its tables are always read by
+    their stored headers. Call only after _schema has accepted the manifest.
     """
     if manifest["schema_version"] != 2:
         return _HEADERS
-    names = FULL_METRIC_NAMES_BY_SCHEMA_VERSION[manifest["metric_schema_version"]]
+    names = saved_metric_names(
+        manifest["metric_schema_id"], manifest["metric_schema_version"]
+    )
+    assert names is not None, "_schema accepted only known metric schemas"
     return {**_HEADERS, "full_metrics.csv": (*IDENTITY_COLUMNS, *names)}
 
 
@@ -744,7 +739,7 @@ def _metric_slots(name: str) -> tuple[int, ...]:
     recipient slots; team-level and game-level columns give (). Callers use the
     slots to blank a column when a slot's class differs between games.
     """
-    column = METRIC_COLUMNS_BY_NAME[name]
+    column = all_metric_columns_by_name()[name]
     if column.scope in ("agent", "source_recipient", "ally_pair"):
         return column.subjects
     if column.scope == "team_recipient":
@@ -1827,9 +1822,8 @@ class _View:
             return {}
         if description["availability"] != "available":
             raise ValueError(description["reason"])
-        present = [
-            name for name in description["columns"] if name in METRIC_COLUMNS_BY_NAME
-        ]
+        catalog = all_metric_columns_by_name()
+        present = [name for name in description["columns"] if name in catalog]
         known = set(present)
         requested = list(present if columns is None else columns)
         absent = [name for name in requested if name not in known]
@@ -1840,7 +1834,7 @@ class _View:
             )
         for name, parts in ratios.items():
             if (
-                name in METRIC_COLUMNS_BY_NAME
+                name in catalog
                 or name in IDENTITY_COLUMNS
                 or name in _SYSTEM_FACT_COLUMNS
                 or name.endswith(("_ci_low", "_ci_high"))
@@ -1853,9 +1847,7 @@ class _View:
                     + ", ".join(missing)
                 )
         weight_of = {
-            name: weight
-            if (weight := METRIC_COLUMNS_BY_NAME[name].summary_weight) in known
-            else None
+            name: weight if (weight := catalog[name].summary_weight) in known else None
             for name in requested
         }
         sources = [
@@ -3308,8 +3300,10 @@ def _memory_manifest(
         }
     result: Row = {
         "schema_version": 2,
-        "metric_schema_id": METRIC_SCHEMA_ID,
-        "metric_schema_version": METRIC_SCHEMA_VERSION,
+        "metric_schema_id": metadata.get("metric_schema_id", METRIC_SCHEMA_ID),
+        "metric_schema_version": metadata.get(
+            "metric_schema_version", METRIC_SCHEMA_VERSION
+        ),
         "run_id": metadata.get("run_id"),
         "passes": passes,
         "systems": metadata.get("systems", {}),

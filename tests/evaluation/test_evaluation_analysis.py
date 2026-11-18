@@ -27,7 +27,7 @@ from tests.helpers.evaluation_fixtures import (
     evaluation_context,
 )
 
-from marl_battlegrounds.core.types import ActionMask, Info, Reward
+from marl_battlegrounds.core.types import TASK_MODE_TDM, ActionMask, Info, Reward
 from marl_battlegrounds.evaluation import analysis as analysis_module
 from marl_battlegrounds.evaluation._metrics.episode_metrics import (
     initialize_priority,
@@ -108,6 +108,7 @@ def test_search_catalog_uses_recorded_rosters_without_numerical_analysis() -> No
             context,
             completion,
             METRIC_COLUMNS,
+            TASK_MODE_TDM,
             (),
             np.empty((0, len(METRIC_COLUMNS)), np.float32),
             np.empty((0, len(METRIC_COLUMNS)), np.bool_),

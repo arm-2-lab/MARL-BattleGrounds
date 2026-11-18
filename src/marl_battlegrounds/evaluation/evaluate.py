@@ -14,6 +14,7 @@ does not train methods or use training trackers, automatic resets or collectors.
 # Numerical execution and recording use shared private authorities.
 # pyright: reportPrivateUsage=false
 
+import json
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from numpy.typing import NDArray
 from marl_battlegrounds._config_checks import run_config_check
 from marl_battlegrounds._task_settings import (
     DEFAULT_SCORE_THRESHOLDS,
+    TASK_MODES,
     TaskName,
     check_task_name,
 )
@@ -51,6 +53,9 @@ from marl_battlegrounds.environment import (
     score_threshold_for_mode,
 )
 from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
+from marl_battlegrounds.evaluation._metrics.full_metrics import (
+    metric_columns_for_totals,
+)
 from marl_battlegrounds.evaluation._metrics.scalar_reports import has_members
 from marl_battlegrounds.evaluation._recording.collection_types import (
     CollectedAssignments,
@@ -89,10 +94,9 @@ from marl_battlegrounds.evaluation.evaluation_conditions import (
 )
 from marl_battlegrounds.evaluation.host_evidence import HostRun, current_run
 from marl_battlegrounds.evaluation.metric_catalog import (
-    FULL_METRIC_NAMES,
-    METRIC_SCHEMA_ID,
-    METRIC_SCHEMA_VERSION,
     PRIORITY_METRIC_NAMES,
+    metric_schema_for_task_mode,
+    saved_metric_names,
 )
 from marl_battlegrounds.evaluation.models import (
     EvaluationEpisodeContextV4,
@@ -337,7 +341,9 @@ def _empty_completed(
         jnp.zeros((count, 2), jnp.int32),
         state.config,
         empty(len(PRIORITY_METRIC_NAMES)) if state.priority is not None else None,
-        empty(len(FULL_METRIC_NAMES)) if state.full is not None else None,
+        empty(len(metric_columns_for_totals(state.full)))
+        if state.full is not None
+        else None,
         jnp.full(count, -1, jnp.int32),
         state.lifecycle_error,
         None if members is None else _Members(*(jnp.full_like(v, -1) for v in members)),
@@ -1219,8 +1225,10 @@ def _run_evaluation(
     ValueError
         A setting, schedule, config, selection or output combination
         is invalid, or saved run details do not match the resumed pass.
-        This includes configs of no task's mode or of two modes, which are
-        refused before any game or file change.
+        This includes configs of no task's mode or of two modes, and full
+        metrics still to play whose task saves another metric schema than the
+        run records (a pass keeps its run's schema), all refused before any
+        game or file change.
     RuntimeError
         The writer is closed/failed, or execution violates an
         internal completion or requested-metric contract.
@@ -1344,9 +1352,32 @@ def _run_evaluation(
         or resume_from is not None
         or replay_selection
     )
+    # A run's full_metrics.csv has one column list, so a pass keeps the metric
+    # schema its run recorded (a Capture the Flag run saved before
+    # "marlbg.ctf.scalar" existed says "marlbg.tdm.scalar" 15); a new run, or
+    # results kept in memory, take the task's.
+    task_schema = metric_schema_for_task_mode(TASK_MODES[task])
+    if writer is not None:
+        run_schema = writer.metric_schema
+    elif resume_from is not None:
+        run_details = (
+            saved[0]
+            if saved is not None
+            else json.loads((Path(resume_from) / "run_details.json").read_bytes())
+        )
+        run_schema = cast(
+            tuple[str, int],
+            (
+                run_details.get("metric_schema_id"),
+                run_details.get("metric_schema_version"),
+            ),
+        )
+    else:
+        run_schema = task_schema
+    metric_schema_id, metric_schema_version = run_schema
     metadata: dict[str, object] = {
-        "metric_schema_id": METRIC_SCHEMA_ID,
-        "metric_schema_version": METRIC_SCHEMA_VERSION,
+        "metric_schema_id": metric_schema_id,
+        "metric_schema_version": metric_schema_version,
         "seed": int(seed),
         "rng_protocol": "episode-fold-in-v1",
         "phase": phase,
@@ -1545,6 +1576,18 @@ def _run_evaluation(
         for team in (team_a, team_b)
         if isinstance(team, System) and team.resource_scope is not None
     ]
+    # Full metrics still to play must have the run's schema. Checked before the
+    # writer opens, so a refused pass is never registered.
+    done = cast(
+        Iterable[int],
+        () if saved is None else saved[1].get("completed_episode_ids", ()),
+    )
+    if not _verify_only and run_schema != task_schema and full_ids - set(done):
+        raise ValueError(
+            f"this run saves {run_schema[0]} version {run_schema[1]} full metrics, "
+            f"and {task!r} games save {task_schema[0]} version {task_schema[1]}; "
+            "start a new run for these games"
+        )
     if _verify_only:
         if saved is None:
             raise ValueError("Read-only verification requires a saved pass")
@@ -1564,6 +1607,7 @@ def _run_evaluation(
                     phase=phase,
                     pass_id=pass_id,
                     policies=policies,
+                    task=task,
                     details=pass_details,
                     _expected_run_id=run_id if resume_from is not None else None,
                 )
@@ -1684,7 +1728,8 @@ def _run_evaluation(
             PRIORITY_METRIC_NAMES, priority_ids if writer is None else ()
         )
         full = _MetricTable.create(
-            FULL_METRIC_NAMES, full_ids if writer is None else ()
+            cast(tuple[str, ...], saved_metric_names(*run_schema)),
+            full_ids if writer is None else (),
         )
         replays: list[ReplayArtifactV4 | ReplayArtifactV5] = []
         collector = None
@@ -2229,6 +2274,10 @@ def evaluate_episodes(
         This avoids compiling a new batch shape for a short validation pass.
     metrics : {'priority', 'full', 'none'}, default='priority'
         Default scalar collection. none still retains required game outcomes.
+        Full columns follow the task: Capture the Flag games save their own
+        list ("marlbg.ctf.scalar"), Team Deathmatch games "marlbg.tdm.scalar".
+        A saved run keeps one list, so full metrics for games whose task saves
+        another schema than the run recorded are refused before any game.
     full_metrics_episodes, replay_episodes : iterable of int, default=()
         Scheduled IDs for optional full measurements or replays. Selected full
         games retain priority values too, even under none. No selection is implicit.
@@ -2270,7 +2319,9 @@ def evaluate_episodes(
     ------
     ValueError, TypeError
         A method layout, configuration, selection, schedule, version or explicit
-        resume assertion is invalid. Rejection precedes new output or recovery.
+        resume assertion is invalid, or full metrics are asked for games whose
+        task saves another metric schema than the run ("...; start a new run for
+        these games"). Rejection precedes new output or recovery.
     RuntimeError
         Execution or a recording invariant fails. Provider errors propagate;
         no action is fabricated and external state is not rolled back.
@@ -2483,6 +2534,10 @@ def evaluate(
     metrics : {'priority', 'full', 'none'}, default='priority'
         Default measurement level. Required lengths, scores and outcomes remain
         available under none without implying that priority measurements exist.
+        Full columns follow the task: Capture the Flag games save their own
+        list ("marlbg.ctf.scalar"), Team Deathmatch games "marlbg.tdm.scalar".
+        A saved run keeps one list, so full metrics for games whose task saves
+        another schema than the run recorded are refused before any game.
     full_metrics_episodes, replay_episodes : iterable of int, default=()
         Optional scheduled IDs. Selected full records include priority values
         even under none. Replays are independent of metric mode and file output.
@@ -2553,8 +2608,10 @@ def evaluate(
         a pass saved before the Red Zone rule (ValueError "This pass was saved
         before the Red Zone rule. ..."). Also ValueError for an unknown task,
         an exact config in another mode ("... which task 'tdm' does not play;
-        pass task='ctf'"), and a CTF depth other than 0.0. Scientific
-        validation occurs before new files, writer recovery or pass changes.
+        pass task='ctf'"), a CTF depth other than 0.0, and full metrics into a
+        run of the other task's metric schema ("...; start a new run for these
+        games"). Scientific validation occurs before new files, writer recovery
+        or pass changes.
     RuntimeError, OSError
         Execution, provider or recording fails. Earlier durable chunks remain
         valid; no fake actions, retry or provider rollback is performed.

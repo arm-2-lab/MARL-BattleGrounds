@@ -5,6 +5,8 @@ Direct scan is the independent trajectory reference. Tests check scalar/native
 shapes, dynamic inputs, sparse/full records, first starts, padding, errors and
 capacity pressure. Fixed output capacity must keep real prefixes exact, suffixes
 zero and writer records unchanged while reusing the same compiled chunk. A
+writer made for another task refuses full metrics of this width before any step
+and stays healthy. A
 test-only drain consumes every admitted record; it does not stand in for writer
 durability, which has separate integration tests.
 """
@@ -505,6 +507,22 @@ def test_invalid_output_capacity_fails_before_callback_and_writer_changes(
         assert (writer.run_dir / "run_details.json").read_bytes() == before
         assert writer.completed_episode_ids == frozenset()
         assert not list(writer.run_dir.glob("*.csv"))
+
+
+def test_a_writer_of_another_task_refuses_full_metrics_before_any_step(
+    source: EnvConfig, tmp_path: Path
+) -> None:
+    with RunWriter(tmp_path, task="ctf") as writer:
+        before = (writer.run_dir / "run_details.json").read_bytes()
+        with pytest.raises(ValueError, match=r"this environment's task$"):
+            collect_rollout(
+                partial(_step, metrics="full"),
+                _initial(source),
+                num_steps=1,
+                writer=writer,
+            )
+        assert (writer.run_dir / "run_details.json").read_bytes() == before
+        assert writer.completed_episode_ids == frozenset()
 
 
 def test_repeated_preparation_reuses_abstract_trace_for_changed_values(

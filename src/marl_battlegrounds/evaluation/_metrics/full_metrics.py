@@ -5,10 +5,13 @@ Core facts; full_values packs the current metric catalog. Live evaluation and
 replay prefix analysis share these functions. Keys are static tree structure,
 values are arrays, and no host report, callback or replay buffer is retained.
 Optional collection is selected by the environment wrapper. Red Zone counts use
-Core's red_zone_death_mask, the same classifier that scores points. A static
-task_mode argument adds a Capture the Flag game's own totals and columns
-(_metrics/capture_the_flag.py); Team Deathmatch's totals, columns and compiled
-program stay as they are.
+Core's red_zone_death_mask, the same classifier that scores points.
+initialize_full's static task_mode argument adds a Capture the Flag game's own
+totals (_metrics/capture_the_flag.py); update_full and full_values read the mode
+back from those totals, so Team Deathmatch's totals, columns and compiled program
+stay as they are (metric_columns_for_task_mode and metric_columns_for_totals name
+each mode's list). Which list a saved file carries is metric_catalog's
+metric_schema_for_task_mode.
 """
 
 from functools import cache
@@ -42,14 +45,10 @@ from marl_battlegrounds.evaluation._metrics.capture_the_flag import (
     initialize_capture_the_flag,
     update_capture_the_flag,
 )
-from marl_battlegrounds.evaluation._metrics.capture_the_flag_catalog import (
-    capture_the_flag_metric_columns,
-)
 from marl_battlegrounds.evaluation._metrics.episode_metrics import MetricValues
 from marl_battlegrounds.evaluation.combat_metrics import combat_quantities
 from marl_battlegrounds.evaluation.metric_catalog import (
     DIRECTED_METRICS,
-    METRIC_COLUMNS,
     PRIORITY_METRIC_COLUMNS,
     RECIPIENT_PAIRS_BY_RELATION,
     STATUS_CLASS_IDS,
@@ -58,6 +57,7 @@ from marl_battlegrounds.evaluation.metric_catalog import (
     ULTIMATE_TEAM_ABILITY_STEMS,
     MetricColumn,
     MetricScope,
+    metric_columns_for_task_mode,
 )
 
 type FullTotals = dict[str, Array]
@@ -66,24 +66,33 @@ _CTF_PREFIX = "capture_the_flag/"
 """Key prefix of a Capture the Flag game's own totals inside its FullTotals."""
 
 
-def metric_columns_for_task_mode(task_mode: int) -> tuple[MetricColumn, ...]:
-    """Return the full column list of a game of one task mode.
+def _totals_task_mode(totals: FullTotals) -> int:
+    """Return TASK_MODE_CTF when totals hold Capture the Flag totals, else TDM's.
+
+    The key set is static tree structure, so this is a Python decision made while
+    tracing; initialize_full alone decides it from its task_mode argument.
+    """
+    if any(name.startswith(_CTF_PREFIX) for name in totals):
+        return TASK_MODE_CTF
+    return TASK_MODE_TDM
+
+
+def metric_columns_for_totals(totals: FullTotals) -> tuple[MetricColumn, ...]:
+    """Return the column list full_values gives for one game's totals.
 
     Parameters
     ----------
-    task_mode : int
-        The game's static task mode: TASK_MODE_CTF (3) gives a Capture the Flag
-        game's columns; every other mode gives METRIC_COLUMNS, Team Deathmatch's.
+    totals : FullTotals
+        Totals from initialize_full or update_full, scalar or with leading
+        environment axes. Only their keys are read, so this works while tracing.
 
     Returns
     -------
     tuple of MetricColumn
-        The columns full_values returns, in order. Both lists start with the
-        PRIORITY_METRIC_COLUMNS.
+        A Capture the Flag game's columns when initialize_full made the totals
+        with TASK_MODE_CTF, else Team Deathmatch's METRIC_COLUMNS.
     """
-    if task_mode == TASK_MODE_CTF:
-        return capture_the_flag_metric_columns()
-    return METRIC_COLUMNS
+    return metric_columns_for_task_mode(_totals_task_mode(totals))
 
 
 def _capture_the_flag_totals(totals: FullTotals) -> FullTotals:
@@ -286,8 +295,6 @@ def update_full(
     state: EnvState,
     action_mask: ActionMask,
     info: Info,
-    *,
-    task_mode: int = TASK_MODE_TDM,
 ) -> FullTotals:
     """Accumulate one transition's full metrics without retaining its trajectory.
 
@@ -295,7 +302,9 @@ def update_full(
     ----------
     totals : FullTotals
         FullTotals from initialize_full or the preceding update, with
-        unchanged key/leaf structure.
+        unchanged key/leaf structure. When they hold Capture the Flag totals
+        (initialize_full's TASK_MODE_CTF), those are updated too, from this
+        tick's combat quantities, computed once for both.
     config : EnvConfig
         Exact scalar episode config.
     state : EnvState
@@ -304,10 +313,6 @@ def update_full(
         Acting masks, including joint target/Ultimate legality.
     info : Info
         Authoritative Core Info for the transition from that state.
-    task_mode : int, default=TASK_MODE_TDM
-        The game's static task mode, the same as initialize_full's. With
-        TASK_MODE_CTF the Capture the Flag totals are updated too, from this
-        tick's combat quantities, computed once for both.
 
     Returns
     -------
@@ -588,7 +593,7 @@ def update_full(
         for name, total in totals.items()
         if not name.startswith(_CTF_PREFIX)
     }
-    if task_mode == TASK_MODE_CTF:
+    if _totals_task_mode(totals) == TASK_MODE_CTF:
         flags = update_capture_the_flag(
             _capture_the_flag_totals(totals),
             config,
@@ -596,6 +601,7 @@ def update_full(
             info,
             quantities,
             freedom_protected,
+            freedom_eligible,
         )
         updated.update({_CTF_PREFIX + name: total for name, total in flags.items()})
     return updated
@@ -616,8 +622,6 @@ def full_values(
     totals: FullTotals,
     config: EnvConfig,
     priority: MetricValues,
-    *,
-    task_mode: int = TASK_MODE_TDM,
 ) -> MetricValues:
     """Read full metrics in fixed catalog order, reusing supplied priority values.
 
@@ -625,20 +629,20 @@ def full_values(
     ----------
     totals : FullTotals
         Scalar-episode FullTotals with its complete initialized key structure.
+        Its keys pick the column list: totals that initialize_full made with
+        TASK_MODE_CTF give a Capture the Flag game's columns, others Team
+        Deathmatch's (metric_columns_for_task_mode).
     config : EnvConfig
         Matching exact scalar config, including active classes/teams.
     priority : MetricValues
         MetricValues for the same episode boundary, in the 16-column
         PRIORITY_METRIC_COLUMNS order.
-    task_mode : int, default=TASK_MODE_TDM
-        The game's static task mode, the same as initialize_full's. It picks
-        the column list (metric_columns_for_task_mode).
 
     Returns
     -------
     MetricValues
         MetricValues with float32 values and boolean availability, each shape
-        (len(metric_columns_for_task_mode(task_mode)),). The first
+        (len(metric_columns_for_task_mode(mode)),), for the totals' mode. The first
         len(PRIORITY_METRIC_COLUMNS) entries copy priority exactly.
         Invalid entries are unavailable, not measurements of zero; consumers must
         apply valid before publishing them.
@@ -1059,6 +1063,7 @@ def full_values(
     )
 
     _directed_values(data, stored, expanded, config)
+    task_mode = _totals_task_mode(stored)
     if task_mode == TASK_MODE_CTF:
         flags = capture_the_flag_data(_capture_the_flag_totals(stored))
         assert not flags.keys() & data.keys(), "a Capture the Flag stem repeats one"
@@ -1356,7 +1361,11 @@ def _pack_values(
         (required_class == 0) | (classes[source] == required_class),
     )
     recipient_rescue_opportunity = jnp.asarray(
-        tuple(c.scope == "agent" and c.stem == "rescue_opportunities" for c in columns)
+        tuple(
+            c.scope == "agent"
+            and c.stem in ("rescue_opportunities", "rescue_opportunities__carrying")
+            for c in columns
+        )
     )
     available &= ~recipient_rescue_opportunity | team_classes[5, team]
     same_team = (
