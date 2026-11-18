@@ -6,12 +6,13 @@ registered CTF map keeps its map identity, and a custom one gets a replay file n
 starting "ctf_custom_map_". A captured Capture the Flag game seals into replay V5 (frame
 V4, transition V2), saves as its exact canonical bytes and loads back equal, with
 reference version 5; PreparedReplay accepts it. build_replay_v5 refuses a Team
-Deathmatch context, build_replay_v4 refuses a Capture the Flag transition, and scalar
-replay analysis refuses replay V5. The shared transition view joins a Capture the Flag
-transition, and an actor's POV V4 export (POV V3 frames, an axis mapping naming context
-5, frame 4 and transition 2) validates against its source replay and has canonical
-bytes. Real full games are checked once Core scores Capture the Flag (his C1.3 and
-C1.4); these games stop before the horizon. Host only, on CPU.
+Deathmatch context, and build_replay_v4 refuses a Capture the Flag transition. (Replay
+analysis of a Capture the Flag game is checked in the metric tests.) The shared
+transition view joins a Capture the Flag transition, and an actor's POV V4 export (POV
+V3 frames, an axis mapping naming context 5, frame 4 and transition 2) validates against
+its source replay and has canonical bytes. Real full games are checked once Core scores
+Capture the Flag (his C1.3 and C1.4); these games stop before the horizon. Host only, on
+CPU.
 """
 
 from pathlib import Path
@@ -46,7 +47,6 @@ from marl_battlegrounds.evaluation._replays.replay_v5 import (
     build_replay_v5,
     replay_reference_v5,
 )
-from marl_battlegrounds.evaluation.analysis import analyze_replay
 from marl_battlegrounds.evaluation.models import (
     CodeRevisionV2,
     EvaluationEpisodeContextV5,
@@ -56,7 +56,6 @@ from marl_battlegrounds.evaluation.models import (
     canonical_json_bytes,
 )
 from marl_battlegrounds.evaluation.replay_io import (
-    LoadedReplay,
     PreparedReplay,
     generated_replay_filename,
     load_replay,
@@ -155,9 +154,7 @@ def test_replay_v5_saves_and_loads_its_exact_bytes(
     assert reference.canonical_byte_length == saved.replay_byte_length
 
 
-def test_replay_v5_refuses_other_contexts_and_tdm_analysis(
-    replay: ReplayArtifactV5,
-) -> None:
+def test_replay_v5_refuses_a_team_deathmatch_context() -> None:
     tdm = current_captured_evaluation_trajectory()
     with pytest.raises(TypeError, match="exact context V5"):
         build_replay_v5(
@@ -166,8 +163,6 @@ def test_replay_v5_refuses_other_contexts_and_tdm_analysis(
             tdm.transitions,  # pyright: ignore[reportArgumentType]
             runtime_provenance=_RUNTIME,
         )
-    with pytest.raises(ValueError, match="supports TDM only"):
-        analyze_replay(LoadedReplay(replay))
 
 
 def test_a_player_view_exports_from_replay_v5(replay: ReplayArtifactV5) -> None:
