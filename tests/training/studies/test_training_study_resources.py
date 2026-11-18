@@ -2,7 +2,9 @@
 
 Host validation rejects invalid capacity and environment settings. Real short
 subprocesses check concurrent admission, failure, bounded stop and explicit
-recovery without models or GPU allocation. Their timings measure orchestration,
+recovery without models or GPU allocation. Under the "stop" failure policy the
+other worker sleeps until it is stopped, so the stop finds it running however
+loaded the machine is. Their timings measure orchestration,
 not learner throughput. Fresh-process probes check settings before JAX import.
 GPU settings keep CUDA first and required, permit CPU checkpoint checks and
 turn off JAX's memory preallocation unless the caller set that flag. A declared
@@ -242,6 +244,11 @@ def test_failed_worker_keeps_all_declared_cases(
 ) -> None:
     declared = _resource_study(tmp_path, monkeypatch, failure_policy)
     monkeypatch.setenv("RESOURCE_PROBE_FAIL", "1")
+    if failure_policy == "stop":
+        # The stop must find the other case still running on a loaded machine:
+        # one that finished first would leave a run without a checkpoint, which a
+        # resume rightly refuses to restart.
+        monkeypatch.setenv("RESOURCE_PROBE_DELAY", "30")
     root = tmp_path / "study"
     report = study.run_study(declared, output_dir=root)
     assert len(report["cases"]) == 4 and report["status"] == "incomplete"
@@ -256,6 +263,7 @@ def test_failed_worker_keeps_all_declared_cases(
         assert all(row["status"] == "complete" for row in report["cases"][1:])
     assert not study._launch.live_process_records(study._process_paths(root))
     monkeypatch.delenv("RESOURCE_PROBE_FAIL")
+    monkeypatch.delenv("RESOURCE_PROBE_DELAY", raising=False)
     repaired = study.run_study(resume_from=root)
     assert repaired["status"] == "complete"
     assert len(repaired["cases"][0]["attempts"]) == 2
