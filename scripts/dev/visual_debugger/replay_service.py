@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from marl_battlegrounds.viewer.replay_service import *  # noqa: F403
 
     EvaluationTransitionViewV1 = _implementation.EvaluationTransitionViewV1
-    METRIC_SCHEMA_VERSION = _implementation.METRIC_SCHEMA_VERSION
     ReplayApiErrorV1 = _implementation.ReplayApiErrorV1
     ReplayCommandResponseV1 = _implementation.ReplayCommandResponseV1
     ReplayMetricReportResultV1 = _implementation.ReplayMetricReportResultV1
