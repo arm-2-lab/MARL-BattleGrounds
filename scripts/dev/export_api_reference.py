@@ -53,6 +53,10 @@ MODULES = (
         "marl_battlegrounds.experiments.callbacks",
         "Hydra Callbacks (`experiments.callbacks`)",
     ),
+    (
+        "marl_battlegrounds.experiments.opponent_schedule",
+        "Opponent Schedule (`experiments.opponent_schedule`)",
+    ),
     ("marl_battlegrounds.baselines.actions", "Action Codec (`baselines.actions`)"),
     ("marl_battlegrounds.baselines.inputs", "Learner Inputs (`baselines.inputs`)"),
     ("marl_battlegrounds.baselines.ppo", "PPO Networks (`baselines.ppo`)"),

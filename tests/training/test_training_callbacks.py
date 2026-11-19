@@ -5,6 +5,13 @@ the logger's mode defaults to None, so WANDB_MODE decides, while an explicit
 mode passes through and any other value is refused. Subprocess
 checks forbid optional/numerical imports when logging is disabled. Scoped
 factories reuse ordinary trainer keyword routes; they do not own a scheduler.
+make_opponent_schedule returns the shares of the last stage a step has reached
+(the first stage before the first boundary, the next one from it on), naming
+every scheduled member with 0 outside its stage, a fresh dict each call, and
+refuses no stage, a first stage not at 0, steps that are not ints in
+increasing order, a stage with other keys, and shares TrainConfig refuses; in a
+short ff_ippo training run the trainer calls it at steps 0 and 8, and its
+second stage is the run's saved opponent selection.
 """
 
 from __future__ import annotations
@@ -416,3 +423,92 @@ def test_invalid_wrapped_factory_chain_fails_before_call(
     monkeypatch.setattr(_method_loading, "installed_callable", installed)
     with pytest.raises((TypeError, ValueError), match="__wrapped__"):
         _method_loading._reference_identity("unused:factory")
+
+
+def test_opponent_schedule_returns_the_stage_reached_and_refuses_bad_stages() -> None:
+    from marl_battlegrounds.experiments.opponent_schedule import (
+        make_opponent_schedule,
+    )
+
+    early = {"self": 0.8, "early": 0.2}
+    late = {"self": 0.8, "late": 0.2}
+    rule = make_opponent_schedule(
+        [
+            {"from_env_steps": 0, "opponents": early},
+            {"from_env_steps": 100, "opponents": late},
+        ]
+    )
+    first_stage = {"self": 0.8, "early": 0.2, "late": 0.0}
+    second_stage = {"self": 0.8, "early": 0.0, "late": 0.2}
+    assert [rule({}, step)["opponents"] for step in (0, 99, 100, 10**9)] == [
+        first_stage,
+        first_stage,
+        second_stage,
+        second_stage,
+    ]
+    first = rule({}, 0)
+    cast(dict[str, Any], first["opponents"])["self"] = 0.0
+    assert rule({}, 0) == {"opponents": first_stage}
+
+    def stage(start: object, shares: object) -> dict[str, object]:
+        return {"from_env_steps": start, "opponents": shares}
+
+    bad: list[tuple[list[Any], type[Exception], str]] = [
+        ([], ValueError, "at least one stage"),
+        ([stage(5, early)], ValueError, "start at from_env_steps 0"),
+        ([stage(0, early), stage(0, late)], ValueError, "increasing order"),
+        ([stage(0, early), stage(True, late)], ValueError, "increasing order"),
+        ([{**stage(0, early), "extra": 1}], ValueError, "exactly"),
+        ([stage(0, ["self"])], ValueError, "map names to shares"),
+        ([stage(0, {"self": -1.0})], ValueError, "nonnegative"),
+        ([stage(0, {"self": 0.0})], ValueError, "positive total"),
+        ([stage(0, {"self": "1"})], TypeError, "real numbers"),
+    ]
+    for stages, error, message in bad:
+        with pytest.raises(error, match=message):
+            make_opponent_schedule(stages)
+
+
+def test_opponent_schedule_reaches_a_short_training_run(tmp_path: Path) -> None:
+    from marl_battlegrounds.baselines.config import PPOConfig
+    from marl_battlegrounds.experiments.opponent_schedule import (
+        make_opponent_schedule,
+    )
+    from marl_battlegrounds.training import TrainConfig, checkpoints, train
+
+    config = TrainConfig(
+        method="ff_ippo",
+        num_envs=4,
+        total_env_steps=16,
+        keep_past=0,
+        opponents={"self": 1.0, "random_friend": 0.0},
+        ppo=PPOConfig(rollout_length=2, epochs=1),
+        checkpoint_interval_updates=1,
+        metrics="none",
+        verbose=False,
+    )
+    rule = make_opponent_schedule(
+        [
+            {"from_env_steps": 0, "opponents": {"self": 1.0, "random_friend": 0.0}},
+            {"from_env_steps": 8, "opponents": {"self": 0.0, "random_friend": 1.0}},
+        ]
+    )
+    calls: list[int] = []
+
+    def recorded(stats: dict[str, Any], env_steps: int) -> dict[str, object]:
+        calls.append(env_steps)
+        return rule(stats, env_steps)
+
+    result = train(
+        config,
+        output_dir=tmp_path / "run",
+        opponents={"random_friend": "random"},
+        matchmaking=recorded,
+    )
+    assert calls == [0, 8]
+    details = checkpoints.read_checkpoint_details(result.final_checkpoint)
+    assert details["metadata"]["opponent_selection"] == {
+        "self": 0.0,
+        "past": 0.0,
+        "random_friend": 1.0,
+    }

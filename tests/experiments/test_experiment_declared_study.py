@@ -10,7 +10,9 @@ shares validation maps 42, 43, 44 and 46; the validation panel binds the 250M
 model's checked folder first, then Alpha, Beta and Gamma; the grouping file
 passes the analysis owner with its ten recipe picks; and a changed expected
 identity or a reordered validation panel is refused before protocol/ is
-written. A declaration whose depth is null groups at the task's default (5.0
+written. A runtime.matchmaking factory and kwargs (an opponent schedule) are
+copied unchanged into every prepared case, beside the bound opponents. A
+declaration whose depth is null groups at the task's default (5.0
 for Team Deathmatch) and names no task. The bundle lives in ignored
 artifacts/, so these checks skip where it is absent. No game, learning update
 or GPU work runs here.
@@ -107,3 +109,28 @@ def test_a_null_depth_groups_at_the_task_default(tmp_path: Path) -> None:
     )
     grouping = yaml.safe_load((study_file.parent / "grouping.yaml").read_text())
     assert grouping["red_zone_depth"] == 5.0 and "task" not in grouping
+
+
+def test_a_matchmaking_rule_is_kept_beside_the_bound_opponents(tmp_path: Path) -> None:
+    declaration = yaml.safe_load((SEARCH / "shapes_and_ppo.yaml").read_text())
+    for case in declaration["cases"]:
+        case["runtime"]["matchmaking"] = {
+            "factory": "marl_battlegrounds.experiments.opponent_schedule:"
+            "make_opponent_schedule",
+            "kwargs": {
+                "stages": [
+                    {"from_env_steps": 0, "opponents": case["config"]["opponents"]}
+                ]
+            },
+        }
+    other = tmp_path / "scheduled" / "shapes_and_ppo.yaml"
+    other.parent.mkdir()
+    other.write_text(yaml.safe_dump(declaration, sort_keys=False))
+    study_file = _prepare(
+        tmp_path, declaration=other, expected=SEARCH / "opponents.yaml"
+    )
+    prepared = yaml.safe_load(study_file.read_text())
+    for case, original in zip(prepared["cases"], declaration["cases"], strict=True):
+        assert case["runtime"]["matchmaking"] == original["runtime"]["matchmaking"]
+        assert case["runtime"]["opponents"]
+    training.preview_study(prepared, output_dir=tmp_path / "out/study")

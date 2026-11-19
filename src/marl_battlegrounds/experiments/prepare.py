@@ -557,7 +557,7 @@ def prepare_declared_study(
     - study.yaml: the declaration with every actor name bound to its checked
       folder, as a path relative to protocol/ (runtime.opponents and
       runtime.validation_opponents). Scripted names stay names. Nothing else
-      changes.
+      changes; a runtime.matchmaking descriptor is kept as declared.
     - grouping.yaml: schema 2, point margin, the shared validation maps, the
       panel's opponent labels and digest, the shared resolved Red Zone depth,
       the task when it is not Team Deathmatch, one group per case with one
@@ -575,7 +575,9 @@ def prepare_declared_study(
     declaration : str or Path
         Committed JSON or YAML study declaration (training.run_study format).
         Every case must be a training case. It must not bind runtime.opponents
-        itself, and must not use config.validation_opponents or
+        itself; it may give runtime.matchmaking (a factory and kwargs, such
+        as an opponent schedule), copied unchanged. It must not use
+        config.validation_opponents or
         config.validation_panel. Its config.opponents names must be exactly the
         expected members with the "training" role; its
         runtime.validation_opponents must list exactly the "validation"
@@ -693,13 +695,14 @@ def prepare_declared_study(
         if not isinstance(config, dict) or not isinstance(runtime, dict):
             raise ValueError(f"Case {case.get('id')} needs config and runtime objects")
         config, runtime = cast(dict[str, Any], config), cast(dict[str, Any], runtime)
-        if set(runtime) != {"validation_opponents"} or any(
+        if set(runtime) - {"matchmaking"} != {"validation_opponents"} or any(
             config.get(name) is not None
             for name in ("validation_opponents", "validation_panel")
         ):
             raise ValueError(
                 f"Case {case.get('id')} must name its panel only in "
-                "runtime.validation_opponents; preparation binds opponents"
+                "runtime.validation_opponents (runtime.matchmaking is the only "
+                "other runtime key); preparation binds opponents"
             )
         opponents = config.get("opponents")
         if (
@@ -722,6 +725,11 @@ def prepare_declared_study(
                 if name in relative and relative[name] != name
             },
             "validation_opponents": [relative[name] for name in panel_names],
+            **(
+                {"matchmaking": runtime["matchmaking"]}
+                if "matchmaking" in runtime
+                else {}
+            ),
         }
     cases = cast(list[dict[str, Any]], cases)
     # The study owner checks every setting, ID, seed and resource now. Preview
