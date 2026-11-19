@@ -43,7 +43,8 @@ def run(settings: dict[str, Any], *, base_dir: str | Path) -> dict[str, Any]:
         download the released one) and the population settings
         ``train_psro`` takes (``round_env_steps``, ``payoff_games``,
         ``payoff_maps``, ``payoff_seed``, ``validation_seed``,
-        ``confirmation_seed``, ``eval_num_envs``, ``shortlist``).
+        ``confirmation_seed``, ``eval_num_envs``, ``shortlist``,
+        ``uniform_share``).
     base_dir : str or Path
         Folder that relative paths (``output_dir``, ``opponent_bundle``) are
         read from.

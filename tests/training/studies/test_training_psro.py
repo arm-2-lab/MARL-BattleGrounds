@@ -3,9 +3,14 @@
 Contracts: bundle_references maps a pool.json name to its absolute actor
 folder or a scripted name to itself, and refuses a missing pool.json, another
 schema, an unknown name and an actor folder that is missing or that exists
-outside the bundle; train_psro refuses a negative shortlist, empty
-payoff_maps, a PQN-VDN oracle whose learning rate decays and a budget with no
-room for one round, before it writes a file or plays a game; _round_steps
+outside the bundle; train_psro refuses a negative shortlist, a
+uniform_share outside [0, 1], empty payoff_maps, a PQN-VDN oracle whose
+learning rate decays and a budget with no room for one round, before it
+writes a file or plays a game, and saves uniform_share in settings.json only
+when it is above 0, so a share of 0 keeps an older folder's settings; round 1
+trains against opponent_mixture's weights (1 and 0 at a share of 0, 0.9 and 0.1
+at 0.2, when one seeded member wins every payoff game), the same weights
+rounds.json records; _round_steps
 gives a full round, all that remains below 1.5 rounds, rounded down to whole
 environment batches, and zero when nothing fits.
 score_table fills each played pair both ways (score of j against i is 1 minus
@@ -23,24 +28,31 @@ that of the mixture found without one; it refuses tables that are empty, not
 square, outside [0, 1] or not filled both ways, and a preference of the wrong
 length or with a value that is not finite. worst_case_score reports the
 mixture's lowest expected score over the members and refuses weights of the
-wrong shape, negative or not summing to 1. Plain NumPy and small files; no
-game is played.
+wrong shape, negative or not summing to 1. opponent_mixture with a share of 0
+returns nash_mixture's weights exactly, with a share g gives each member
+(1 - g) times its Nash weight plus g / n (0.8 and 0.2 for a member that always
+beats the other at g = 0.4; still equal weights in rock-paper-scissors;
+equal weights at g = 1), and refuses a share below 0, above 1, NaN, a bool,
+None or a string. Plain NumPy and small files; no game is played.
 """
 
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
 
+from marl_battlegrounds import training
 from marl_battlegrounds.training import TrainConfig, psro
 from marl_battlegrounds.training.psro import (
     PairResult,
     _round_steps,  # pyright: ignore[reportPrivateUsage]
     bundle_references,
     nash_mixture,
+    opponent_mixture,
     score_table,
     worst_case_score,
 )
@@ -218,6 +230,7 @@ def test_train_psro_refuses_before_any_file_or_game(
     oracle = TrainConfig(method="ippo", total_env_steps=20_000_000)
     cases: list[tuple[TrainConfig, dict[str, Any], str]] = [
         (oracle, {"shortlist": -1}, "shortlist"),
+        (oracle, {"uniform_share": 1.5}, "uniform_share"),
         (oracle, {"payoff_maps": ()}, "payoff_maps"),
         (TrainConfig(method="pqn_vdn"), {}, "lr_linear_decay"),
         (replace(oracle, total_env_steps=100_000), {}, "no PSRO round fits"),
@@ -239,3 +252,69 @@ def test_round_steps() -> None:
     assert _round_steps(remaining=6000, round_env_steps=4096, num_envs=32) == 5984
     assert _round_steps(remaining=31, round_env_steps=4096, num_envs=32) == 0
     assert _round_steps(remaining=-5, round_env_steps=4096, num_envs=32) == 0
+
+
+def test_opponent_mixture() -> None:
+    beats = [[0.5, 1.0], [0.0, 0.5]]
+    for table in (ROCK_PAPER_SCISSORS, beats):
+        assert np.array_equal(opponent_mixture(table), nash_mixture(table))
+    assert opponent_mixture(beats, 0.4) == pytest.approx([0.8, 0.2])
+    assert opponent_mixture(beats, 1.0) == pytest.approx([0.5, 0.5])
+    assert opponent_mixture(ROCK_PAPER_SCISSORS, 0.4) == pytest.approx([1 / 3] * 3)
+    bad: tuple[object, ...] = (-0.1, 1.5, float("nan"), True, None, "0.1")
+    for share in bad:
+        with pytest.raises(ValueError, match="uniform_share"):
+            opponent_mixture(beats, cast(float, share))
+
+
+def test_train_psro_saves_uniform_share_only_above_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def stop(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("first game")
+
+    monkeypatch.setattr(psro, "play_pair", stop)
+    oracle = TrainConfig(method="ippo", total_env_steps=20_000_000)
+    for share in (0.0, 0.1):
+        run = tmp_path / str(share)
+        with pytest.raises(RuntimeError, match="first game"):
+            psro.train_psro(
+                oracle,
+                output_dir=run,
+                seed_members={"random": "random", "tdm-alpha": "tdm-alpha"},
+                panel={"tdm-beta": "tdm-beta"},
+                uniform_share=share,
+            )
+        saved = json.loads((run / "settings.json").read_text(encoding="utf-8"))
+        assert saved.get("uniform_share") == (share or None)
+
+
+def test_train_psro_trains_round_one_on_the_mixed_weights(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def first_member_wins(*args: object, **kwargs: object) -> tuple[int, ...]:
+        return 64, 0, 0, 6400
+
+    trained: list[dict[str, float]] = []
+
+    def stop(config: TrainConfig, **kwargs: object) -> None:
+        assert isinstance(config.opponents, Mapping)
+        trained.append(dict(config.opponents))
+        raise RuntimeError("training")
+
+    monkeypatch.setattr(psro, "play_pair", first_member_wins)
+    monkeypatch.setattr(training, "train", stop)
+    oracle = TrainConfig(method="ippo", total_env_steps=20_000_000)
+    for share, expected in ((0.0, [0.0, 1.0]), (0.2, [0.1, 0.9])):
+        run = tmp_path / str(share)
+        with pytest.raises(RuntimeError, match="training"):
+            psro.train_psro(
+                oracle,
+                output_dir=run,
+                seed_members={"random": "random", "tdm-alpha": "tdm-alpha"},
+                panel={"tdm-beta": "tdm-beta"},
+                uniform_share=share,
+            )
+        rounds = json.loads((run / "rounds.json").read_text(encoding="utf-8"))
+        assert trained[-1] == rounds[0]["opponent_weights"]
+        assert sorted(trained[-1].values()) == pytest.approx(expected)

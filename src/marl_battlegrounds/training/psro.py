@@ -9,15 +9,18 @@ calls the same function with the Season 0 recipe and opponents.
 PSRO (Policy-Space Response Oracles, Lanctot et al., NeurIPS 2017) grows a
 population of team policies. Each new member is trained against a mixture of
 the earlier ones, and the mixture's weights come from a Nash equilibrium of
-the game in which each side picks one member. A run does this, in order:
+the game in which each side picks one member (optionally mixed with uniform
+play, step 2). A run does this, in order:
 
 1. **Seeded members.** The given members (the Season 0 training opponents in
    the launcher) play every pair once, so round 1 trains against a real Nash
    mixture.
 2. **A round.** The best-response learner trains for ``round_env_steps``
-   against the Nash mixture of the whole population: round 1 with ``train``,
-   later rounds with ``extend_training``, which keeps the whole learner
-   (critic and optimizer included) and adds the newest member as an opponent.
+   against the Nash mixture of the whole population, with ``uniform_share``
+   of the weight spread evenly over every member (none by default;
+   ``opponent_mixture``): round 1 with ``train``, later rounds with
+   ``extend_training``, which keeps the whole learner (critic and optimizer
+   included) and adds the newest member as an opponent.
 3. **Payoff games.** The round's final actor joins as a member and plays every
    other member: ``payoff_games`` games per pair on the training maps, spawn
    ends exchanged, scored win 1, draw 1/2, loss 0.
@@ -41,7 +44,8 @@ Files in ``output_dir``: ``settings.json`` (a later call with other settings
 is refused); ``rounds/round-NN/`` (each round's training run); ``payoff.csv``
 (one row per played pair); ``rounds.json`` (each round's weights, results and
 step ledger); ``entrant.json`` (the chosen mixture). The pure parts,
-``PairResult``, ``score_table``, ``nash_mixture`` and ``worst_case_score``, use
+``PairResult``, ``score_table``, ``nash_mixture``, ``opponent_mixture`` and
+``worst_case_score``, use
 plain NumPy and no files. ``bundle_references`` reads an opponent bundle's
 ``pool.json``. No part of this module needs Hydra.
 """
@@ -287,6 +291,70 @@ def nash_mixture(
     weights = solution[:size]
     weights[weights < 1e-12] = 0.0
     return weights / weights.sum()
+
+
+def _checked_share(uniform_share: object) -> float:
+    """Return ``uniform_share`` as a float, or refuse it with ValueError.
+
+    A non-number, a bool, NaN and any value outside [0, 1] are refused.
+    """
+    if (
+        isinstance(uniform_share, bool)
+        or not isinstance(uniform_share, int | float)
+        or not 0 <= uniform_share <= 1
+    ):
+        raise ValueError(
+            f"uniform_share must be between 0 and 1, got {uniform_share!r}"
+        )
+    return float(uniform_share)
+
+
+def opponent_mixture(
+    scores: ArrayLike, uniform_share: float = 0.0
+) -> NDArray[np.float64]:
+    """Return the weights a PSRO round trains against.
+
+    The Nash mixture of the table (``nash_mixture``, no preference) with a
+    share of the weight spread evenly over every member: each member gets
+    ``(1 - uniform_share) * nash + uniform_share / n``. This follows the
+    exploration parameter gamma of Lanctot et al. (NeurIPS 2017), whose
+    projected replicator dynamics and decoupled meta-solvers keep every
+    member's weight above a floor of order gamma / n so the learner does not
+    overfit to the few members it meets. Their exact Nash solver has no
+    gamma; here the share is mixed into the exact Nash mixture.
+
+    Parameters
+    ----------
+    scores : array_like
+        Square table of shape ``(n, n)``, as ``nash_mixture`` takes it.
+    uniform_share : float, default=0.0
+        The share mixed in, between 0 and 1 (the role of Lanctot et al.'s
+        gamma). 0 returns the Nash mixture unchanged; 1 gives every member
+        ``1 / n``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Shape ``(n,)``, float64, nonnegative weights summing to 1. Every
+        member's weight is at least ``uniform_share / n``.
+
+    Raises
+    ------
+    ValueError
+        ``uniform_share`` is not a number, is a bool or NaN, or is outside
+        [0, 1]; or the table breaks ``nash_mixture``'s rules.
+
+    Examples
+    --------
+    One member beats the other every game; a share of 0.4 gives the loser 0.2:
+
+    >>> from marl_battlegrounds.training.psro import opponent_mixture
+    >>> opponent_mixture([[0.5, 1.0], [0.0, 0.5]], uniform_share=0.4)
+    array([0.8, 0.2])
+    """
+    share = _checked_share(uniform_share)
+    nash = nash_mixture(scores)
+    return (1.0 - share) * nash + share / nash.size
 
 
 def worst_case_score(scores: ArrayLike, weights: ArrayLike) -> float:
@@ -591,6 +659,7 @@ def train_psro(
     confirmation_seed: int = 20261023,
     eval_num_envs: int = 64,
     shortlist: int = 2,
+    uniform_share: float = 0.0,
 ) -> dict[str, Any]:
     """Run or continue one PSRO population and choose its entrant.
 
@@ -643,12 +712,23 @@ def train_psro(
     shortlist : int, default=2
         Rounds confirmed besides the last one: the best by routine candidate
         point margin. Zero or more.
+    uniform_share : float, default=0.0
+        Share of each round's training opponents spread evenly over every
+        population member, the rest by the Nash weights
+        (``opponent_mixture``; the role of Lanctot et al.'s gamma), between 0
+        and 1. Seeded members, scripted ones included, get at least
+        ``uniform_share / n`` of the training games each. It
+        changes only who the rounds train against: candidates and the entrant
+        stay plain Nash mixtures. Saved in ``settings.json`` only when above
+        0, so folders started before this setting existed still continue.
 
     Returns
     -------
     dict
         ``settings`` (as saved in ``settings.json``), ``rounds`` (the records
-        in ``rounds.json``) and ``entrant`` (the record in ``entrant.json``:
+        in ``rounds.json``; each round's ``opponent_weights`` are the weights
+        it trained against, ``uniform_share`` included) and ``entrant`` (the
+        record in ``entrant.json``:
         ``round``, ``members`` with their weights and actor folders relative
         to ``output_dir``, ``confirmation``, ``shortlist``,
         ``ledger_env_steps`` and ``budget_env_steps``).
@@ -657,8 +737,9 @@ def train_psro(
     ------
     ValueError
         The folder was started with other settings, a count is out of range,
-        ``payoff_maps`` is empty, a seeded name starts with ``psro-``, the
-        oracle is PQN-VDN with a decaying learning rate, no round fits the
+        ``uniform_share`` is not a number in [0, 1], ``payoff_maps`` is empty,
+        a seeded name starts with ``psro-``, the oracle is PQN-VDN with a
+        decaying learning rate, no round fits the
         budget, or a round's folder stopped before its first save (delete
         that folder and call again). All but the last are raised before any
         file is written or game played.
@@ -693,6 +774,7 @@ def train_psro(
         raise ValueError("round_env_steps and eval_num_envs must be positive")
     if shortlist < 0:
         raise ValueError("shortlist must be zero or more")
+    share = _checked_share(uniform_share)
     if not payoff_maps:
         raise ValueError("payoff_maps needs at least one map")
     if config.pqn is not None and config.pqn.lr_linear_decay:
@@ -743,6 +825,8 @@ def train_psro(
         "eval_num_envs": eval_num_envs,
         "shortlist": shortlist,
     }
+    if share:
+        saved["uniform_share"] = share
     settings_path = output_dir / "settings.json"
     if settings_path.exists():
         if json.loads(settings_path.read_text(encoding="utf-8")) != saved:
@@ -842,7 +926,7 @@ def train_psro(
                 rounds[-1]["last"] = True
                 save_rounds()
                 break
-            weights = nash_mixture(score_table(population, results()))
+            weights = opponent_mixture(score_table(population, results()), share)
             number = len(rounds) + 1
             entry = {
                 "round": number,

@@ -119,6 +119,7 @@ psro:
   confirmation_seed: 20261023
   eval_num_envs: 64
   shortlist: 2
+  uniform_share: 0.0
 output_dir: ???
 hydra:
   job:
