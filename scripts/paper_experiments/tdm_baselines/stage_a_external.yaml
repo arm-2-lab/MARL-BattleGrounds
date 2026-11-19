@@ -1,0 +1,1250 @@
+# Stage A of the Team Deathmatch settings search, external card: recurrent MAPPO and feedforward IPPO.
+#
+# Each case runs 40,108,032 steps on seeds 20261211, 20261212 and 20261213. The reference row
+# is the method's final recipe from the six-method search; every other row changes the PPO
+# settings its id names. Training opponents are weights (training normalizes them): 60% the
+# learner itself, 20% its 12 newest saved copies, 15% the six learned teams at 40,108,032 steps
+# and 5% the three scripted bots. The validation set is the six teams' saves near 80M, on maps
+# 42 to 46. Prepare it with prepare.py protocol=declared_study before starting it; preparation
+# checks the opponent bundle against opponents.yaml beside this file.
+schema_version: 1
+name: Team Deathmatch Settings Search Stage A External Card
+failure_policy: continue
+resources:
+  devices:
+  - device: GPU-8dcabaa4-3802-4240-98e3-6ddebbc6239d
+    max_workers: 1
+cases:
+- id: mappo-reference
+  seeds: &id001
+  - 20261211
+  - 20261212
+  - 20261213
+  runtime:
+    validation_opponents: &id002
+    - season0-recurrent-ippo-step-79872000
+    - season0-recurrent-mappo-step-79872000
+    - season0-feedforward-ippo-step-79872000
+    - season0-feedforward-mappo-step-79872000
+    - season0-qmix-step-79478784
+    - season0-pqn-vdn-step-78741504
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-reference
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-epochs-10
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 10
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-epochs-10
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 10
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-clip-1e-1
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.1
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-clip-1e-1
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.1
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-epochs-10-clip-1e-1
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 10
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.1
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-epochs-10-clip-1e-1
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 10
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.1
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-minibatches-1
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 1
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-minibatches-1
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 1
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-minibatches-4
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 4
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-minibatches-4
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 4
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-entropy-3e-3
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.003
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-entropy-3e-3
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.003
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-entropy-3e-2
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.03
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-entropy-3e-2
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.03
+      value_coefficient: 0.5
+      max_grad_norm: 0.5
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: mappo-grad-limit-10
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: mappo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 10.0
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all
+- id: ff_ippo-grad-limit-10
+  seeds: *id001
+  runtime:
+    validation_opponents: *id002
+  config:
+    total_env_steps: 40108032
+    curriculum: false
+    score_threshold_curriculum: false
+    red_zone_depth: 5.0
+    shaping: false
+    opponents:
+      self: 36
+      past: 12
+      season0-recurrent-ippo-step-40108032: 1.5
+      season0-recurrent-mappo-step-40108032: 1.5
+      season0-feedforward-ippo-step-40108032: 1.5
+      season0-feedforward-mappo-step-40108032: 1.5
+      season0-qmix-step-40108032: 1.5
+      season0-pqn-vdn-step-40108032: 1.5
+      tdm-alpha: 1
+      tdm-beta: 1
+      tdm-gamma: 1
+    keep_past: 12
+    past_capture_interval: 1376256
+    validation_maps:
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    validation_fractions:
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1.0
+    routine_seed_pairs: 4
+    confirmation_seed_pairs: 8
+    metrics: priority
+    recording: false
+    retain_all_actors: true
+    method: ff_ippo
+    reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
+    checkpoint_interval_updates: 25
+    num_envs: 512
+    ppo:
+      actor_lr: 0.0001
+      critic_lr: 0.00025
+      rollout_length: 32
+      epochs: 4
+      minibatches: 2
+      groups: 2
+      gamma: 0.999
+      gae_lambda: 0.95
+      clip_epsilon: 0.2
+      entropy_coefficient: 0.01
+      value_coefficient: 0.5
+      max_grad_norm: 10.0
+      adam_epsilon: 1.0e-05
+      input_scale: 0.01
+      spawn_frame: left
+      value_normalization: true
+      parameter_sharing: all

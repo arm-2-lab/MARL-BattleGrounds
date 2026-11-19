@@ -1,0 +1,103 @@
+# Expected opponents for the Team Deathmatch settings search.
+#
+# prepare.py protocol=declared_study checks every member of the opponent
+# bundle (pool.json and its model folders) against this list, in order.
+# training: Season 0's six learned teams at 40,108,032 steps and the three
+# scripted bots. validation: the same six teams at their last save at or
+# before 80,216,064 steps, on validation maps 42 to 46.
+schema_version: 1
+name: Team Deathmatch Settings Search Opponents
+members:
+  - name: season0-recurrent-ippo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 0e3d3c4ba9de2177a9d49ea188c3f2d7dd3b31e5f716ca32644fea3d12ed7ac6
+    inference_digest: d6a146d22c16e071776e0e838063321011e11be51e3c99bb3f9d1dff7a2d0ecf
+    source_checkpoint_id: 647a9c0490c8059f380ddb89f6740745294c4130089b119b6199cd8c60f547f3
+  - name: season0-recurrent-mappo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 4281b2cf93136b160e3b05900bfaabf16e59878bf3253f31c2e134c033b3efb6
+    inference_digest: 4b198c723f3c097d9f9b3339168dff10553df9ff2ab30247652bc6a4821151d7
+    source_checkpoint_id: 3ab90330fcadcc94be85bde0549adc722d4eaae969b6179d2059f2970b6d84cf
+  - name: season0-feedforward-ippo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 709a5500794bd04bae5120034fd8ade807e3b3787af743e047723a2f2e38da38
+    inference_digest: e0668935f3299d6c30833497e87bc738ce786ad7652f9e2f7a40160bcbc7bd06
+    source_checkpoint_id: 50e3eb1d1ec10526614ba75c9f8d12e8b17f715dd9debca93b3f7ee0299e868c
+  - name: season0-feedforward-mappo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 2586a19736e04025913738a0b11475ff1212ff739049834b07c726c2c5962078
+    inference_digest: dbed3969b876d961a2e0d05d7b94baaa0a07a96fa7f6c9a54e355d87022a63c2
+    source_checkpoint_id: f5879f3358bc3be0b5dcf8d7d1242df0e73e0e1a2c06fdd1c33e9afea9d66a71
+  - name: season0-qmix-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 036fade21754ba51f3dbfd572e8beafbf6cbbb202c0cf81cc4bad34b2313697c
+    inference_digest: 40f939c97c64e8277467b480181278ac11d118ca6a2fa2cba890d1ce14947734
+    source_checkpoint_id: 6c58c396d17a88b1bec318c720c1eea8445702cd443ff4a830f9fda7a2962ef5
+  - name: season0-pqn-vdn-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: d8f5cddf535b5952c5fd1fbd8971cb6a0d3269d963347482f2745a048feb8be0
+    inference_digest: f743280a671fa9f943047ff4c97852ca5f8fe8aaccdce4973eabf879e7c5da8d
+    source_checkpoint_id: 3e831a581e8cf61b79bc96876cc9b82865d7730cfec5e84228c123a6e89cd9b0
+  - name: tdm-alpha
+    kind: scripted
+    roles: [training]
+  - name: tdm-beta
+    kind: scripted
+    roles: [training]
+  - name: tdm-gamma
+    kind: scripted
+    roles: [training]
+  - name: season0-recurrent-ippo-step-79872000
+    kind: actor
+    roles: [validation]
+    env_steps: 79872000
+    actor_export_id: 2625a934a487692a2762ebe7a44182890744e484b4dae65808a9aff5e56f3330
+    inference_digest: 7d984fba22e5d4b232adc513a5eaef71fd393e1748295dcf489414ba5513ec00
+    source_checkpoint_id: 4059c29baa4f497664e9e8572c0533b0fb80747b8e592e691d13d93668469968
+  - name: season0-recurrent-mappo-step-79872000
+    kind: actor
+    roles: [validation]
+    env_steps: 79872000
+    actor_export_id: 7e91bedffbfb3a080129cd8b1d20f9c9b9d27bc74c1ec5b2cea3b2f4f6460ea3
+    inference_digest: be9bfeb9ff0c9885f721610d21f7c85dc5c3ec50dabe2161566069eba96ff3ef
+    source_checkpoint_id: 7e5f29cce2ec512ec76bae92282bdb2c6da1bf57415f7f39b3db90c1fa8c82a3
+  - name: season0-feedforward-ippo-step-79872000
+    kind: actor
+    roles: [validation]
+    env_steps: 79872000
+    actor_export_id: 7788825f173cc386dc93beb5ba39cec6322db8001870ff61c4d4cff10cbed00d
+    inference_digest: 01b70c73c6dbc22f714bd00786b2130911f101ff8e956bc841a3779428bd0c4e
+    source_checkpoint_id: 4f0c568daf48f9dfe0e768477ecaf5b6d434e2bde02e18bd17fbc832135f309d
+  - name: season0-feedforward-mappo-step-79872000
+    kind: actor
+    roles: [validation]
+    env_steps: 79872000
+    actor_export_id: 7b8c65a28ed00a88b9bb5c434e069cc4b8021834d7ceac387bc96f57949cac29
+    inference_digest: 26ac248703e44ca0bc9814186b0469227d0688eb0667b0b94f2b08d7adcb576b
+    source_checkpoint_id: a387b60a85e0261a8d409c41be3086553e2c645b50c5a9e8ec6da4c84b64b023
+  - name: season0-qmix-step-79478784
+    kind: actor
+    roles: [validation]
+    env_steps: 79478784
+    actor_export_id: 2dcf08c7961bd7101ef14697560b3a648870785641e14af7ec299d9a8149264e
+    inference_digest: 188a0e9691aaf1c4e62d39bdde0ae5013d585e1b3cf8ea7120dcd499fd6b98ad
+    source_checkpoint_id: 2b9850871e49450c1f82fca699e4c0cada7b3bbf39055308b24d93cb2e0d3d28
+  - name: season0-pqn-vdn-step-78741504
+    kind: actor
+    roles: [validation]
+    env_steps: 78741504
+    actor_export_id: d6361b4298cdeb0cb122829f910daeddbb29f2ddc585088fc581ccf67bfb05b2
+    inference_digest: 18cd6ddc056adc2d8fd2106a04f47283144532ebf67642296b9d1922e07ac24f
+    source_checkpoint_id: 1811bf916dc6d9aab10dfc3fda18770021aedfe1f9c284a319d073b91088d8ca
