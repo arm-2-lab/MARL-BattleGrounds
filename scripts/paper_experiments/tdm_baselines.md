@@ -65,8 +65,10 @@ MAPPO learn from its team form; the others from its per-agent form.
 **The ramp.** The fixed learned opponents grow with the learner. A run meets each team's save at
 40,108,032 steps for its first 40,108,032 steps; then its later saves, switching at 40,108,032,
 60,162,048, 80,216,064 and 100,270,080 steps; and from 100,270,080 steps to the end, its save near
-120M. Each stage uses the team's last save at or before the step where that stage ends (the 60.2M
-stage, for example, uses each team's last save at or before 60,162,048):
+120M. Each of the first four stages uses the team's last save at or before the step where that stage
+ends (the stage from 40.1M to 60.2M, for example, uses each team's last save at or before 60,162,048);
+the last stage, from 100.3M to the end, uses each team's save near 120M. All are named in the table. A
+game already under way when a stage switches finishes against its old save.
 
 | Team | First Stage | From 40.1M | From 60.2M | From 80.2M | From 100.3M |
 | --- | ---: | ---: | ---: | ---: | ---: |
