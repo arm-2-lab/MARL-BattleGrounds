@@ -84,7 +84,8 @@ are never met in training. A 40M search run meets only the first stage. PSRO's p
 the first stage's teams and the three scripted bots, and its own growing population is its ramp.
 [`tdm_baselines/opponents.yaml`](tdm_baselines/opponents.yaml) lists the search's fixed opponents and
 validation teams (the first-stage saves, the three bots and the saves near 80M) by exact step and actor
-digest; the final runs' list joins it before the first final run. Each is the six-method search's released model at
+digest; [`tdm_baselines/final/opponents.yaml`](tdm_baselines/final/opponents.yaml) lists the final runs'
+(the five stages' saves, the three bots and the leaderboard saves) the same way. Each is the six-method search's released model at
 that exact step (for example `models/step-040_108_032.zip`, not the `@40M` name, which loads an earlier
 save). Compare them by actor digest: a save can carry another checkpoint ID when a continuation exported
 the same policy again.
@@ -169,8 +170,11 @@ method's search compute is reported in card hours.
 
 Ten runs per method on seeds 20261201 to 20261210, 250,675,200 steps each, with the opponents and
 validation set above. Each method's recipe is its packaged default (its six-method tournament run's
-settings) with any change that passed here; the new three take their stage B picks. A final run is never
-paused. A crashed run of one of the four PPO methods resumes once from its last save (their resume is
+settings, except PQN-VDN's learning rate: see Decisions During the Experiment) with any change that
+passed here; the new three take their stage B picks. Each method's ten runs are declared in
+`tdm_baselines/final/<method>.yaml` (for example [`final/qmix.yaml`](tdm_baselines/final/qmix.yaml));
+each run starts as its own one-seed study on whichever card is free, from a file that differs only in
+the seed, the card and the name. A final run is never paused. A crashed run of one of the four PPO methods resumes once from its last save (their resume is
 checked exact on this game before the first final run, and listed below); a crashed run of the other five restarts from step 0 on its
 seed. Each run keeps an actor at every save (at most 409,600 steps apart for the PPO methods) and its
 learner state at its picked step and its last step. Every crash is listed below and counted in the
@@ -216,7 +220,11 @@ normal GPU mode; replaced by measured times as runs finish.
 
 ## Decisions During the Experiment
 
-None yet. Fixed before the first test game and listed here: the score's 0-to-1 scale; the games per
+- **PQN-VDN's learning rate**, before its first final run. PQN-VDN's learning rate falls linearly from
+  0.00025 to 0 over the whole run, its packaged default. The six-method run followed the same line from
+  40.1M on, after falling to about 0 over its first 40.1M, because its search run was planned as 40M.
+
+Fixed before the first test game and listed here: the score's 0-to-1 scale; the games per
 pairing; whether a team's score counts its games against its own method's other teams; the release of
 the results data; and whether scoring runs in the GPU's deterministic mode, so it repeats game for
 game.

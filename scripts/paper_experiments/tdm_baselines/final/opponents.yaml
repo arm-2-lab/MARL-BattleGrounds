@@ -1,0 +1,272 @@
+# Expected opponents for the Team Deathmatch final runs.
+#
+# prepare.py protocol=declared_study checks every member of the opponent
+# bundle (pool.json and its model folders) against this list, in order.
+# training: the ramp, five stages of Season 0's six learned teams (each
+# team's last save at or before 40,108,032; 60,162,048; 80,216,064;
+# 100,270,080; 120,324,096 steps), then the three scripted bots.
+# validation: the six teams' leaderboard saves, on validation maps 42 to 46.
+schema_version: 1
+name: Team Deathmatch Final Runs Opponents
+members:
+  - name: season0-recurrent-ippo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 0e3d3c4ba9de2177a9d49ea188c3f2d7dd3b31e5f716ca32644fea3d12ed7ac6
+    inference_digest: d6a146d22c16e071776e0e838063321011e11be51e3c99bb3f9d1dff7a2d0ecf
+    source_checkpoint_id: 647a9c0490c8059f380ddb89f6740745294c4130089b119b6199cd8c60f547f3
+  - name: season0-recurrent-mappo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 4281b2cf93136b160e3b05900bfaabf16e59878bf3253f31c2e134c033b3efb6
+    inference_digest: 4b198c723f3c097d9f9b3339168dff10553df9ff2ab30247652bc6a4821151d7
+    source_checkpoint_id: 3ab90330fcadcc94be85bde0549adc722d4eaae969b6179d2059f2970b6d84cf
+  - name: season0-feedforward-ippo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 709a5500794bd04bae5120034fd8ade807e3b3787af743e047723a2f2e38da38
+    inference_digest: e0668935f3299d6c30833497e87bc738ce786ad7652f9e2f7a40160bcbc7bd06
+    source_checkpoint_id: 50e3eb1d1ec10526614ba75c9f8d12e8b17f715dd9debca93b3f7ee0299e868c
+  - name: season0-feedforward-mappo-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 2586a19736e04025913738a0b11475ff1212ff739049834b07c726c2c5962078
+    inference_digest: dbed3969b876d961a2e0d05d7b94baaa0a07a96fa7f6c9a54e355d87022a63c2
+    source_checkpoint_id: f5879f3358bc3be0b5dcf8d7d1242df0e73e0e1a2c06fdd1c33e9afea9d66a71
+  - name: season0-qmix-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: 036fade21754ba51f3dbfd572e8beafbf6cbbb202c0cf81cc4bad34b2313697c
+    inference_digest: 40f939c97c64e8277467b480181278ac11d118ca6a2fa2cba890d1ce14947734
+    source_checkpoint_id: 6c58c396d17a88b1bec318c720c1eea8445702cd443ff4a830f9fda7a2962ef5
+  - name: season0-pqn-vdn-step-40108032
+    kind: actor
+    roles: [training]
+    env_steps: 40108032
+    actor_export_id: d8f5cddf535b5952c5fd1fbd8971cb6a0d3269d963347482f2745a048feb8be0
+    inference_digest: f743280a671fa9f943047ff4c97852ca5f8fe8aaccdce4973eabf879e7c5da8d
+    source_checkpoint_id: 3e831a581e8cf61b79bc96876cc9b82865d7730cfec5e84228c123a6e89cd9b0
+  - name: season0-recurrent-ippo-step-59801600
+    kind: actor
+    roles: [training]
+    env_steps: 59801600
+    actor_export_id: 24780fec486b2a72f679fe1b265972de15d751281b71bc2ffec45333a0194bfc
+    inference_digest: 88fe36e10137cdf0a13ca8e2c75851cac91f83beece74e32caed473970d11846
+    source_checkpoint_id: 3484ad26142454fcc8fe7d3f5b9135882e6768f30d5659eda870d70614a5e935
+  - name: season0-recurrent-mappo-step-59801600
+    kind: actor
+    roles: [training]
+    env_steps: 59801600
+    actor_export_id: 2557669cab6fff5c4900e32f8f6d25899e9582e44bb47eb0243eeb0bc0a836c0
+    inference_digest: bec9448e30d4616831c43afb9e5f9f2f37e6ec2fe74fb0d6dacc4dbd9c0d78ae
+    source_checkpoint_id: aa737ead61d2804e60c523a4e9263b7dfb8cffd5f466028123e00120276069aa
+  - name: season0-feedforward-ippo-step-59801600
+    kind: actor
+    roles: [training]
+    env_steps: 59801600
+    actor_export_id: d1876228e9c429c65d880b58bdb683591a44ab47d69773b1a06115b6af7afd25
+    inference_digest: 6f80df3035a0016418b590ce512bcc976c6482d6ce21c76e3161c041dd9b96bf
+    source_checkpoint_id: 66a771f2edb1736800e561014f0558766333269e7ab2f46d49add9e544ced17c
+  - name: season0-feedforward-mappo-step-59801600
+    kind: actor
+    roles: [training]
+    env_steps: 59801600
+    actor_export_id: 321a020cc63fcd7373e0a730e670747716bc91e45c219002eb1470731d456c4d
+    inference_digest: 829e1681f7158fbd97990edf4d559285c8bfb12261fe5e09b90f9328e703bbcd
+    source_checkpoint_id: 04eae3bb9154a5ca13444981ff677dc52b0fd7ede332a25b4fea98e648496ee0
+  - name: season0-qmix-step-59817984
+    kind: actor
+    roles: [training]
+    env_steps: 59817984
+    actor_export_id: 397aaf14c77b7d6cc861d0ba520b2c1652484b1b9b372ec70233b5d25db56644
+    inference_digest: 57b10c0b22915471e70d7cf8b64a908af55461ea76606ac1dd2b7f80c15b0a83
+    source_checkpoint_id: e9dcd8ab458f7699c9da5e231534ac4abcbc964e2162c8b72ab4676c9dcfe387
+  - name: season0-pqn-vdn-step-59080704
+    kind: actor
+    roles: [training]
+    env_steps: 59080704
+    actor_export_id: 8186b7f7ef9ab7c7fe812c06e838b19a20cde27c6b1dd210fc7a2d943effff92
+    inference_digest: f5511e06e18b2323d224112281c128befebc352ee242c6eac27eb12da65e3e69
+    source_checkpoint_id: 265cb8bb5e8beafeb6d302e2acece2e35403e9ed937995cb75e127b06a242f90
+  - name: season0-recurrent-ippo-step-79872000
+    kind: actor
+    roles: [training]
+    env_steps: 79872000
+    actor_export_id: 2625a934a487692a2762ebe7a44182890744e484b4dae65808a9aff5e56f3330
+    inference_digest: 7d984fba22e5d4b232adc513a5eaef71fd393e1748295dcf489414ba5513ec00
+    source_checkpoint_id: 4059c29baa4f497664e9e8572c0533b0fb80747b8e592e691d13d93668469968
+  - name: season0-recurrent-mappo-step-79872000
+    kind: actor
+    roles: [training]
+    env_steps: 79872000
+    actor_export_id: 7e91bedffbfb3a080129cd8b1d20f9c9b9d27bc74c1ec5b2cea3b2f4f6460ea3
+    inference_digest: be9bfeb9ff0c9885f721610d21f7c85dc5c3ec50dabe2161566069eba96ff3ef
+    source_checkpoint_id: 7e5f29cce2ec512ec76bae92282bdb2c6da1bf57415f7f39b3db90c1fa8c82a3
+  - name: season0-feedforward-ippo-step-79872000
+    kind: actor
+    roles: [training]
+    env_steps: 79872000
+    actor_export_id: 7788825f173cc386dc93beb5ba39cec6322db8001870ff61c4d4cff10cbed00d
+    inference_digest: 01b70c73c6dbc22f714bd00786b2130911f101ff8e956bc841a3779428bd0c4e
+    source_checkpoint_id: 4f0c568daf48f9dfe0e768477ecaf5b6d434e2bde02e18bd17fbc832135f309d
+  - name: season0-feedforward-mappo-step-79872000
+    kind: actor
+    roles: [training]
+    env_steps: 79872000
+    actor_export_id: 7b8c65a28ed00a88b9bb5c434e069cc4b8021834d7ceac387bc96f57949cac29
+    inference_digest: 26ac248703e44ca0bc9814186b0469227d0688eb0667b0b94f2b08d7adcb576b
+    source_checkpoint_id: a387b60a85e0261a8d409c41be3086553e2c645b50c5a9e8ec6da4c84b64b023
+  - name: season0-qmix-step-79478784
+    kind: actor
+    roles: [training]
+    env_steps: 79478784
+    actor_export_id: 2dcf08c7961bd7101ef14697560b3a648870785641e14af7ec299d9a8149264e
+    inference_digest: 188a0e9691aaf1c4e62d39bdde0ae5013d585e1b3cf8ea7120dcd499fd6b98ad
+    source_checkpoint_id: 2b9850871e49450c1f82fca699e4c0cada7b3bbf39055308b24d93cb2e0d3d28
+  - name: season0-pqn-vdn-step-78741504
+    kind: actor
+    roles: [training]
+    env_steps: 78741504
+    actor_export_id: d6361b4298cdeb0cb122829f910daeddbb29f2ddc585088fc581ccf67bfb05b2
+    inference_digest: 18cd6ddc056adc2d8fd2106a04f47283144532ebf67642296b9d1922e07ac24f
+    source_checkpoint_id: 1811bf916dc6d9aab10dfc3fda18770021aedfe1f9c284a319d073b91088d8ca
+  - name: season0-recurrent-ippo-step-99942400
+    kind: actor
+    roles: [training]
+    env_steps: 99942400
+    actor_export_id: c19ec4b38c43219c1f8e9b3ee49ffadbbd21f394ebe20aa22609897b69aa1801
+    inference_digest: 5cac185f70ce3f56118b6164b10b2af014d8e22c18f99a324250c1c0cd3307e4
+    source_checkpoint_id: dcbea37630ae720cecf06aea7d7278578bb15e97405fd4bf511b5044b087fa1c
+  - name: season0-recurrent-mappo-step-99942400
+    kind: actor
+    roles: [training]
+    env_steps: 99942400
+    actor_export_id: 3beb5eef70637f24ebc04e96539b23efda3ea00097d7c8e75a180e7fbe337054
+    inference_digest: 45875e22d3ba664ac77b3504434c8b96dcadfc0b4efaaa875bc5c4dddc845ef3
+    source_checkpoint_id: dc073779ad6dcde4bc8c899ba04c3e6982d86f04ac9f362d45a027f8c21bb66f
+  - name: season0-feedforward-ippo-step-99942400
+    kind: actor
+    roles: [training]
+    env_steps: 99942400
+    actor_export_id: ed4a6f83e285900441c90b798f71a173e05dd0ae5c16bf4910e5c469fe1896f8
+    inference_digest: fa523f2ea6c54ea699efe92c934ba64bb35f4f98c34a18b0040120a4ec597c9e
+    source_checkpoint_id: 150b9c5f8069f050a6093d4976a9ffc5abbe859b81dd1032d32fff9c4d93ac40
+  - name: season0-feedforward-mappo-step-99942400
+    kind: actor
+    roles: [training]
+    env_steps: 99942400
+    actor_export_id: fbecedfab3486b4e3631541d2981ef32bfeed1faad95351c1114e5d41c0f8d75
+    inference_digest: b790eea9d162fb173380471297f1e7c0334d270da2f66c4f58c96d25c5dcd0a9
+    source_checkpoint_id: 0562819f1fb29e9f5d0cf01be85b79bbb8ff8ad6e3d284e74c2189bdf01ce4a5
+  - name: season0-qmix-step-99950592
+    kind: actor
+    roles: [training]
+    env_steps: 99950592
+    actor_export_id: b3fddadf7b3561f68106e05b2f37b39035513e3609f86d0531706ce7e1bd1fac
+    inference_digest: 1848070097ee9b92e397aaa3f8db5b6bdd3803efb3db166ad8fc6d10dea71b3f
+    source_checkpoint_id: fe5d14671ccd00ce0d51a3e2826c6953a3f41b0d440bd2cdc555e1b384bfbda2
+  - name: season0-pqn-vdn-step-98402304
+    kind: actor
+    roles: [training]
+    env_steps: 98402304
+    actor_export_id: faf82fdb04776095569adb28191e2be60bfb603b6e4fcdf591c872b3d9129948
+    inference_digest: 185b4f70683245cc5821d371f2485222e84d20ab846796a93a01ae14e51d53f9
+    source_checkpoint_id: e27fbab9ab3dd5897eda20ccf5769fec992c60b7e83304170085c798c96d1b90
+  - name: season0-recurrent-ippo-step-120012800
+    kind: actor
+    roles: [training]
+    env_steps: 120012800
+    actor_export_id: 5687f11f166059b04d7c3be4d969a24ad721e27d442892a9a78325c6ad0fddc1
+    inference_digest: ee4c8c902852d8298b203d0dedc415ad0aaea15b27a65320ccc08ee715c90929
+    source_checkpoint_id: 5b0c4d9db29a05483b42f793f56dbd9eb2ef93575657b711d3f456498402522d
+  - name: season0-recurrent-mappo-step-120012800
+    kind: actor
+    roles: [training]
+    env_steps: 120012800
+    actor_export_id: 4dfb25da707ff5722940c80205c4c9538a92f0985ec62eb8238419f32e8707f6
+    inference_digest: b53fb7eedc633420f23ecb88e50244de12cbe769f09090888c6966f2fb7c0647
+    source_checkpoint_id: 58debbb0206ac08be444e4230ca20846c6537e9e2449f8a0cafb87563c5210a2
+  - name: season0-feedforward-ippo-step-120012800
+    kind: actor
+    roles: [training]
+    env_steps: 120012800
+    actor_export_id: 9f06451febc0bd209f8d79b318ed80577b059a651d85e269c3498c2b2a21a8bb
+    inference_digest: f71cdff7ba14b9a9fca598af2484affa6c94a07ee56d4e8ba76b9c20ba3b045d
+    source_checkpoint_id: 90e1ea6bf07a664bb6eada2f166fa1abe9676e4af6f2ef37e2875f41538ffa2a
+  - name: season0-feedforward-mappo-step-120012800
+    kind: actor
+    roles: [training]
+    env_steps: 120012800
+    actor_export_id: 3518bd4ff1b917e99b5a0712070a03b6f4fafffdce8ea95426bdcf4d97f383e6
+    inference_digest: 21b30980c89b3d89c053245f4ba85ee2407fbc6b1e011c7c22a0737ffabad2d5
+    source_checkpoint_id: 828bd3f278cbabce21597296618021b8bbfebf66cc94c280c48d658fd1ddd567
+  - name: season0-qmix-step-119611392
+    kind: actor
+    roles: [training]
+    env_steps: 119611392
+    actor_export_id: aff49b243d2946e79e7e88f77cd10189b06582cee750c6d3d66d9e596cad3451
+    inference_digest: 214367bdae55b1d6bec9f2465e9f87cc81b3de32b9a1e763ffd0100f5123c6ea
+    source_checkpoint_id: fc4c7c33f363ef3e7c1d13230f51a4838456774cb87f16efe900a003df935d2d
+  - name: season0-pqn-vdn-step-118063104
+    kind: actor
+    roles: [training]
+    env_steps: 118063104
+    actor_export_id: e6c799bb7591b0306f2dfa5c24ee997ebdaa78ac9ba07b630f3804a4690dba14
+    inference_digest: 096f9ce5817fba8774eb6651ce45e7c0e25182fdd6c851023d52b1f164842d34
+    source_checkpoint_id: 577d38f7eefdac58c082e1bcb5520ddc764337914a3205b09b4cc96fc737fe5e
+  - name: tdm-alpha
+    kind: scripted
+    roles: [training]
+  - name: tdm-beta
+    kind: scripted
+    roles: [training]
+  - name: tdm-gamma
+    kind: scripted
+    roles: [training]
+  - name: season0-recurrent-ippo-step-250675200
+    kind: actor
+    roles: [validation]
+    env_steps: 250675200
+    actor_export_id: 58a7409d0e491fa59abbe419b32047176898c08b94c8112c58ed3210bd3aad95
+    inference_digest: 06b6150d9645187105721922987ebc715828f5dc3339c81b6df83daca8b667b5
+    source_checkpoint_id: 76b55aa1d72003c22020d13872730d9cf6d96b50a6a936026287b7a35f0f3328
+  - name: season0-recurrent-mappo-step-219103232
+    kind: actor
+    roles: [validation]
+    env_steps: 219103232
+    actor_export_id: 8349ab483701e3ec139f6124d4ca85f64d58d86699af45bd1319b0aab00ae827
+    inference_digest: afb8883a990db2e7de45276e5f6425fc9a1805caa39c32ed37ed74c2dd33d55d
+    source_checkpoint_id: 01f7e47402a9ba3e6a17a302ad9f21e680647cbb75e0186c7f1ef12f67303174
+  - name: season0-feedforward-ippo-step-219103232
+    kind: actor
+    roles: [validation]
+    env_steps: 219103232
+    actor_export_id: f23c51cc33b25e74fc28b73a30507895a9df6a3ae6576872d667e65b90c872fa
+    inference_digest: bf12156ceac42a0fa36c83603beb29891483a00e5f05e79c6c065f1b8de5a44b
+    source_checkpoint_id: 83cc8f75bd015ea02ec977a4e446afbe3a4f247fddb604c42b60f8edcebc1952
+  - name: season0-feedforward-mappo-step-208568320
+    kind: actor
+    roles: [validation]
+    env_steps: 208568320
+    actor_export_id: 5cfdb9f2c31ee503b7545f3bc5b007cfda42a3e1b3fd7b04927da76bcdc0319c
+    inference_digest: fb3d4ad8acff5cc5bcb53be324a6e6f483ac917dde07282de3103130d37f5491
+    source_checkpoint_id: f2b2650e9f35e96296d8b70bb28043dd551cc11abd382c75b366e9e24528a6f4
+  - name: season0-qmix-step-219095040
+    kind: actor
+    roles: [validation]
+    env_steps: 219095040
+    actor_export_id: 0d2d437ecf2eedc0918fddd9d87a2726b85dd8294dd8c7cedd45ee5a0445db47
+    inference_digest: 46ed2b495578d99170f70c1003b8cbbd0fa2e46141f68406f9616ef3dc48ece9
+    source_checkpoint_id: c9a2ada94944055f57ebfafdc87245954bd270c603a48bbe1a634bf2761cf499
+  - name: season0-pqn-vdn-step-240156672
+    kind: actor
+    roles: [validation]
+    env_steps: 240156672
+    actor_export_id: f021750b04b377fec5e6a0b07024296d7bc129589d3804582e1addddb2769198
+    inference_digest: beee2dcd826a2c5e10f12592d7cd4afd283c1e4cdc884fbfa00804373d8e33a6
+    source_checkpoint_id: 8c1e52fbccfb238801b31041eb4df87cf6df38c62cc458e379c00d6224036f30
