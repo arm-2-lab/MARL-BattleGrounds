@@ -174,9 +174,9 @@ settings, except PQN-VDN's learning rate: see Decisions During the Experiment) w
 passed here; the new three take their stage B picks. Each method's ten runs are declared in
 `tdm_baselines/final/<method>.yaml` (for example [`final/qmix.yaml`](tdm_baselines/final/qmix.yaml));
 each run starts as its own one-seed study on whichever card is free, from a file that differs only in
-the seed, the card and the name. A final run is never paused. A crashed run of one of the four PPO methods resumes once from its last save (their resume is
-checked exact on this game before the first final run, and listed below); a crashed run of the other five restarts from step 0 on its
-seed. Each run keeps an actor at every save (at most 409,600 steps apart for the PPO methods) and its
+the seed, the card and the name. A final run is never paused. A crashed run of one of the four PPO methods resumes once from its last save, once their resume with
+the ramp is checked exact on this game and listed below; until then, and for the other five methods
+always, a crashed run restarts from step 0 on its seed. Each run keeps an actor at every save (at most 409,600 steps apart for the PPO methods) and its
 learner state at its picked step and its last step. Every crash is listed below and counted in the
 reported compute. All ten runs are reported, whatever they score.
 
