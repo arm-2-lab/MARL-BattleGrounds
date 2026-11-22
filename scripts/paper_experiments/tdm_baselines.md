@@ -223,6 +223,17 @@ normal GPU mode; replaced by measured times as runs finish.
 - **PQN-VDN's learning rate**, before its first final run. PQN-VDN's learning rate falls linearly from
   0.00025 to 0 over the whole run, its packaged default. The six-method run followed the same line from
   40.1M on, after falling to about 0 over its first 40.1M, because its search run was planned as 40M.
+- **Recurrent IPPO's setting**, after its rerun. In stage A two changes passed: 10 epochs with clip 0.1
+  (mean point margin +4.82 against the reference's -1.30, better on all 3 seeds) and 10 epochs alone
+  (+4.80). The joined row was rerun because its mean was higher, by 0.02 points, far less than the
+  noise; it also had the highest mean of all rows for recurrent and feedforward MAPPO. On the fresh
+  seeds it passed again: +5.36 against -1.91, better on all 3 seeds, and at least 10.5 kills a game
+  against every team of the validation set. Recurrent IPPO's final runs and PSRO's learner use 10 epochs
+  and clip 0.1. The rerun shows that the joined change beats the reference, not that clip 0.1 adds to 10
+  epochs. One stage A reference run (seed 20261213) had no confirmed check at 2 kills a game against
+  every team; counted at its best margin or left out, the same change passes.
+- **Feedforward IPPO's setting.** No change passed stage A; the closest, 10 epochs with clip 0.1, beat
+  the reference by 1.77 points. Its final runs use the reference.
 
 Fixed before the first test game and listed here: the score's 0-to-1 scale; the games per
 pairing; whether a team's score counts its games against its own method's other teams; the release of
