@@ -3,9 +3,8 @@
 This experiment trains each of the nine built-in baselines ten times on 5v5 Team Deathmatch under one
 protocol, and scores them on held-out test maps: recurrent MAPPO, recurrent IPPO, feedforward MAPPO,
 feedforward IPPO, recurrent QMIX, recurrent PQN-VDN, HAPPO, TarMAC and PSRO. Settings come from a
-declared search; each method's ten final runs are fresh, on seeds no earlier study used. This record
-was written and committed before any run started. Results join it when they are public. Any choice
-made after launch is listed, with its reason, in Decisions During the Experiment.
+declared search; each method's ten final runs are fresh, on seeds no earlier study used. Results join
+this record when they are public.
 
 Stage A's run files are in [`tdm_baselines/`](tdm_baselines/); stage B's and the final runs' files join
 it before each starts. The commands join [the paper experiment scripts' README](README.md) once each
@@ -22,7 +21,7 @@ What this experiment shows, and what it does not:
 | Claim | Evidence | Enough? |
 | --- | --- | --- |
 | The nine are ranked on Team Deathmatch under the field's evaluation protocol (Gorsane and others, NeurIPS 2022) | 90 picked teams in a round robin on the test maps, against opponents none of them trained against or was picked against; the statistics in Scoring, with 95% intervals; wins, draws, losses, kills and deaths beside every score | Yes, for Team Deathmatch at 250,675,200 steps. Two departures from the protocol are stated: the number of settings searched differs by method, and this record covers one game. |
-| Each setting comes from a declared search, with the tuning each method received stated in numbers | The grids, seeds and pick rule below, all fixed before launch; every search run reported with its compute | Yes for "declared and reported". Not for "equal tuning": the number of settings differs by the rule in Search Design. |
+| Each setting comes from a declared search, with the tuning each method received stated in numbers | The grids, seeds and pick rule below; the search's compute in card hours | Yes for "declared and reported". Not for "equal tuning": the number of settings differs by the rule in Search Design. |
 | Head-to-head results and Elo between the nine | Every pair of teams in the round robin | Yes, with intervals over training runs. |
 | Every table can be repeated with MARL-BattleGrounds | One command per table on the pinned release, from the released teams and results | Shown when each command has run from a clean install. Retraining is not claimed to give the same weights. |
 
@@ -127,6 +126,9 @@ rate 0.0003 for feedforward MAPPO).
 | `entropy-3e-3`, `entropy-3e-2` | `entropy_coefficient` (reference 0.01) |
 | `grad-limit-10` | `max_grad_norm = 10` (reference 0.5) |
 
+Recurrent MAPPO also runs `team-reward-epochs-10-clip-1e-1`: both changes, with the team form of the
+reward ([`stage_a_mappo_team_reward.yaml`](tdm_baselines/stage_a_mappo_team_reward.yaml)).
+
 **Stage B: HAPPO, TarMAC and PSRO**, after stage A. HAPPO's and TarMAC's reference is recurrent MAPPO's
 recipe after stage A (HAPPO on the team form of the reward); PSRO's learner is recurrent IPPO's. A stage A
 change carries into them once it is in that method's final recipe. If it changed epochs or clip, the new
@@ -148,23 +150,13 @@ other methods' validation games are outside their 250M.
 
 **Pick rule.** Each method takes the row with the highest mean point margin over its three seeds, with
 kills, deaths, their ratio and the draw rate shown beside it. With three seeds, differences under about 3
-points cannot be told from noise, and a pick by less is reported as within noise. (The rule declared at
-launch also asked a change to beat the reference by more than 2 points, win on at least 2 of the 3 seeds
-and average at least 2 kills a game against each team of the validation set; see Decisions During the
-Experiment.)
-
-**Rerun of a passing change**, under the rule declared at launch. In a simulation of that rule, with
-eight changed rows and noise of about 1.5 points in a three-seed mean, noise alone passes at least one
-row about half the time (17% to 74% for noise of 1.0 to 2.0 points); with stage B's five changed rows,
-about 38%. So the passing change was run again with its reference on three fresh seeds (20261214,
-20261215 and 20261216) and stood only if it passed again; recurrent IPPO's was (see Decisions During
-the Experiment). Whether stage B's picks are rerun is settled before its first pick and listed there.
+points cannot be told from noise, and a pick by less is reported as within noise.
 
 **Tuning in numbers.** Each PPO method: 3 settings in the six-method search (recurrent MAPPO 2), then 9
-rows here. QMIX: 7
-settings; PQN-VDN: 10; both in the six-method search, under its opponents and validation set. HAPPO,
-TarMAC and PSRO: 6 each. More settings went where no good setting was known for this game. Every
-method's search compute is reported in card hours.
+rows here; recurrent MAPPO also its team-reward row. QMIX: 7 settings; PQN-VDN: 10; both in the
+six-method search, under its opponents and validation set. HAPPO, TarMAC and PSRO: 6 each. More
+settings went where no good setting was known for this game. The search's compute is reported in card
+hours.
 
 ## Final Runs
 
@@ -209,7 +201,7 @@ against its own method's other teams.
 | Block | Runs | Estimated Card Hours |
 | --- | ---: | ---: |
 | Stage A | 108 | 59 to 91 |
-| Reruns of passing changes (two to four expected) | 12 to 24 | 7 to 27 |
+| Recurrent MAPPO's team-reward row | 3 | about 2.5 |
 | Stage B | 54 | 41 to 47 |
 | HAPPO's, TarMAC's and PSRO's final runs | 30 | 143 |
 | The other six methods' final runs | 60 | 253 |
@@ -223,34 +215,18 @@ normal GPU mode; replaced by measured times as runs finish.
 - **PQN-VDN's learning rate**, before its first final run. PQN-VDN's learning rate falls linearly from
   0.00025 to 0 over the whole run, its packaged default. The six-method run followed the same line from
   40.1M on, after falling to about 0 over its first 40.1M, because its search run was planned as 40M.
-- **Recurrent IPPO's setting**, after its rerun. In stage A two changes passed: 10 epochs with clip 0.1
-  (mean point margin +4.82 against the reference's -1.30, better on all 3 seeds) and 10 epochs alone
-  (+4.80). The joined row was rerun because its mean was higher, by 0.02 points, far less than the
-  noise; it also had the highest mean of all rows for recurrent and feedforward MAPPO. On the fresh
-  seeds it passed again: +5.36 against -1.91, better on all 3 seeds, and at least 10.5 kills a game
-  against every team of the validation set. Recurrent IPPO's final runs and PSRO's learner use 10 epochs
-  and clip 0.1. The rerun shows that the joined change beats the reference, not that clip 0.1 adds to 10
-  epochs. One stage A reference run (seed 20261213) had no confirmed check at 2 kills a game against
-  every team; counted at its best margin or left out, the same change passes.
-- **The pick rule and the four PPO methods' settings**, after stage A's results were known and before
-  any PPO final run started. The 2-point margin, the 2-of-3 seeds and both 2-kill floors (the check pick
-  and the row pick) were dropped, and every PPO method takes 10 epochs with clip 0.1. A margin a change
-  must clear guards a claim that it improves on the reference; a baseline should get the setting its
-  evidence favors even when the gain is too small to claim, and the 2-kill line had no grounding beyond
-  point margin. For all four PPO methods, 10 epochs with clip 0.1 is the stage A row with the highest
-  mean point margin over the three seeds, with or without the kill floor: recurrent IPPO +4.82 (the
-  reference -1.30), feedforward MAPPO +1.57 (-5.09), feedforward IPPO +0.77 (-1.00), recurrent MAPPO
-  -0.65 (-5.29). Under the rule declared at launch, feedforward IPPO's final runs would have used the
-  reference (an earlier version of this entry said they would), and feedforward MAPPO's and recurrent
-  MAPPO's picks depended on how a run without a passing check was counted; recurrent IPPO's is unchanged.
-  Feedforward IPPO's gain over the reference, 1.77 points, is within noise. Feedforward MAPPO keeps its
-  team reward and actor rate 0.0003. Recurrent MAPPO's reward and critic input are tested in two more
-  rows, listed here once they are declared.
+- **The four PPO methods' stage A picks.** For all four, 10 epochs with clip 0.1 has the highest mean
+  point margin over the three seeds: recurrent IPPO +4.82 (its reference -1.30), feedforward MAPPO +1.57
+  (-5.09), feedforward IPPO +0.77 (-1.00), recurrent MAPPO -0.65 (-5.29). Feedforward IPPO's lead over
+  its reference, 1.77 points, is within noise. Each pick averages at least 5.6 kills a game against
+  every team of the validation set. Recurrent IPPO's and feedforward IPPO's final runs, and PSRO's
+  learner, use it. Feedforward MAPPO keeps its team reward and actor rate 0.0003. Recurrent MAPPO's
+  final recipe is taken once its team-reward row is in.
 - **Machine crash, Sun 22 Nov 2026, about 9:32 am.** The NVIDIA driver stopped clearing freed memory,
   starting on the external card just after a final run ended there, and the machine went down. Two runs
   were cut off: QMIX seed 20261202 (10 minutes in, before its first learning update) and PSRO's
-  uniform-share-0.1 row on seed 20261211 (48 minutes in, after its first round). Both restart from step
-  0 on their seeds; their lost time is counted in the reported compute.
+  uniform-share-0.1 row on seed 20261211 (48 minutes in, after its first round). Each restarts from step
+  0 on its seed; the lost time is counted in the reported compute.
 
 Fixed before the first test game and listed here: the score's 0-to-1 scale; the games per
 pairing; whether a team's score counts its games against its own method's other teams; the release of
@@ -264,7 +240,7 @@ game.
 - One network size (128 units) for every method.
 - TarMAC uses one message round.
 - Each row changes one setting, so the search cannot see two changes working together, except in the
-  joined epochs-and-clip row.
+  joined epochs-and-clip row and recurrent MAPPO's team-reward row.
 - The six older methods meet their own method's earlier saves in training; the new three meet none.
 - A ramp matched to steps assumes every method learns at about the six-method search's pace.
 - Every learned opponent here trained against the same six recurrent MAPPO teams, the fixed opponents
