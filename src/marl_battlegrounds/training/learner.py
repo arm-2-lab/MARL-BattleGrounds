@@ -657,7 +657,7 @@ default="mappo"
     return collection, state
 
 
-def _local_critic_network_values(
+def _actor_view_critic_values(
     params: Tree,
     memory: Tree,
     observations: Observations,
@@ -667,26 +667,37 @@ def _local_critic_network_values(
     *,
     ppo: PPOConfig,
     method: str,
+    training_state: Array | None = None,
 ) -> tuple[Tree, Array]:
-    """Stream local critic values without expanding a complete actor rollout.
+    """Stream critic values that read each actor's own view, one time row at a time.
 
     observations and action_mask contain compact (T,B) Team A decision rows;
-    episode_start/valid are bool (T,B). params holds only local critic weights
-    and memory is its independent float32 (B,5,128) carry, or () for ff_ippo.
-    method selects ippo or ff_ippo. ppo fixes the actor's
-    scale and world/left frame, also used by this local critic. Return final
-    carry and raw float32 (T,B,5) network predictions. Expand at most one time
-    row's (B,5,F) permitted inputs; skip all-invalid rows and preserve their
-    carry. No privileged physical features, actor carry or extra actor call
-    enters this pure scan. Array shape/information contracts are preconditions.
+    episode_start/valid are bool (T,B). params holds the critic weights and
+    memory is its independent float32 (B,5,128) carry, or () for a feedforward
+    method. ppo fixes the actor's scale and world/left frame, also used by this
+    critic. Two critics use it:
+
+    - IPPO's local critic (method ippo or ff_ippo, training_state None) reads
+      only each actor's permitted view.
+    - An agent-specific MAPPO critic (ppo.agent_specific_state, a
+      centralized-critic method) also reads training_state, float32 (T,B,F_S)
+      physical features, one row per game, as in the MAPPO paper's
+      agent-specific global state.
+
+    Return final carry and raw float32 (T,B,5) network predictions. Expand at
+    most one time row's (B,5,F) permitted inputs; skip all-invalid rows and
+    preserve their carry. No actor carry or extra actor call enters this pure
+    scan, and privileged physical features enter only through training_state.
+    Array shape/information contracts are preconditions.
     """
     games = valid.shape[1]
 
     def row(
-        carry: Tree, data: tuple[Observations, ActionMask, Array, Array]
+        carry: Tree,
+        data: tuple[Observations, ActionMask, Array, Array, Array | None],
     ) -> tuple[Tree, Array]:
-        """Read a real decision row with independent local critic memory."""
-        compact, mask, starts, present = data
+        """Read a real decision row with independent critic memory."""
+        compact, mask, starts, present, physical = data
 
         def apply(_: None) -> tuple[Tree, Array]:
             """Expand only this row's permitted inputs and apply its saved frame."""
@@ -699,20 +710,28 @@ def _local_critic_network_values(
                     obstacle_partners=team_obstacle_partners(actors),
                 )
             features = encode_actor_inputs(actors)
+            # IPPO's critic reads the actor view alone; the agent-specific
+            # critic reads the game's physical row with the view beside it.
+            critic, own = (features, None) if physical is None else (physical, features)
             live = jnp.broadcast_to(present[:, None], (games, 5))
             if is_recurrent_method(method):
                 resets = jnp.broadcast_to(starts[:, None], (games, 5))
                 after, values = cast(
                     tuple[Array, Array],
                     RecurrentValueNet(input_scale=ppo.input_scale).apply(
-                        params, carry, features[None], resets[None], live[None]
+                        params,
+                        carry,
+                        critic[None],
+                        resets[None],
+                        live[None],
+                        None if own is None else own[None],
                     ),
                 )
                 return after, jnp.where(live, values[0], 0.0)
             values = cast(
                 Array,
                 FeedForwardValueNet(input_scale=ppo.input_scale).apply(
-                    params, features
+                    params, critic, own
                 ),
             )
             return (), jnp.where(live, values, 0.0)
@@ -723,7 +742,11 @@ def _local_critic_network_values(
             lambda _: (carry, jnp.zeros((games, 5), jnp.float32)),
         )
 
-    return jax.lax.scan(row, memory, (observations, action_mask, episode_start, valid))
+    return jax.lax.scan(
+        row,
+        memory,
+        (observations, action_mask, episode_start, valid, training_state),
+    )
 
 
 def _feedforward_physical_values(
@@ -731,7 +754,9 @@ def _feedforward_physical_values(
 ) -> tuple[tuple[()], Array]:
     """Value each physical game row once and share its value across five actors.
 
-    params is a feedforward MAPPO critic tree; features is float32 (T,B,F_S),
+    params is a shared-state feedforward MAPPO critic tree (without
+    PPOConfig.agent_specific_state, whose critic build_ppo_batch streams
+    through _actor_view_critic_values instead); features is float32 (T,B,F_S),
     F_S being the run's training-state width (920 or 973),
     valid is bool (T,B) and input_scale is the saved positive multiplier.
     Return empty memory and float32 (T,B,5) raw network predictions, zero on
@@ -770,7 +795,10 @@ def build_ppo_batch(
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
 default="mappo"
         Static initialized method. IPPO reconstructs only permitted local inputs,
-        using the actor's saved frame and the critic's independent memory.
+        using the actor's saved frame and the critic's independent memory. A
+        centralized-critic method with ppo.agent_specific_state reconstructs
+        the same inputs and gives each critic row its own beside the physical
+        view.
 
     Returns
     -------
@@ -819,10 +847,14 @@ default="mappo"
         else ()
     )
 
+    # Critics that read each actor's own view (IPPO's local critic, or an
+    # agent-specific MAPPO critic) stream it one time row at a time.
+    actor_view = uses_local_critic(method) or ppo.agent_specific_state
+
     def values(_: None) -> tuple[Tree, Array, Array]:
         """Read the sequence and value its successor without retaining that carry."""
-        if uses_local_critic(method):
-            memory, old = _local_critic_network_values(
+        if actor_view:
+            memory, old = _actor_view_critic_values(
                 state.critic_params,
                 critic_memory,
                 rows.observations,
@@ -831,6 +863,7 @@ default="mappo"
                 rows.valid,
                 ppo=ppo,
                 method=method,
+                training_state=physical,
             )
         elif is_recurrent_method(method):
             memory, old = _critic_network_values(
@@ -857,8 +890,8 @@ default="mappo"
                 """Wrap the true successor as one compact time row."""
                 return value[None]
 
-            if uses_local_critic(method):
-                _unused_memory, final = _local_critic_network_values(
+            if actor_view:
+                _unused_memory, final = _actor_view_critic_values(
                     state.critic_params,
                     memory,
                     jax.tree.map(time_axis, rollout.final_observations),
@@ -867,6 +900,9 @@ default="mappo"
                     continues[None],
                     ppo=ppo,
                     method=method,
+                    training_state=jax.tree.map(
+                        time_axis, rollout.final_training_state
+                    ),
                 )
             elif is_recurrent_method(method):
                 _unused_memory, final = _critic_network_values(

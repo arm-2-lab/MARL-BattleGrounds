@@ -45,7 +45,9 @@ environment loop, checkpoint writer, curriculum or training run. initialize_ppo
 creates untrained actor/critic parameters and separate optimizer states.
 make_ppo_system exposes only actor parameters to evaluation; make_recurrent_mappo_system
 keeps its existing MAPPO interface. IPPO critics use each actor's permitted
-view. MAPPO critics use separate physical training data. HAPPO (method
+view. MAPPO critics use separate physical training data; with
+PPOConfig.agent_specific_state, a centralized critic also reads each actor's
+own permitted view (Yu et al.'s agent-specific global state). HAPPO (method
 "happo", Kuba et al., ICLR 2022) keeps recurrent MAPPO's networks, inputs and
 critic update and replaces the joint actor step with one actor group at a time
 (``_sequential_update``). TarMAC (method "tarmac", Das et al., ICML 2019, one
@@ -112,6 +114,9 @@ from marl_battlegrounds.baselines.config import (
     is_recurrent_method as is_recurrent_method,
 )
 from marl_battlegrounds.baselines.config import (
+    uses_local_critic as uses_local_critic,
+)
+from marl_battlegrounds.baselines.config import (
     validate_ppo_batch_size as validate_ppo_batch_size,
 )
 from marl_battlegrounds.baselines.config import (
@@ -173,15 +178,6 @@ _HAPPO_ORDER_TAG = 0x48415050
 # valid sender gets NaN weights unless a second mask follows the softmax; the
 # finite fill keeps both the value and the gradient finite on its own.
 _MASKED_SCORE = -1e9
-
-
-def uses_local_critic(method: str) -> bool:
-    """Return whether a checked PPO critic reads its own actor's permitted view.
-
-    IPPO methods use that local view; MAPPO methods use physical training state.
-    Invalid static method names raise ValueError before any device work.
-    """
-    return _METHODS[validate_ppo_method(method)][1]
 
 
 class ValueNormState(NamedTuple):
@@ -610,7 +606,11 @@ class PPOMinibatch(NamedTuple):
         Feedforward inputs instead have (G,Q,5,F), with Q selected time/game rows.
         FF-MAPPO also accepts compact critic features (G,Q,F): its network runs
         once per game row, then shares the prediction across five actor losses.
-        All following feedforward sample fields use the prefix (G,Q,5).
+        With PPOConfig.agent_specific_state, a centralized critic instead reads
+        compact physical features ((G,T,E,F) or (G,Q,F), one row per game) and
+        actor_features as each row's own view, so every actor row gets its own
+        prediction. All following feedforward sample fields use the prefix
+        (G,Q,5).
     action_mask : Array
         Boolean (G,T,E,5,198) exact combined action legality, in the actor's
         spawn frame.
@@ -746,23 +746,64 @@ class MLPTorso(nn.Module):
     layer_sizes: tuple[int, ...] = (HIDDEN_SIZE,)
 
     @nn.compact
-    def __call__(self, features: Array) -> Array:
+    def __call__(self, features: Array, own_view: Array | None = None) -> Array:
         """Map each feature row to 128 values without mixing rows.
 
         Parameters
         ----------
         features : Array
             Float32 (...,F) inputs. F must match the initialized weight width.
+        own_view : Array or None, default=None
+            Optional float32 (...,5,F_A) second input for an agent-specific
+            critic: each actor row's own permitted view. A separate bias-free
+            Dense layer, named "own_view", projects it to the first layer's
+            width and adds it before the first ReLU. As a function this equals
+            one Dense layer over the joined input, without storing that input;
+            the two weight blocks start separately orthogonal (gain root 2),
+            not as one orthogonal matrix over the joined width. features must
+            then omit the actor axis ((...,F), one row per game): its
+            projection is computed once and broadcast to own_view's rows (five,
+            or one in a HAPPO group pass). None, the default, adds no parameter
+            and leaves the computation unchanged.
 
         Returns
         -------
         Array
-            Float32 (...,layer_sizes[-1]) output after the dense layers and ReLU.
+            Float32 (...,layer_sizes[-1]) output after the dense layers and ReLU,
+            with own_view's actor axis when it is supplied.
+
+        Raises
+        ------
+        ValueError
+            own_view is None but the parameters hold an "own_view" weight, so
+            an agent-specific critic would silently run as a shared-state one.
+            The check reads only the parameter tree's structure, so it costs
+            nothing at run time. The opposite case (own_view supplied to
+            parameters without that weight) fails in Flax as a missing
+            parameter.
         """
-        for size in self.layer_sizes:
-            features = nn.relu(
-                nn.Dense(size, kernel_init=nn.initializers.orthogonal(2**0.5))(features)
+        if (
+            own_view is None
+            and not self.is_initializing()
+            and "own_view" in self.variables.get("params", {})
+        ):
+            raise ValueError(
+                "This critic was initialized with PPOConfig.agent_specific_state; "
+                "supply each row's own actor view (own_view)"
             )
+        for index, size in enumerate(self.layer_sizes):
+            features = nn.Dense(size, kernel_init=nn.initializers.orthogonal(2**0.5))(
+                features
+            )
+            if index == 0 and own_view is not None:
+                own = nn.Dense(
+                    size,
+                    use_bias=False,
+                    kernel_init=nn.initializers.orthogonal(2**0.5),
+                    name="own_view",
+                )(own_view)
+                features = features[..., None, :] + own
+            features = nn.relu(features)
         return features
 
 
@@ -1126,7 +1167,9 @@ class RecurrentValueNet(nn.Module):
     Carry and masks follow RecurrentActor. Features use (T,E,5,F), normally a
     temporary broadcast of one physical view per game for MAPPO (920 values in
     Team Deathmatch, 973 in other modes), or
-    each actor's 5165-value permitted view for IPPO. Output values
+    each actor's 5165-value permitted view for IPPO. An agent-specific MAPPO
+    critic (PPOConfig.agent_specific_state) reads both: the physical view and,
+    through own_view, each actor's own permitted view. Output values
     have shape (T,E,5). This module is never part of the actor-producing System.
     input_scale is a fixed positive finite real multiplier, default 1.0, applied
     before the first Dense layer. Use the same setting as the paired actor.
@@ -1136,7 +1179,12 @@ class RecurrentValueNet(nn.Module):
 
     @nn.compact
     def __call__(
-        self, carry: Array, features: Array, resets: Array, valid: Array
+        self,
+        carry: Array,
+        features: Array,
+        resets: Array,
+        valid: Array,
+        own_view: Array | None = None,
     ) -> tuple[Array, Array]:
         """Read a training-only feature sequence with separate critic memory.
 
@@ -1146,12 +1194,20 @@ class RecurrentValueNet(nn.Module):
             Float32 (E,5,128) critic memory before the sequence.
         features : Array
             Float32 (T,E,5,F) critic features: for MAPPO, F is 920 in Team
-            Deathmatch and 973 in other modes; for IPPO, 5165.
+            Deathmatch and 973 in other modes; for IPPO, 5165. With own_view,
+            the physical view is (T,E,F) instead, one row per game.
             The width must match the initialized critic. Actor code may not
             read this data.
         resets, valid : Array
             Boolean (T,E,5) episode-start and valid-decision flags. Resets occur
             before the GRU. Invalid rows retain their prior memory.
+        own_view : Array or None, default=None
+            For an agent-specific critic (PPOConfig.agent_specific_state),
+            float32 (T,E,5,5165) (one slot in a HAPPO group pass): row i holds
+            actor i's own permitted view, the same encoded input its actor
+            reads. input_scale applies to it too.
+            None is today's critic. Supply it exactly when the critic was
+            initialized with it.
 
         Returns
         -------
@@ -1169,7 +1225,8 @@ class RecurrentValueNet(nn.Module):
         scale = _input_scale(self.input_scale)
         if scale != 1.0:
             features = features * scale
-        embedding = MLPTorso(name="pre_torso")(features)
+            own_view = None if own_view is None else own_view * scale
+        embedding = MLPTorso(name="pre_torso")(features, own_view)
         carry, embedding = ScannedRNN()(carry, (embedding, resets, valid))
         embedding = MLPTorso(name="post_torso")(embedding)
         values = nn.Dense(1, kernel_init=nn.initializers.orthogonal(1.0))(embedding)
@@ -1222,17 +1279,25 @@ class FeedForwardValueNet(nn.Module):
     input_scale: float = 1.0
 
     @nn.compact
-    def __call__(self, features: Array) -> Array:
+    def __call__(self, features: Array, own_view: Array | None = None) -> Array:
         """Return float32 (...) values for float32 (...,F) critic feature rows.
 
         F must match the initialized width. Values use network units, which may
         be normalized by the learner. This pure application changes no memory,
         input or parameter. Invalid input_scale raises ValueError before use.
+        own_view, for an agent-specific critic (PPOConfig.agent_specific_state),
+        is float32 (...,5,5165), each actor row's own permitted view, scaled
+        like features. features is then (...,F), one row per game, and values
+        have the actor axis, one per row. None is today's critic; supply it
+        exactly when the critic was initialized with it.
         """
         scale = _input_scale(self.input_scale)
         if scale != 1.0:
             features = features * scale
-        embedding = MLPTorso((HIDDEN_SIZE, HIDDEN_SIZE), name="torso")(features)
+            own_view = None if own_view is None else own_view * scale
+        embedding = MLPTorso((HIDDEN_SIZE, HIDDEN_SIZE), name="torso")(
+            features, own_view
+        )
         return nn.Dense(1, kernel_init=nn.initializers.orthogonal(1.0))(embedding)[
             ..., 0
         ]
@@ -1340,6 +1405,9 @@ def initialize_ppo(
         Static optimizer and input-scale settings. The default uses the pinned
         donor settings. Scaling preserves the initialized parameter tree/bytes.
         TarMAC also reads messages, which changes no parameter shape.
+        agent_specific_state True adds one critic weight, "own_view"
+        (5165 x 128, bias-free), to the critic's first layer; False leaves the
+        critic tree and its initial values exactly as before.
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
 default="mappo"
         Static network choice. IPPO uses local critic inputs; feedforward methods
@@ -1418,7 +1486,16 @@ default="mappo"
                 else jax.vmap(actor_init)(jax.random.split(actor_key, 5))
             )
         critic = RecurrentValueNet(input_scale=config.input_scale).init(
-            critic_key, memory, jnp.zeros((1, 1, 5, critic_width)), starts, valid
+            critic_key,
+            memory,
+            jnp.zeros(
+                (1, 1, critic_width)
+                if config.agent_specific_state
+                else (1, 1, 5, critic_width)
+            ),
+            starts,
+            valid,
+            own_view=features if config.agent_specific_state else None,
         )
     else:
         actor_init = functools.partial(
@@ -1431,7 +1508,17 @@ default="mappo"
             else jax.vmap(actor_init)(jax.random.split(actor_key, 5))
         )
         critic = FeedForwardValueNet(input_scale=config.input_scale).init(
-            critic_key, jnp.zeros((1, 5, critic_width))
+            critic_key,
+            jnp.zeros(
+                (1, critic_width)
+                if config.agent_specific_state
+                else (1, 5, critic_width)
+            ),
+            own_view=(
+                jnp.zeros((1, 5, ACTOR_FEATURE_SIZE))
+                if config.agent_specific_state
+                else None
+            ),
         )
     actor_opt, critic_opt = _optimizers(config)
     return PPOTrainState(
@@ -2265,7 +2352,10 @@ def critic_values(
     Raises
     ------
     ValueError
-        input_scale is not a positive finite real number or is Boolean.
+        input_scale is not a positive finite real number or is Boolean, or
+        params belong to an agent-specific critic (PPOConfig.agent_specific_state),
+        which also needs each row's own actor view; the trainer computes its
+        values in training.learner.build_ppo_batch.
 
     Notes
     -----
@@ -2557,7 +2647,10 @@ def _critic_loss_with_metrics(
     the caller supplies physical MAPPO or actor-local IPPO features accordingly.
     Compact FF-MAPPO critic features have no actor axis. Broadcast predictions
     after the network, preserving each actor's own target, anchor and mask.
+    With config.agent_specific_state, the critic also reads batch.actor_features
+    as each row's own view, so its predictions already have the actor axis.
     """
+    own_view = batch.actor_features if config.agent_specific_state else None
     if is_recurrent_method(method):
         _, values = cast(
             tuple[Array, Array],
@@ -2567,13 +2660,14 @@ def _critic_loss_with_metrics(
                 batch.critic_features,
                 batch.episode_start,
                 batch.valid,
+                own_view,
             ),
         )
     else:
         values = cast(
             Array,
             FeedForwardValueNet(input_scale=config.input_scale).apply(
-                params, batch.critic_features
+                params, batch.critic_features, own_view
             ),
         )
         if method == "ff_mappo" and values.ndim == batch.old_values.ndim - 1:
@@ -2943,8 +3037,10 @@ def update_ppo(
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac"}, \
 default="mappo"
         Static actor/critic and minibatch choice. IPPO shares each selected
-        actor's encoded features with its separate local critic. TarMAC is
-        MAPPO's update with its actor replayed on the stored sender masks.
+        actor's encoded features with its separate local critic; with
+        config.agent_specific_state, a centralized critic reads them too,
+        beside the physical view. TarMAC is MAPPO's update with its actor
+        replayed on the stored sender masks.
 
     Returns
     -------
@@ -3113,12 +3209,14 @@ default="mappo"
         critic = features
         if batch.training_state is not None:
             physical = pick(batch.training_state)
+            # An agent-specific critic projects the physical view once per game
+            # and broadcasts the projection, so it takes the compact view.
             critic = (
                 jnp.broadcast_to(
                     physical[..., None, :],
                     (*features.shape[:-1], physical.shape[-1]),
                 )
-                if recurrent
+                if recurrent and not config.agent_specific_state
                 else physical
             )
         lane_shape = features.shape[:-1]

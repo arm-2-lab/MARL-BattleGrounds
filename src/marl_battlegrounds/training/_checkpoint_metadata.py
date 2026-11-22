@@ -431,6 +431,19 @@ def _config_messages(config: object) -> str:
     return tarmac_messages(_settings_block(config).get("messages", "attention"))
 
 
+def _config_agent_specific_state(config: object) -> bool:
+    """Read a saved learner config's agent-specific critic choice; absence is False.
+
+    config is a JSON learner config. Its settings block leaves out
+    "agent_specific_state" when it is False, so configs saved before the setting
+    existed read False. Raises ValueError for a value that is not a JSON bool.
+    """
+    value = _settings_block(config).get("agent_specific_state", False)
+    if type(value) is not bool:
+        raise ValueError("Saved agent_specific_state must be a bool")
+    return value
+
+
 def _actor_messages(details: dict[str, Any]) -> str:
     """Read a saved TarMAC message choice; absence is "attention".
 

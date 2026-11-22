@@ -188,7 +188,9 @@ def test_pqn_reward_scale_multiplies_the_rewards_one_update_learns_from() -> Non
 def test_saved_settings_keep_old_bytes_and_old_blocks_still_match() -> None:
     ppo = PPOConfig()
     assert saved_settings(ppo) == {
-        k: v for k, v in dataclasses.asdict(ppo).items() if k != "messages"
+        k: v
+        for k, v in dataclasses.asdict(ppo).items()
+        if k not in ("messages", "agent_specific_state")
     }
     old_qmix, old_pqn = (
         saved_settings(qmix.QMIXConfig()),

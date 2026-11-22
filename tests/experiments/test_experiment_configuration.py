@@ -223,9 +223,9 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
 
 def test_original_census_and_generated_presets_do_not_drift() -> None:
     # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale,
-    # PQN normalization, the validation map choice, the task and TarMAC's
-    # messages.
-    assert len(FIELDS) == 95
+    # PQN normalization, the validation map choice, the task, TarMAC's
+    # messages and the MAPPO critic's agent_specific_state.
+    assert len(FIELDS) == 96
     result = subprocess.run(
         [
             sys.executable,

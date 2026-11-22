@@ -19,3 +19,4 @@ ppo:
   spawn_frame: left
   value_normalization: true
   parameter_sharing: all
+  agent_specific_state: false

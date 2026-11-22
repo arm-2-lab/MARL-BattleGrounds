@@ -259,6 +259,7 @@ def test_the_capture_settings_are_the_recorded_ones() -> None:
         **settings["ppo"],
         "parameter_sharing": "all",
         "messages": "attention",
+        "agent_specific_state": False,
     }
     assert asdict(QMIXConfig(**settings["qmix"])) == {
         **settings["qmix"],

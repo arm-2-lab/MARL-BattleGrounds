@@ -906,8 +906,9 @@ def config_to_dict(config: TrainConfig) -> dict[str, Any]:
         qmix and pqn, so historical PPO bytes are unchanged; a QMIX config
         keeps only its resolved qmix settings and a PQN-VDN config only its
         resolved pqn settings, in the form ``baselines.config.saved_settings``
-        gives (PPO messages "attention", QMIX/PQN reward_scale 1.0 and PQN
-        normalization "batch_norm" are left out, so runs that do not use them
+        gives (PPO messages "attention", PPO agent_specific_state False,
+        QMIX/PQN reward_scale 1.0 and PQN normalization "batch_norm" are left
+        out, so runs that do not use them
         keep their historical bytes). red_zone_depth is always written as a JSON
         number such as 5.0 (map units; 0.0 means the Red Zone rule is off), so
         every new saved config states its scoring rule. The schema version

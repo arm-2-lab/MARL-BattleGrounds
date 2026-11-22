@@ -137,6 +137,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
     _check_context as _check_context,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
+    _config_agent_specific_state as _config_agent_specific_state,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
     _config_input_scale as _config_input_scale,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
@@ -1110,8 +1113,9 @@ def save_checkpoint(
         pass_id, policies, checkpoint_id and details from original registration.
     ppo : PPOConfig, default DEFAULT_PPO_CONFIG
         Existing numerical learner settings used by boundary validation. Its
-        input scale, spawn frame, value-normalization setting and TarMAC's
-        messages must equal the saved config's, and the state must carry
+        input scale, spawn frame, value-normalization setting, TarMAC's
+        messages and agent_specific_state must equal the saved config's, and
+        the state must carry
         matching statistics, else the save is refused before any file changes.
         The default's frame is "left".
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
@@ -1202,6 +1206,10 @@ def save_checkpoint(
             )
         if _config_messages(context["config"]) != ppo.messages:
             raise ValueError("Checkpoint config messages differs from PPO settings")
+        if _config_agent_specific_state(context["config"]) != ppo.agent_specific_state:
+            raise ValueError(
+                "Checkpoint config agent_specific_state differs from PPO settings"
+            )
         validate_learner(
             collection,
             cast("LearnerState", state),
@@ -1375,6 +1383,8 @@ def restore_checkpoint(
         Missing historical ppo.spawn_frame means "world" on both sides; a
         checkpoint saved in another frame must be resumed in that frame.
         Missing historical ppo.value_normalization means False on both sides.
+        Missing historical ppo.agent_specific_state means False on both sides;
+        an agent-specific critic resumes only with the choice on.
         Enabled checkpoints carry three scalar statistics; disabled checkpoints
         retain their historical array paths and payload keys.
         Missing validation_opponents and slot_diagnostic_actor mean None.

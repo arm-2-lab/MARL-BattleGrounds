@@ -26,7 +26,12 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-from marl_battlegrounds.baselines.config import PPOConfig, PQNConfig, QMIXConfig
+from marl_battlegrounds.baselines.config import (
+    PPOConfig,
+    PQNConfig,
+    QMIXConfig,
+    uses_local_critic,
+)
 from marl_battlegrounds.baselines.methods import TRAINING_METHODS, method_settings_field
 from marl_battlegrounds.training.config import TrainConfig
 from marl_battlegrounds.training.psro import train_psro
@@ -875,6 +880,10 @@ def presets() -> dict[str, dict[str, Any]]:
         if field == "ppo" and method != "tarmac":
             # Only TarMAC has a messages choice; other methods refuse one.
             del result[f"method/{method}.yaml"]["ppo"]["messages"]
+        if field == "ppo" and uses_local_critic(method):
+            # An IPPO critic reads only the actor's view, so it has no
+            # agent-specific state choice; centralized critics do.
+            del result[f"method/{method}.yaml"]["ppo"]["agent_specific_state"]
         result[f"recipe_settings/default_{method}.yaml"] = deepcopy(
             SELECTED_RECIPES[method]
         )
