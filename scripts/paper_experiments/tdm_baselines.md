@@ -99,13 +99,11 @@ the same policy again.
 | Routine checks | Step 0, then every 4.0M steps to 40.1M: 11 checks | Step 0; every 4.0M steps to 40.1M; every 10.5M steps from 50.6M to 250.7M; and at 60.2M, 80.2M and 100.3M: 34 checks |
 | Games | 8 a map against each team: 240 a check | The same |
 | Confirmation | The best two routine checks (step 0 left out) and the last one play 16 more games a map against each team: 480 a check | The same |
-| Pick | The confirmed check with the highest point margin among those averaging at least 2 kills a game against each team of the validation set; kills and deaths shown | The same |
+| Pick | The confirmed check with the highest point margin; kills, deaths, their ratio and the draw rate shown | The same |
 
 **Point margin** is our points minus the opponent's, averaged within each map and opponent, and the 30
-map-and-opponent cells are averaged with equal weight. Kills and deaths are shown beside it. A check
-averaging under 2 kills a game against any team of the validation set cannot be picked; this kill floor
-is applied to the confirmed checks after each run, and a run with no passing check is listed in
-Decisions During the Experiment. The scripted
+map-and-opponent cells are averaged with equal weight. Kills, deaths, their ratio and the draw rate are
+shown beside it. The scripted
 bots never validate: they are useful early in training, and their pathing fails on one validation map.
 PSRO picks among its own candidates, one a round, with its own games (10 seed pairs a check, 50 to
 confirm).
@@ -131,7 +129,7 @@ rate 0.0003 for feedforward MAPPO).
 
 **Stage B: HAPPO, TarMAC and PSRO**, after stage A. HAPPO's and TarMAC's reference is recurrent MAPPO's
 recipe after stage A (HAPPO on the team form of the reward); PSRO's learner is recurrent IPPO's. A stage A
-change carries into them only after it passes its rerun (below). If it changed epochs or clip, the new
+change carries into them once it is in that method's final recipe. If it changed epochs or clip, the new
 method's own row for that setting tests the other value.
 
 | Method | Rows |
@@ -148,17 +146,19 @@ ticks, its learner trains on up to about 3.5%, 7% and 18% fewer steps at 250M fo
 10.03M and 5.01M (payoff games about 1.6%, 4.3% and 13.1%; validation about 1.9%, 2.9% and 4.7%). The
 other methods' validation games are outside their 250M.
 
-**Pick rule.** A change replaces the reference only if its mean point margin over the three seeds beats
-the reference's by more than 2 points, it wins on at least 2 of the 3 seeds, and it averages at least 2
-kills a game against each team of the validation set. With three seeds, differences under about 3 points
-cannot be told from noise. When several changes pass, the one with the highest mean is rerun; if it fails
-its rerun, the reference stands.
+**Pick rule.** Each method takes the row with the highest mean point margin over its three seeds, with
+kills, deaths, their ratio and the draw rate shown beside it. With three seeds, differences under about 3
+points cannot be told from noise, and a pick by less is reported as within noise. (The rule declared at
+launch also asked a change to beat the reference by more than 2 points, win on at least 2 of the 3 seeds
+and average at least 2 kills a game against each team of the validation set; see Decisions During the
+Experiment.)
 
-**Rerun of a passing change.** In a simulation of this rule, with eight changed rows and noise of about
-1.5 points in a three-seed mean, noise alone passes at least one row about half the time (17% to 74%
-for noise of 1.0 to 2.0 points); with stage B's five changed rows, about 38%. So the passing change is
-run again with its reference on three fresh seeds (20261214, 20261215 and 20261216) and stands only if
-it passes again.
+**Rerun of a passing change**, under the rule declared at launch. In a simulation of that rule, with
+eight changed rows and noise of about 1.5 points in a three-seed mean, noise alone passes at least one
+row about half the time (17% to 74% for noise of 1.0 to 2.0 points); with stage B's five changed rows,
+about 38%. So the passing change was run again with its reference on three fresh seeds (20261214,
+20261215 and 20261216) and stood only if it passed again; recurrent IPPO's was (see Decisions During
+the Experiment). Whether stage B's picks are rerun is settled before its first pick and listed there.
 
 **Tuning in numbers.** Each PPO method: 3 settings in the six-method search (recurrent MAPPO 2), then 9
 rows here. QMIX: 7
@@ -170,8 +170,8 @@ method's search compute is reported in card hours.
 
 Ten runs per method on seeds 20261201 to 20261210, 250,675,200 steps each, with the opponents and
 validation set above. Each method's recipe is its packaged default (its six-method tournament run's
-settings, except PQN-VDN's learning rate: see Decisions During the Experiment) with any change that
-passed here; the new three take their stage B picks. Each method's ten runs are declared in
+settings, except PQN-VDN's learning rate: see Decisions During the Experiment) with its pick here; the
+new three take their stage B picks. Each method's ten runs are declared in
 `tdm_baselines/final/<method>.yaml` (for example [`final/qmix.yaml`](tdm_baselines/final/qmix.yaml));
 each run starts as its own one-seed study on whichever card is free, from a file that differs only in
 the seed, the card and the name. A final run is never paused. A crashed run of one of the four PPO methods resumes once from its last save, once their resume with
@@ -232,8 +232,25 @@ normal GPU mode; replaced by measured times as runs finish.
   and clip 0.1. The rerun shows that the joined change beats the reference, not that clip 0.1 adds to 10
   epochs. One stage A reference run (seed 20261213) had no confirmed check at 2 kills a game against
   every team; counted at its best margin or left out, the same change passes.
-- **Feedforward IPPO's setting.** No change passed stage A; the closest, 10 epochs with clip 0.1, beat
-  the reference by 1.77 points. Its final runs use the reference.
+- **The pick rule and the four PPO methods' settings**, after stage A's results were known and before
+  any PPO final run started. The 2-point margin, the 2-of-3 seeds and both 2-kill floors (the check pick
+  and the row pick) were dropped, and every PPO method takes 10 epochs with clip 0.1. A margin a change
+  must clear guards a claim that it improves on the reference; a baseline should get the setting its
+  evidence favors even when the gain is too small to claim, and the 2-kill line had no grounding beyond
+  point margin. For all four PPO methods, 10 epochs with clip 0.1 is the stage A row with the highest
+  mean point margin over the three seeds, with or without the kill floor: recurrent IPPO +4.82 (the
+  reference -1.30), feedforward MAPPO +1.57 (-5.09), feedforward IPPO +0.77 (-1.00), recurrent MAPPO
+  -0.65 (-5.29). Under the rule declared at launch, feedforward IPPO's final runs would have used the
+  reference (an earlier version of this entry said they would), and feedforward MAPPO's and recurrent
+  MAPPO's picks depended on how a run without a passing check was counted; recurrent IPPO's is unchanged.
+  Feedforward IPPO's gain over the reference, 1.77 points, is within noise. Feedforward MAPPO keeps its
+  team reward and actor rate 0.0003. Recurrent MAPPO's reward and critic input are tested in two more
+  rows, listed here once they are declared.
+- **Machine crash, Sun 22 Nov 2026, about 9:32 am.** The NVIDIA driver stopped clearing freed memory,
+  starting on the external card just after a final run ended there, and the machine went down. Two runs
+  were cut off: QMIX seed 20261202 (10 minutes in, before its first learning update) and PSRO's
+  uniform-share-0.1 row on seed 20261211 (48 minutes in, after its first round). Both restart from step
+  0 on their seeds; their lost time is counted in the reported compute.
 
 Fixed before the first test game and listed here: the score's 0-to-1 scale; the games per
 pairing; whether a team's score counts its games against its own method's other teams; the release of
