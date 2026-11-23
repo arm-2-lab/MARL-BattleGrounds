@@ -1904,8 +1904,9 @@ you rich team play with fast, cheap experiments on one GPU.
 
 Two teams of up to five agents fight on 52 hand-designed maps. Each agent is a
 Mage, Warrior, Hunter, Rogue or Priest, classes inspired by World of Warcraft®.
-Each class is built to help allies and counter enemies, so the team that best
-coordinates its specialists wins, not the team with the best individual agents.
+Each class is built to help allies and counter enemies, so the game is designed
+to reward the team that best coordinates its specialists, not the team with the
+best individual agents.
 
 Every entry on its [leaderboard]({RULES_URL}) gets the same budget on the same
 machine, so the leaderboard rewards methods that are efficient in both samples
