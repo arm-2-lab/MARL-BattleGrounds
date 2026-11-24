@@ -147,15 +147,11 @@ class TrainConfig:
         to the default PPOConfig() becomes PPOConfig(parameter_sharing="class"),
         one actor per class; any other ppo must set parameter_sharing "class"
         or "none" (one actor per slot), and "all" is refused. Class sharing
-        refuses a curriculum system roster that repeats a class. HAPPO's theory
-        assumes every actor gets the same team reward, as the native win/loss
-        reward and this recipe do:
-        ``marl_battlegrounds.training.reward_recipes:combat_support_team_reward``.
-        A per-agent reward still runs but breaks that assumption, and nothing
-        checks it. "tarmac" (TarMAC, Das et al., ICML 2019, one round) is
-        recurrent MAPPO's learner, critic and recipe with learned messages
-        between teammates: each actor reads, by attention, what its teammates
-        sent at the end of the last tick (rule 6, "Each Agent Decides Alone").
+        refuses a curriculum system roster that repeats a class. "tarmac"
+        (TarMAC, Das et al., ICML 2019, one round) is recurrent MAPPO's
+        learner, critic and recipe with learned messages between teammates:
+        each actor reads, by attention, what its teammates sent at the end of
+        the last tick (rule 6, "Each Agent Decides Alone").
         It needs parameter_sharing "all". ppo.messages picks "attention" (the
         paper), "mean" or "blocked" (its controls); every other method refuses
         a value other than "attention". TarMAC actors exchange messages, so

@@ -44,7 +44,7 @@ confirmation_seed_pairs: 8
 retain_all_actors: true
 seed: 20261002
 num_envs: 512
-reward: marl_battlegrounds.training.reward_recipes:combat_support_team_reward
+reward: marl_battlegrounds.training.reward_recipes:combat_support_reward
 ppo:
   actor_lr: 0.0001
   critic_lr: 0.00025

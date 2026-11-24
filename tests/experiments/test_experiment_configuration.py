@@ -5,10 +5,10 @@ The default recipe applies the settings of each method's tournament policy run
 settings, games, reward, the 250,675,200-transition budget with the lineage's
 30 check steps, and the search's past-copy, validation-map, seed-pair and
 actor-retention settings. The expected values below are those runs' saved
-settings, written out independently of the generator. HAPPO, which has no
-tournament run yet, takes recurrent MAPPO's recipe with the team reward and
-one actor per class; TarMAC, which has none either, takes recurrent MAPPO's
-recipe, seed and reward unchanged, and only its method group lists messages.
+settings, written out independently of the generator. HAPPO and TarMAC, which
+have no tournament run yet, take recurrent MAPPO's recipe, seed and reward
+unchanged; HAPPO's method group adds one actor per class and TarMAC's lists
+messages.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
 PQN normalization, TarMAC's messages, and validation_maps and task, whose
 defaults are left out of saved configs), eight method groups, complete pool
@@ -103,7 +103,7 @@ REWARD = {
     "ippo": PER_AGENT,
     "ff_mappo": TEAM,
     "ff_ippo": PER_AGENT,
-    "happo": TEAM,
+    "happo": PER_AGENT,
     "tarmac": PER_AGENT,
     "qmix": TEAM,
     "pqn_vdn": TEAM,

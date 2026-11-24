@@ -4,9 +4,9 @@ Run ``python scripts/dev/generate_experiment_configs.py`` from the checkout, or 
 ``--check`` to reject drift without writing. Requires the hydra extra. Only packaged
 YAML changes. This tool starts no numerical backend or training; software_check values
 exercise wiring and are not paper hyperparameters. The default recipe holds the settings
-of each method's tournament policy run (HAPPO, which has none yet, takes recurrent
-MAPPO's with the team reward and one actor per class; TarMAC, which has none yet,
-takes recurrent MAPPO's, reward included, so messages are its only difference)
+of each method's tournament policy run (HAPPO and TarMAC, which have none yet, take
+recurrent MAPPO's, reward included; HAPPO adds one actor per class and TarMAC its
+messages)
 (SELECTED_RECIPES;
 scripts/paper_experiments/hyperparameter_search.md, Final Policies): its seed, learner
 settings, games, reward and 250,675,200-transition budget, and the search's training and
@@ -112,14 +112,13 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
         "reward": _PER_AGENT_REWARD,
         "ppo": _PPO_SELECTED,
     },
-    # HAPPO has no tournament run yet, so it reuses recurrent MAPPO's recipe
-    # without tuning of its own, with the team reward HAPPO's theory assumes
-    # and one actor per class.
+    # HAPPO has no tournament run yet, so it reuses recurrent MAPPO's recipe,
+    # seed and reward without tuning of its own, with one actor per class.
     "happo": {
         **_TOURNAMENT_PROTOCOL,
         "seed": 20261002,
         "num_envs": 512,
-        "reward": _TEAM_REWARD,
+        "reward": _PER_AGENT_REWARD,
         "ppo": {**_PPO_SELECTED, "parameter_sharing": "class"},
     },
     # TarMAC has no tournament run yet, so it reuses recurrent MAPPO's recipe,
