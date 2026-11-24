@@ -4932,6 +4932,21 @@ class _Run:
                         for name in names
                     },
                 }
+                if self.config.method == "happo":
+                    # The factor each group trained with: one value per update.
+                    row.update(
+                        {
+                            name: float(np.asarray(getattr(metrics, name)).flat[0])
+                            if np.any(metrics.actor_samples)
+                            else None
+                            for name in (
+                                "factor_mean",
+                                "factor_std",
+                                "factor_min",
+                                "factor_max",
+                            )
+                        }
+                    )
                 self._write_update(row, summary)
                 del rollout, collected, result, next_state
                 self._collect_checkpoint_garbage()

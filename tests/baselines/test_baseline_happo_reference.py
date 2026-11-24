@@ -5,7 +5,10 @@ updated group had a sample, with every other step and game counting 1,
 matching a NumPy reference; with two gradient groups and two minibatches,
 under class and slot sharing, every group pass receives as its weight exactly
 the product of the earlier groups' new-to-old ratios on their own rows, each
-game once, recomputed from the parameters each earlier pass left; an
+game once, recomputed from the parameters each earlier pass left, and the
+update reports that factor's mean, standard deviation, minimum and maximum
+over every group's training rows (factor_mean, factor_std, factor_min,
+factor_max) as NumPy computes them from those weights; an
 actor_group naming one group for every row gives, for each of the five
 groups, the logits the grouped route gives with that group on every row (the
 dense one-group path); the actor loss weights each row's clipped surrogate
@@ -235,6 +238,21 @@ def test_each_group_pass_is_weighted_by_the_earlier_groups_ratios(
         assert sorted(seen) == list(range(GAMES))
         factor = factor * ratio
     assert np.ptp(factor) > 0
+    trained = np.concatenate(
+        [
+            np.asarray(minibatch.actor_weight)[np.asarray(minibatch.actor_samples)]
+            for _, minibatch in calls[per_pass:]
+        ]
+    )
+    _, metrics = ppo.update_ppo(
+        _learner(config), batch, jax.random.key(21), config, method="happo"
+    )
+    reported = [
+        float(np.asarray(getattr(metrics, f"factor_{name}")).flat[0])
+        for name in ("mean", "std", "min", "max")
+    ]
+    expected = [trained.mean(), trained.std(), trained.min(), trained.max()]
+    np.testing.assert_allclose(reported, expected, rtol=1e-5)
 
 
 def test_one_group_actor_group_runs_that_groups_weights() -> None:

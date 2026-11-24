@@ -711,6 +711,12 @@ class PPOMetrics(NamedTuple):
     normalization_mean, normalization_std : Array
         Float32 corrected running scale used by this minibatch. Disabled mode
         reports zero and one. An empty critic minibatch reports zero for both.
+    factor_mean, factor_std, factor_min, factor_max : Array
+        HAPPO only: float32 mean, population standard deviation and extremes
+        of the factor (the product of the earlier groups' probability ratios)
+        over every group's training rows in this update, the same value at
+        every epoch and minibatch. The first group's rows count with factor 1.
+        Zero for other methods and for an update with no actor sample.
 
     Notes
     -----
@@ -736,6 +742,10 @@ class PPOMetrics(NamedTuple):
     value_rmse: Array
     normalization_mean: Array
     normalization_std: Array
+    factor_mean: Array
+    factor_std: Array
+    factor_min: Array
+    factor_max: Array
 
 
 class MLPTorso(nn.Module):
@@ -3076,6 +3086,7 @@ default="mappo"
         jnp.sqrt(average(value_mse, critic_count)) * scale_std,
         jnp.where(jnp.any(critic_count), scale_mean, 0.0),
         jnp.where(jnp.any(critic_count), scale_std, 0.0),
+        *(jnp.float32(0.0) for _ in range(4)),
     )
     return PPOTrainState(actor, critic, actor_state, critic_state, value_norm), metrics
 
@@ -3598,8 +3609,15 @@ def _sequential_update(
 
     def one_group(
         carry: tuple[PPOTrainState, Array, Array], group: Array
-    ) -> tuple[tuple[PPOTrainState, Array, Array], PPOMetrics]:
-        """Update one actor group with the factor, then fold its ratio in."""
+    ) -> tuple[
+        tuple[PPOTrainState, Array, Array],
+        tuple[PPOMetrics, tuple[Array, Array, Array, Array, Array]],
+    ]:
+        """Update one actor group with the factor, then fold its ratio in.
+
+        Also return the factor's sums over the group's training rows: their
+        count, the sum and sum of squares of factor - 1, minimum and maximum.
+        """
         current, pass_keys, factor = carry
 
         def actor_only(selected: Array) -> PPOMinibatch:
@@ -3613,11 +3631,34 @@ def _sequential_update(
 
         current, pass_keys, metrics = run_epochs(current, pass_keys, actor_only)
         log_ratio, updated = log_ratios(current.actor_params, group)
-        return (current, pass_keys, _happo_factor(factor, log_ratio, updated)), metrics
+        # The factor this group trained with, over its training rows only,
+        # centered on 1 so float32 keeps small spreads.
+        trained = jnp.where(updated, factor - 1.0, 0.0)
+        spread = (
+            jnp.sum(updated.astype(jnp.float32)),
+            jnp.sum(trained),
+            jnp.sum(jnp.square(trained)),
+            jnp.min(jnp.where(updated, factor, jnp.inf)),
+            jnp.max(jnp.where(updated, factor, -jnp.inf)),
+        )
+        folded = _happo_factor(factor, log_ratio, updated)
+        return (current, pass_keys, folded), (metrics, spread)
 
     order = jax.random.permutation(order_key, 5)
     start = (state, keys, jnp.ones((length, games), jnp.float32))
-    (state, _, _), actor_metrics = jax.lax.scan(one_group, start, order)
+    (state, _, _), (actor_metrics, spread) = jax.lax.scan(one_group, start, order)
+    rows, sums, squares, lows, highs = spread
+    trained_rows = jnp.sum(rows)
+    shift = jnp.sum(sums) / jnp.maximum(trained_rows, 1.0)
+    variance = jnp.sum(squares) / jnp.maximum(trained_rows, 1.0) - jnp.square(shift)
+    mean = 1.0 + shift
+    factor_stats = jnp.where(
+        trained_rows > 0,
+        jnp.stack(
+            [mean, jnp.sqrt(jnp.maximum(variance, 0.0)), jnp.min(lows), jnp.max(highs)]
+        ),
+        0.0,
+    )
     counts = actor_metrics.actor_samples.astype(jnp.float32)
     total = jnp.sum(counts, axis=0)
 
@@ -3632,4 +3673,12 @@ def _sequential_update(
         approx_kl=weighted(actor_metrics.approx_kl),
         policy_clip_fraction=weighted(actor_metrics.policy_clip_fraction),
         actor_grad_norm=weighted(actor_metrics.actor_grad_norm),
+        **{
+            name: jnp.full_like(critic_metrics.actor_loss, value)
+            for name, value in zip(
+                ("factor_mean", "factor_std", "factor_min", "factor_max"),
+                factor_stats,
+                strict=True,
+            )
+        },
     )
