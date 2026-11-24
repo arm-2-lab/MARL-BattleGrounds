@@ -9,15 +9,21 @@ game once, recomputed from the parameters each earlier pass left; an
 actor_group naming one group for every row gives, for each of the five
 groups, the logits the grouped route gives with that group on every row (the
 dense one-group path); the actor loss weights each row's clipped surrogate
-by actor_weight after standardizing advantages, and entropy not at all,
-matching a NumPy recomputation, while no weight leaves the ordinary
-objective. On a
+by actor_weight, and entropy not at all, matching a NumPy recomputation:
+after standardizing the group's advantages under "mappo", and on the
+advantages as given under "happo", while no weight leaves the ordinary
+objective. update_ppo standardizes HAPPO's advantages once, over every
+actor's eligible living rows of the whole batch (HARL's per-agent mode), and
+with two gradient groups, two minibatches and two epochs each group pass
+receives exactly those values in every epoch, so a Priest whose rewards are
+ten times smaller keeps advantages of smaller spread. On a
 small real three-agent rollout (Mage, Warrior, Priest), one "happo" update
 leaves the critic exactly where a recurrent MAPPO update with class sharing
 puts it, keeps the absent Hunter and Rogue groups' actor parameters and
-optimizer states bit for bit, moves every present group, and updates the
-first group in its random order as a MAPPO update restricted to that group's
-slots does; "happo" with parameter_sharing "all" is refused. No learning run.
+optimizer states bit for bit, moves every present group, and, with
+standardizing switched off in both, updates the first group in its random
+order as a MAPPO update restricted to that group's slots does; "happo" with
+parameter_sharing "all" is refused. No learning run.
 """
 
 # pyright: reportPrivateUsage=false, reportUnknownLambdaType=false
@@ -290,13 +296,84 @@ def test_one_happo_update_against_mappo_references() -> None:
             jnp.asarray(slot_groups == first), batch.actions.shape
         )
     )
-    restricted, _ = ppo.update_ppo(learner, alone, key, CONFIG, method="mappo")
+
+    # MAPPO standardizes its one group alone and HAPPO standardizes all groups
+    # together, so the update's mechanics are compared with it switched off.
+    def unstandardized_values(values: Array, mask: Array) -> Array:
+        del mask
+        return values
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(ppo, "_standardized", unstandardized_values)
+        unstandardized, _ = ppo.update_ppo(learner, batch, key, CONFIG, method="happo")
+        restricted, _ = ppo.update_ppo(learner, alone, key, CONFIG, method="mappo")
     for actual, expected in zip(
-        _group(happo.actor_params, first),
+        _group(unstandardized.actor_params, first),
         _group(restricted.actor_params, first),
         strict=True,
     ):
         np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-6)
+
+
+def test_happo_standardizes_advantages_once_over_every_actor() -> None:
+    rollout = _rollout()
+    dead = np.random.default_rng(11).random(rollout.actions.shape) < 0.2
+    batch = rollout._replace(
+        alive=rollout.alive & jnp.asarray(~dead),
+        rewards=rollout.rewards * jnp.asarray([1.0, 1.0, 0.1, 1.0, 1.0]),
+    )
+    samples = np.asarray(batch.valid)[..., None] & np.asarray(batch.active)
+    advantages, _ = ppo.calculate_gae(
+        batch.rewards,
+        batch.old_values,
+        batch.ended,
+        batch.final_values,
+        valid=jnp.asarray(samples),
+        gamma=CONFIG.gamma,
+        gae_lambda=CONFIG.gae_lambda,
+    )
+    advantages = np.asarray(advantages)
+    eligible = samples & np.asarray(batch.alive)
+    expected = (advantages - advantages[eligible].mean()) / (
+        advantages[eligible].std() + 1e-8
+    )
+    # Two gradient groups, two minibatches and two epochs, so per-minibatch or
+    # per-group scaling, or a fresh scaling each epoch, would all show.
+    config = dataclasses.replace(CONFIG, groups=2, minibatches=2, epochs=2)
+    key = jax.random.key(21)
+    calls, _ = _captured_update(batch, _learner(config), key, config, method="happo")
+    order = np.asarray(
+        jax.random.permutation(jax.random.fold_in(key, ppo._HAPPO_ORDER_TAG), 5)
+    )
+    # Slots 0-2 hold the Mage, Warrior and Priest (class groups 0, 1, 4).
+    slots = {0: 0, 1: 1, 4: 2}
+    per_epoch = config.minibatches
+    per_pass = config.epochs * per_epoch
+    assert len(calls) == 6 * per_pass
+    for index, group in enumerate(order):
+        start = (index + 1) * per_pass
+        for epoch in range(config.epochs):
+            first = start + epoch * per_epoch
+            actual = np.concatenate(
+                [
+                    np.asarray(minibatch.advantages)[
+                        np.asarray(minibatch.actor_samples)
+                    ]
+                    for _, minibatch in calls[first : first + per_epoch]
+                ]
+            )
+            if int(group) not in slots:
+                assert actual.size == 0
+                continue
+            slot = slots[int(group)]
+            np.testing.assert_allclose(
+                np.sort(actual),
+                np.sort(expected[..., slot][eligible[..., slot]]),
+                rtol=1e-5,
+                atol=1e-6,
+            )
+            if slot == 2:
+                assert actual.std() < 0.5
 
 
 def test_weighted_surrogate_matches_numpy() -> None:
@@ -328,6 +405,24 @@ def test_weighted_surrogate_matches_numpy() -> None:
     np.testing.assert_allclose(
         float(plain) + CONFIG.entropy_coefficient * float(entropy),
         -surrogate[samples].mean(),
+        rtol=1e-4,
+    )
+    # Shifted and scaled, so standardizing them again would change the loss.
+    shifted = 3.0 * advantages + 1.0
+    happo, (happo_entropy, _, _) = ppo._actor_loss_with_metrics(
+        learner.actor_params,
+        weighted._replace(advantages=jnp.asarray(shifted)),
+        CONFIG,
+        method="happo",
+    )
+    logits = ppo._actor_logits(learner.actor_params, group, CONFIG, method="happo")
+    logp = np.asarray(action_log_prob(logits, group.action_mask, group.actions))
+    ratio = np.exp(logp - np.asarray(group.old_log_prob))
+    clipped = np.clip(ratio, 0.8, 1.2)
+    given = np.minimum(ratio * shifted, clipped * shifted)
+    np.testing.assert_allclose(
+        float(happo) + CONFIG.entropy_coefficient * float(happo_entropy),
+        -(np.asarray(weight) * given)[samples].mean(),
         rtol=1e-4,
     )
 

@@ -622,7 +622,10 @@ class PPOMinibatch(NamedTuple):
         old_values is in normalized units when ValueNorm is enabled, reward
         units otherwise. It is the exact fixed value-clipping anchor.
     advantages, targets : Array
-        Float32 (G,T,E,5) fixed reward-unit advantages and targets. The update
+        Float32 (G,T,E,5) fixed advantages and targets in reward units. The
+        exception is "happo": its advantages arrive already standardized over
+        the whole batch by update_ppo, and the loss uses them as given; for every
+        other method the loss standardizes each group's advantages. The update
         normalizes targets after refreshing statistics; callers supply raw targets.
     episode_start, valid : Array
         Boolean (G,T,E,5) decision-epoch reset and real-transition masks.
@@ -2499,6 +2502,22 @@ def _mean(values: Array, mask: Array) -> Array:
     return jnp.sum(jnp.where(mask, values, 0.0)) / jnp.maximum(jnp.sum(mask), 1)
 
 
+def _standardized(values: Array, mask: Array) -> Array:
+    """Shift and scale values to mean 0 and standard deviation 1 over masked entries.
+
+    values and mask have identical shapes. The mean and the population standard
+    deviation come from the entries where mask is True; Mava's 1e-8 is added to
+    the standard deviation (HARL, HAPPO's source, adds 1e-5). Every entry is
+    shifted and scaled, masked or not, so callers keep only the entries they
+    use. An empty mask gives mean and standard deviation 0, so the result is
+    the values divided by 1e-8; callers then use no entry. Inputs stay
+    unchanged; pure JAX.
+    """
+    mean = _mean(values, mask)
+    variance = _mean(jnp.square(values - mean), mask)
+    return (values - mean) / (jnp.sqrt(variance) + 1e-8)
+
+
 def _actor_loss(  # pyright: ignore[reportUnusedFunction]
     params: Tree, batch: PPOMinibatch, config: PPOConfig, *, method: str = "mappo"
 ) -> tuple[Array, Array]:
@@ -2584,23 +2603,26 @@ def _actor_loss_with_metrics(
     """Return one group's masked actor loss and unscaled policy entropy.
 
     params is the actor variable tree for the selected sharing mode. batch is
-    one PPOMinibatch gradient group,
-    with no leading G axis. config fixes clipping and the
-    entropy weight. Standardize only that group's eligible advantages with the
-    donor epsilon. When batch.actor_weight is set (HAPPO), each row's clipped
-    surrogate is multiplied by its fixed weight after standardization, as in
-    HARL's ``factor * min(surr1, surr2)``; entropy is not weighted. Return two
-    float32 scalars; the loss includes entropy's
-    coefficient. Return loss plus (entropy, sampled KL, ratio clip fraction),
-    all scalar float32. Entropy and KL use natural-log units. method defaults to
+    one PPOMinibatch gradient group, with no leading G axis. config fixes
+    clipping and the entropy weight. Standardize only that group's eligible
+    advantages (``_standardized``), except for method "happo": update_ppo has
+    already standardized HAPPO's advantages once over every actor, as HARL's
+    per-agent mode does, so they are used as given. When batch.actor_weight is
+    set (HAPPO), each row's clipped surrogate is multiplied by its fixed weight,
+    as in HARL's ``factor * min(surr1, surr2)``; entropy is not weighted. Return
+    the loss, which includes entropy's coefficient, and a tuple (entropy,
+    sampled KL, ratio clip fraction); all four are float32 scalars. Entropy and
+    KL use natural-log units. method defaults to
     mappo and selects a recurrent (T,E,5) or feedforward (Q,5) sample layout.
     The actor call samples no actions and changes no parameters or input arrays.
     """
     logits = _actor_logits(params, batch, config, method=method)
     logp = action_log_prob(logits, batch.action_mask, batch.actions)
-    mean = _mean(batch.advantages, batch.actor_samples)
-    variance = _mean(jnp.square(batch.advantages - mean), batch.actor_samples)
-    advantages = (batch.advantages - mean) / (jnp.sqrt(variance) + 1e-8)
+    advantages = (
+        batch.advantages
+        if method == "happo"
+        else _standardized(batch.advantages, batch.actor_samples)
+    )
     log_ratio = logp - batch.old_log_prob
     ratio = jnp.exp(log_ratio)
     clipped = jnp.clip(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon)
@@ -2733,7 +2755,10 @@ default="mappo"
     Notes
     -----
     Advantages, targets and old behavior values are fixed learner data; gradients
-    do not flow into batch. Each group standardizes its own eligible advantages.
+    do not flow into batch. Each group standardizes its own eligible advantages,
+    except under "happo": there the caller must pass advantages already
+    standardized over the whole batch, as update_ppo does, and they are used as
+    given.
     Nonempty groups have equal gradient weight even when sample counts differ;
     empty groups do not dilute that average. These PPO gradient groups are
     separate from actor parameter groups. Class and slot modes preserve this
@@ -3062,7 +3087,12 @@ default="mappo"
     method "happo" keeps every input and the critic update of MAPPO and
     replaces the joint actor step with HAPPO's sequence (``_sequential_update``):
     one random group order per update, each group trained alone and weighted
-    by the earlier groups' probability ratios.
+    by the earlier groups' probability ratios. Its advantages are standardized
+    once, over every actor's eligible rows of the whole batch, before the group
+    passes, as HARL's per-agent mode (state_type "FP") does, with Mava's 1e-8 in
+    place of HARL's 1e-5; so each class keeps the relative size of its
+    advantages, and the passes do not standardize again. That mode is HARL's
+    match whatever the critic reads, because our advantages are per agent.
 
     Compute GAE before shuffling. Recurrent updates keep whole game sequences
     and actor order. Feedforward updates shuffle time/game rows within each
@@ -3125,6 +3155,10 @@ default="mappo"
         gamma=config.gamma,
         gae_lambda=config.gae_lambda,
     )
+    if method == "happo":
+        # HARL's per-agent mode (state_type "FP"): one mean and standard
+        # deviation over every actor's eligible rows.
+        advantages = _standardized(advantages, samples & batch.alive)
     group_games = games // config.groups
     group_rows = group_games if recurrent else length * group_games
     minibatch_rows = group_rows // config.minibatches
@@ -3385,9 +3419,10 @@ def _sequential_update(
     equals MAPPO's critic update. Each actor pass and log-probability pass
     encodes and runs the actor on its group's row only, as one dense network
     on that group's weights (no grouped route), and moves only that group's
-    parameters and optimizer state. Advantages are the joint update's;
-    each actor pass standardizes them over its own group's rows, where MAPPO
-    standardizes over all five actors' rows together. Pure JAX; no I/O.
+    parameters and optimizer state. Advantages are the joint update's,
+    standardized once by update_ppo over every actor's eligible rows of the
+    whole batch (HARL's per-agent mode); the actor passes use them as given.
+    Pure JAX; no I/O.
     """
 
     def critic_only(selected: Array) -> PPOMinibatch:
