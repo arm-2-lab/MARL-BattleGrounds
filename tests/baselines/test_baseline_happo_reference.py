@@ -299,8 +299,8 @@ def test_one_happo_update_against_mappo_references() -> None:
 
     # MAPPO standardizes its one group alone and HAPPO standardizes all groups
     # together, so the update's mechanics are compared with it switched off.
-    def unstandardized_values(values: Array, mask: Array) -> Array:
-        del mask
+    def unstandardized_values(values: Array, mask: Array, *, epsilon: float) -> Array:
+        del mask, epsilon
         return values
 
     with pytest.MonkeyPatch.context() as patch:
@@ -335,7 +335,7 @@ def test_happo_standardizes_advantages_once_over_every_actor() -> None:
     advantages = np.asarray(advantages)
     eligible = samples & np.asarray(batch.alive)
     expected = (advantages - advantages[eligible].mean()) / (
-        advantages[eligible].std() + 1e-8
+        advantages[eligible].std() + 1e-5
     )
     # Two gradient groups, two minibatches and two epochs, so per-minibatch or
     # per-group scaling, or a fresh scaling each epoch, would all show.

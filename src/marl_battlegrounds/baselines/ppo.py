@@ -2502,20 +2502,21 @@ def _mean(values: Array, mask: Array) -> Array:
     return jnp.sum(jnp.where(mask, values, 0.0)) / jnp.maximum(jnp.sum(mask), 1)
 
 
-def _standardized(values: Array, mask: Array) -> Array:
+def _standardized(values: Array, mask: Array, *, epsilon: float) -> Array:
     """Shift and scale values to mean 0 and standard deviation 1 over masked entries.
 
     values and mask have identical shapes. The mean and the population standard
-    deviation come from the entries where mask is True; Mava's 1e-8 is added to
-    the standard deviation (HARL, HAPPO's source, adds 1e-5). Every entry is
-    shifted and scaled, masked or not, so callers keep only the entries they
-    use. An empty mask gives mean and standard deviation 0, so the result is
-    the values divided by 1e-8; callers then use no entry. Inputs stay
-    unchanged; pure JAX.
+    deviation come from the entries where mask is True, and epsilon is added to
+    the standard deviation: each method passes its source's value (Mava's 1e-8
+    for the per-group scaling, HARL's 1e-5 for HAPPO's). Every entry is shifted
+    and scaled, masked or not, so callers keep only the entries they use. An
+    empty mask gives mean and standard deviation 0, so the result is the values
+    divided by epsilon; callers then use no entry. Inputs stay unchanged; pure
+    JAX.
     """
     mean = _mean(values, mask)
     variance = _mean(jnp.square(values - mean), mask)
-    return (values - mean) / (jnp.sqrt(variance) + 1e-8)
+    return (values - mean) / (jnp.sqrt(variance) + epsilon)
 
 
 def _actor_loss(  # pyright: ignore[reportUnusedFunction]
@@ -2597,6 +2598,49 @@ def _actor_logits(
     return logits
 
 
+def _policy_loss(
+    log_ratio: Array,
+    advantages: Array,
+    weight: Array | None,
+    samples: Array,
+    clip_epsilon: float,
+) -> Array:
+    """Return PPO's clipped policy loss: minus the mean clipped surrogate.
+
+    Parameters
+    ----------
+    log_ratio : Array
+        Float32, any shape: each row's ``log pi_new - log pi_old`` for its
+        taken action.
+    advantages : Array
+        Float32, the shape of log_ratio: each row's advantage, used as given
+        (callers standardize first where their method does).
+    weight : Array or None
+        Float32, the shape of log_ratio, or None for no weight. HAPPO passes
+        its fixed factor, the product of the earlier groups' ratios, which
+        multiplies each row's clipped surrogate as in HARL's
+        ``factor * min(surr1, surr2)``.
+    samples : Array
+        Bool, the shape of log_ratio: the rows that count. An empty mask
+        gives 0.
+    clip_epsilon : float
+        Ratios are clipped to [1 - clip_epsilon, 1 + clip_epsilon].
+
+    Returns
+    -------
+    Array
+        Float32 scalar: minus the mean over sample rows of
+        ``min(r * A, clip(r) * A)``, times weight where given, with
+        ``r = exp(log_ratio)``. Pure JAX; entropy is not included.
+    """
+    ratio = jnp.exp(log_ratio)
+    clipped = jnp.clip(ratio, 1 - clip_epsilon, 1 + clip_epsilon)
+    surrogate = jnp.minimum(ratio * advantages, clipped * advantages)
+    if weight is not None:
+        surrogate = weight * surrogate
+    return -_mean(surrogate, samples)
+
+
 def _actor_loss_with_metrics(
     params: Tree, batch: PPOMinibatch, config: PPOConfig, *, method: str = "mappo"
 ) -> tuple[Array, tuple[Array, Array, Array]]:
@@ -2607,9 +2651,9 @@ def _actor_loss_with_metrics(
     clipping and the entropy weight. Standardize only that group's eligible
     advantages (``_standardized``), except for method "happo": update_ppo has
     already standardized HAPPO's advantages once over every actor, as HARL's
-    per-agent mode does, so they are used as given. When batch.actor_weight is
-    set (HAPPO), each row's clipped surrogate is multiplied by its fixed weight,
-    as in HARL's ``factor * min(surr1, surr2)``; entropy is not weighted. Return
+    per-agent mode does, so they are used as given. The clipped surrogate is
+    _policy_loss's: when batch.actor_weight is set (HAPPO), each row's clipped
+    surrogate is multiplied by its fixed weight; entropy is not weighted. Return
     the loss, which includes entropy's coefficient, and a tuple (entropy,
     sampled KL, ratio clip fraction); all four are float32 scalars. Entropy and
     KL use natural-log units. method defaults to
@@ -2621,15 +2665,17 @@ def _actor_loss_with_metrics(
     advantages = (
         batch.advantages
         if method == "happo"
-        else _standardized(batch.advantages, batch.actor_samples)
+        else _standardized(batch.advantages, batch.actor_samples, epsilon=1e-8)
     )
     log_ratio = logp - batch.old_log_prob
     ratio = jnp.exp(log_ratio)
-    clipped = jnp.clip(ratio, 1 - config.clip_epsilon, 1 + config.clip_epsilon)
-    surrogate = jnp.minimum(ratio * advantages, clipped * advantages)
-    if batch.actor_weight is not None:
-        surrogate = batch.actor_weight * surrogate
-    policy = -_mean(surrogate, batch.actor_samples)
+    policy = _policy_loss(
+        log_ratio,
+        advantages,
+        batch.actor_weight,
+        batch.actor_samples,
+        config.clip_epsilon,
+    )
     entropy = _mean(action_entropy(logits, batch.action_mask), batch.actor_samples)
     diagnostics = (
         entropy,
@@ -3089,8 +3135,8 @@ default="mappo"
     one random group order per update, each group trained alone and weighted
     by the earlier groups' probability ratios. Its advantages are standardized
     once, over every actor's eligible rows of the whole batch, before the group
-    passes, as HARL's per-agent mode (state_type "FP") does, with Mava's 1e-8 in
-    place of HARL's 1e-5; so each class keeps the relative size of its
+    passes, as HARL's per-agent mode (state_type "FP") does, adding HARL's 1e-5
+    to the standard deviation; so each class keeps the relative size of its
     advantages, and the passes do not standardize again. That mode is HARL's
     match whatever the critic reads, because our advantages are per agent.
 
@@ -3158,7 +3204,7 @@ default="mappo"
     if method == "happo":
         # HARL's per-agent mode (state_type "FP"): one mean and standard
         # deviation over every actor's eligible rows.
-        advantages = _standardized(advantages, samples & batch.alive)
+        advantages = _standardized(advantages, samples & batch.alive, epsilon=1e-5)
     group_games = games // config.groups
     group_rows = group_games if recurrent else length * group_games
     minibatch_rows = group_rows // config.minibatches

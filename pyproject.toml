@@ -191,6 +191,8 @@ exclude = [
   "runs",
   "outputs",
   "checkpoints",
+  # Runs in its own pinned environment with torch and HARL (its requirements.txt).
+  "scripts/paper_experiments/implementation_checks",
 ]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
