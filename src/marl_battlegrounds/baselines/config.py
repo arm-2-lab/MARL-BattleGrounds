@@ -104,8 +104,8 @@ def validate_ppo_method(method: str) -> PPOMethod:
     al., ICLR 2022) uses recurrent MAPPO's networks and training-only critic
     view and differs only in its update: one actor group at a time, in a
     random order. TarMAC (Das et al., ICML 2019) keeps recurrent MAPPO's
-    update and critic and adds one round of learned messages between
-    teammates: each actor reads its teammates' messages from the tick before
+    update and critic and adds learned messages between teammates, in one or
+    two rounds: each actor reads its teammates' messages from the tick before
     (see ``ppo.TarMACActor``). This host-only check allocates no
     arrays and owns the method choices shared by models, training and storage.
     """
@@ -146,6 +146,34 @@ def tarmac_messages(value: object) -> str:
     return value
 
 
+def tarmac_message_rounds(value: object) -> int:
+    """Check a TarMAC message-round count and return it as a Python int.
+
+    Parameters
+    ----------
+    value : object
+        Candidate count: 1 (one round of attention) or 2 (the paper's second
+        round, its equation 4). Booleans and floats are refused.
+
+    Returns
+    -------
+    int
+        The same int.
+
+    Raises
+    ------
+    ValueError
+        value is not the int 1 or 2.
+
+    Notes
+    -----
+    Host-only; no device work.
+    """
+    if type(value) is not int or value not in (1, 2):
+        raise ValueError("message_rounds must be 1 or 2")
+    return value
+
+
 def check_ppo_method_settings(method: str, config: PPOConfig) -> None:
     """Refuse PPO settings that the method cannot use.
 
@@ -160,13 +188,12 @@ def check_ppo_method_settings(method: str, config: PPOConfig) -> None:
     ------
     ValueError
         method is unknown; a method other than "tarmac" has messages other
-        than "attention"; "tarmac" has parameter_sharing other than
-        "all" (the paper and recurrent MAPPO's recipe share one network, and
-        no proof covers grouped attention); or an IPPO method ("ippo",
-        "ff_ippo") has agent_specific_state True (its critic already reads only
-        the actor's own view and has no physical state to join). HAPPO's
-        sharing rule stays with TrainConfig, which also picks HAPPO's default
-        sharing.
+        than "attention" or message_rounds other than 1; "tarmac" has
+        parameter_sharing other than "all" (the paper and recurrent MAPPO's
+        recipe share one network, and no proof covers grouped attention); or an IPPO
+        method ("ippo", "ff_ippo") has agent_specific_state True (its critic already
+        reads only the actor's own view and has no physical state to join). HAPPO's
+        sharing rule stays with TrainConfig, which also picks HAPPO's default sharing.
 
     Notes
     -----
@@ -191,6 +218,8 @@ def check_ppo_method_settings(method: str, config: PPOConfig) -> None:
         raise ValueError(
             f'Only TarMAC has a messages setting; {method} needs "attention"'
         )
+    elif config.message_rounds != 1:
+        raise ValueError(f"Only TarMAC has message rounds; {method} needs 1")
 
 
 def tarmac_name(messages: str) -> str:
@@ -534,6 +563,18 @@ class PPOConfig:
         shape; it is saved with TarMAC actors and is part of their inference
         identity. Saved settings leave it out when it is "attention", so the
         saved settings of every other PPO run keep their bytes.
+    message_rounds : {1, 2}, default=1
+        TarMAC only; every other method refuses 2 (TrainConfig checks).
+        TarMAC's packaged Hydra method group and recipes use 2. 1 reads one round of
+        attention over teammates' last-tick messages. 2 adds the paper's second round
+        (its equation 4): each actor's last-tick memory h and first-round message c give
+        h' = tanh(W [c, h]), and h' makes the second round's keys, values and queries
+        with the same layers. Both rounds use only last-tick memories and this tick's
+        public sender mask, so a message is still read one tick after it is sent. 2 adds
+        one 160-by-128 weight matrix (20,480 weights) with no bias, so the count is part
+        of the weights' layout: TarMAC actors save it and loads check it against their
+        weights. Saved settings leave it out when it is 1, so earlier runs keep their
+        bytes.
     agent_specific_state : bool, default=False
         Centralized-critic methods only (mappo, ff_mappo, happo, tarmac).
         check_ppo_method_settings refuses True for the IPPO methods, and
@@ -553,8 +594,9 @@ class PPOConfig:
         A count is not a positive Python int, or a numerical setting is nonfinite
         or outside its stated range. Boolean counts and non-real/Boolean input
         scales are rejected, as is a spawn frame other than "world" or "left",
-        a messages value other than the three choices, or a
-        value_normalization or agent_specific_state that is not a Python bool.
+        a messages value other than the three choices, message_rounds other
+        than the int 1 or 2, or a value_normalization or agent_specific_state
+        that is not a Python bool.
 
     Notes
     -----
@@ -581,6 +623,7 @@ class PPOConfig:
     value_normalization: bool = True
     parameter_sharing: str = "all"
     messages: str = "attention"
+    message_rounds: int = 1
     agent_specific_state: bool = False
 
     def __post_init__(self) -> None:
@@ -589,6 +632,7 @@ class PPOConfig:
         _spawn_frame(self.spawn_frame)
         _parameter_sharing(self.parameter_sharing)
         tarmac_messages(self.messages)
+        tarmac_message_rounds(self.message_rounds)
         for name in ("value_normalization", "agent_specific_state"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be a Python bool")
@@ -908,7 +952,11 @@ class PQNConfig:
 
 
 _LATER_SETTING_DEFAULTS: dict[type, dict[str, object]] = {
-    PPOConfig: {"messages": "attention", "agent_specific_state": False},
+    PPOConfig: {
+        "messages": "attention",
+        "message_rounds": 1,
+        "agent_specific_state": False,
+    },
     QMIXConfig: {"reward_scale": 1.0},
     PQNConfig: {"reward_scale": 1.0, "normalization": "batch_norm"},
 }
@@ -927,10 +975,11 @@ def saved_settings(settings: PPOConfig | QMIXConfig | PQNConfig) -> dict[str, ob
     -------
     dict[str, object]
         A new JSON-ready dictionary of every field in field order (after a
-        JSON round trip). Settings added after runs were first saved
-        (PPO ``messages`` and ``agent_specific_state``; QMIX and PQN
-        ``reward_scale``; PQN ``normalization``) are left out while they hold
-        the value older runs used ("attention", False, 1.0 and "batch_norm").
+        JSON round trip). Settings added after runs were first saved (PPO
+        ``messages``, ``message_rounds`` and ``agent_specific_state``; QMIX
+        and PQN ``reward_scale``; PQN ``normalization``) are left out while
+        they hold the value older runs used ("attention", 1, False, 1.0 and
+        "batch_norm").
         So
         a run that does not use them saves the same bytes as before they
         existed, and an older saved block compares equal to the record it
@@ -966,13 +1015,12 @@ def with_later_settings(
     -------
     dict[str, object]
         A new dictionary: the block with each setting added after runs were
-        first saved (PPO ``messages`` and ``agent_specific_state``; QMIX and
-        PQN ``reward_scale``; PQN ``normalization``) set to the value older
-        runs used, when the block
-        omits it. A block that
-        states a value keeps it. So a block written before the setting
-        existed, one written by ``saved_settings`` and one stating the old
-        default explicitly all compare equal to the full JSON form of the same
+        first saved (PPO ``messages``, ``message_rounds`` and
+        ``agent_specific_state``; QMIX and PQN ``reward_scale``; PQN
+        ``normalization``) set to the value older runs used, when the block
+        omits it. A block that states a value keeps it. So a block written
+        before the setting existed, one written by ``saved_settings`` and one stating
+        the old default explicitly all compare equal to the full JSON form of the same
         settings record.
 
     Notes

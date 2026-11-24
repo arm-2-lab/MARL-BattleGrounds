@@ -6,7 +6,7 @@ YAML changes. This tool starts no numerical backend or training; software_check 
 exercise wiring and are not paper hyperparameters. The default recipe holds the settings
 of each method's tournament policy run (HAPPO and TarMAC, which have none yet, take
 recurrent MAPPO's, reward included; HAPPO adds one actor per class and TarMAC its
-messages)
+messages, in the paper's two rounds)
 (SELECTED_RECIPES;
 scripts/paper_experiments/hyperparameter_search.md, Final Policies): its seed, learner
 settings, games, reward and 250,675,200-transition budget, and the search's training and
@@ -122,13 +122,14 @@ SELECTED_RECIPES: dict[str, dict[str, Any]] = {
         "ppo": {**_PPO_SELECTED, "parameter_sharing": "class"},
     },
     # TarMAC has no tournament run yet, so it reuses recurrent MAPPO's recipe,
-    # seed and reward without tuning of its own: messages are the only change.
+    # seed and reward without tuning of its own: messages, in the paper's two
+    # rounds, are the only change.
     "tarmac": {
         **_TOURNAMENT_PROTOCOL,
         "seed": 20261002,
         "num_envs": 512,
         "reward": _PER_AGENT_REWARD,
-        "ppo": _PPO_SELECTED,
+        "ppo": {**_PPO_SELECTED, "message_rounds": 2},
     },
     "qmix": {
         **_TOURNAMENT_PROTOCOL,
@@ -876,9 +877,13 @@ def presets() -> dict[str, dict[str, Any]]:
         if method == "happo":
             # HAPPO updates one actor group at a time, so it needs one per class.
             result["method/happo.yaml"]["ppo"]["parameter_sharing"] = "class"
-        if field == "ppo" and method != "tarmac":
-            # Only TarMAC has a messages choice; other methods refuse one.
+        if method == "tarmac":
+            # TarMAC runs the paper's second message round by default.
+            result["method/tarmac.yaml"]["ppo"]["message_rounds"] = 2
+        elif field == "ppo":
+            # Only TarMAC has message choices; other methods refuse them.
             del result[f"method/{method}.yaml"]["ppo"]["messages"]
+            del result[f"method/{method}.yaml"]["ppo"]["message_rounds"]
         if field == "ppo" and uses_local_critic(method):
             # An IPPO critic reads only the actor's view, so it has no
             # agent-specific state choice; centralized critics do.
@@ -911,6 +916,8 @@ def presets() -> dict[str, dict[str, Any]]:
             }
             if method == "happo":
                 software[field]["parameter_sharing"] = "class"
+            if method == "tarmac":
+                software[field]["message_rounds"] = 2
         elif field == "qmix":
             software[field] = {
                 "rollout_length": 4,

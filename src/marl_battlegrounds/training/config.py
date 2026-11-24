@@ -148,18 +148,19 @@ class TrainConfig:
         one actor per class; any other ppo must set parameter_sharing "class"
         or "none" (one actor per slot), and "all" is refused. Class sharing
         refuses a curriculum system roster that repeats a class. "tarmac"
-        (TarMAC, Das et al., ICML 2019, one round) is recurrent MAPPO's
-        learner, critic and recipe with learned messages between teammates:
-        each actor reads, by attention, what its teammates sent at the end of
-        the last tick (rule 6, "Each Agent Decides Alone").
-        It needs parameter_sharing "all". ppo.messages picks "attention" (the
-        paper), "mean" or "blocked" (its controls); every other method refuses
-        a value other than "attention". TarMAC actors exchange messages, so
-        they cannot be saved as a portable model file yet; share or load the
-        actor folder (load_system, opponent pools, tournaments). "qmix" is
-        recurrent QMIX
-        with compact replay, configured by qmix instead of ppo. "pqn_vdn" is
-        recurrent PQN-VDN (no replay or target network), configured by pqn.
+        (TarMAC, Das et al., ICML 2019) is recurrent MAPPO's learner, critic
+        and recipe with learned messages between teammates: each actor reads,
+        by attention, what its teammates sent at the end of the last tick
+        (rule 6, "Each Agent Decides Alone"). It needs parameter_sharing
+        "all". ppo.messages picks "attention" (the paper), "mean" or "blocked"
+        (its controls); every other method refuses a value other than
+        "attention". ppo.message_rounds is 1 (the default) or 2 (the paper's
+        second round; TarMAC's packaged recipes use 2), and every other method
+        refuses 2. TarMAC actors exchange messages, so they cannot be saved as a
+        portable model file yet; share or load the actor folder (load_system, opponent
+        pools, tournaments). "qmix" is recurrent QMIX with compact replay, configured by
+        qmix instead of ppo. "pqn_vdn" is recurrent PQN-VDN (no replay or target
+        network), configured by pqn.
     task : str, default="tdm"
         The game mode every training and validation game of this run plays: a
         task name that ``make`` accepts: "tdm" (Team Deathmatch) or "ctf"

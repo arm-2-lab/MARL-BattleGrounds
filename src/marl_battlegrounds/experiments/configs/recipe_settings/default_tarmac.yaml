@@ -61,3 +61,4 @@ ppo:
   adam_epsilon: 1.0e-05
   input_scale: 0.01
   value_normalization: true
+  message_rounds: 2

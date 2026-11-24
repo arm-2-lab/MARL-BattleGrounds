@@ -1606,6 +1606,7 @@ def _train(
             if config.pqn is None
             else config.pqn.normalization,
             messages=config.ppo.messages,
+            message_rounds=config.ppo.message_rounds,
         )
         variables = initial_system.variables
         initial_actor = (
@@ -4380,6 +4381,7 @@ class _Run:
             metadata=provenance,
             task=self.config.task,
             messages=self.config.ppo.messages,
+            message_rounds=self.config.ppo.message_rounds,
         )
         self.host["actors"][self.checkpoint_id] = str(destination)
         self.event(
@@ -4488,6 +4490,7 @@ class _Run:
             spawn_frame=settings.spawn_frame,
             task=self.config.task,
             messages=self.config.ppo.messages,
+            message_rounds=self.config.ppo.message_rounds,
         )
         self.host["past_copies"][str(capture_id)] = {
             "env_steps": steps,

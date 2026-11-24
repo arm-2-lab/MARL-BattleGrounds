@@ -1,16 +1,25 @@
-"""Check TarMAC's one-round teammate messages against references on the CPU.
+"""Check TarMAC's teammate messages, in one round or two, against references on the CPU.
 
 Contracts: one TarMAC tick (keys, values and queries from each actor's stored
 memory, the masked softmax over valid senders with the receiver's own message
 included, the 32-float message joined to the GRU's input) matches an
 independent NumPy computation under "attention", "mean" (equal weights over
-the same senders) and "blocked" (no sender), and a receiver with no valid
-sender reads an all-zero message; a reset row starts its GRU from zero and an
-invalid row keeps its memory and emits zero; the gradient stays finite on a first tick
-where no sender is valid. A message sent on one tick is read on the next and
-never within it (rule 6, "Each Agent Decides Alone"): a teammate's view at
-tick t never changes another actor's tick-t logits and does change its tick
-t+1 logits, never under "blocked". On a real game, played by a TarMAC team
+the same senders) and "blocked" (no sender), with one round and with two (the
+paper's equation 4: h' = tanh(W [c, h]) with no bias, then a second round from
+h' through the same key, value and query layers, over the same senders), and a
+receiver with no valid sender reads an all-zero message; a reset row starts
+its GRU from zero and an invalid row keeps its memory and emits zero; the
+gradient stays finite on a first tick where no sender is valid, in both round
+counts. A message sent on one tick is read on the next and never within it
+(rule 6, "Each Agent Decides Alone"), with one round and with two: a
+teammate's view at tick t never changes another actor's tick-t logits and does
+change its tick t+1 logits, never under "blocked". message_rounds is 1 or 2,
+only TarMAC may set 2, saved settings leave it out at 1, and the weights say how
+many rounds a network has; a two-round actor exports with its count
+("message_rounds": 2, absent for one round) and loads back with two rounds,
+export refuses two-round weights claimed as one round and message_rounds 2 for
+any other method, and a two-round actor is refused as a warm start for a
+one-round learner. On a real game, played by a TarMAC team
 on slots 0 and 2 beside a Random partner on slot 1 (team(...)), with empty
 slots 3 and 4: every sender is masked on the first tick; inactive slots, the
 partner's slot and a teammate that really died are masked, living teammates
@@ -34,6 +43,7 @@ setting kept. Other methods refuse a messages choice.
 """
 
 # pyright: reportPrivateUsage=false
+import dataclasses
 import functools
 from collections.abc import Callable
 from pathlib import Path
@@ -61,6 +71,12 @@ from marl_battlegrounds.baselines.inputs import (
 from marl_battlegrounds.environment import make
 from marl_battlegrounds.evaluation.policy_execution import SystemOutput
 from marl_battlegrounds.training import TrainResult
+from marl_battlegrounds.training.checkpoints import (
+    export_system,
+    load_initial_actor,
+    load_system,
+    read_checkpoint_details,
+)
 
 GAMES, TICKS, START = 32, 104, 52
 CONFIG = ppo.PPOConfig(
@@ -74,8 +90,9 @@ OWNED = np.asarray([True, False, True, False, False])
 
 
 @functools.cache
-def _learner() -> ppo.PPOTrainState:
-    return ppo.initialize_ppo(jax.random.key(4), CONFIG, method="tarmac")
+def _learner(rounds: int = 1) -> ppo.PPOTrainState:
+    config = dataclasses.replace(CONFIG, message_rounds=rounds)
+    return ppo.initialize_ppo(jax.random.key(4), config, method="tarmac")
 
 
 @functools.cache
@@ -92,12 +109,13 @@ def _sharp() -> ppo.PPOTrainState:
     return learner._replace(actor_params={"params": sharp})
 
 
-def _cell() -> ppo.Tree:
-    return _learner().actor_params["params"]["TarMACRNN_0"]
+def _cell(rounds: int = 1) -> ppo.Tree:
+    return _learner(rounds).actor_params["params"]["TarMACRNN_0"]
 
 
+@pytest.mark.parametrize("rounds", (1, 2))
 @pytest.mark.parametrize("messages", TARMAC_MESSAGES)
-def test_one_tick_matches_a_numpy_reference(messages: str) -> None:
+def test_one_tick_matches_a_numpy_reference(messages: str, rounds: int) -> None:
     generator = np.random.default_rng(1)
     carry = generator.normal(size=(3, 5, 128)).astype(np.float32)
     embedding = generator.normal(size=(3, 5, 128)).astype(np.float32)
@@ -107,32 +125,40 @@ def test_one_tick_matches_a_numpy_reference(messages: str) -> None:
     flags[1, 3], valid[2, 4] = True, False
     memory, output = cast(
         tuple[Array, Array],
-        ppo.TarMACRNN(messages=messages).apply(
-            {"params": _cell()},
+        ppo.TarMACRNN(messages=messages, rounds=rounds).apply(
+            {"params": _cell(rounds)},
             jnp.asarray(carry),
             (embedding[None], flags[None], valid[None], senders[None]),
         ),
     )
-    weights = jax.tree.map(np.asarray, _cell())
+    weights = jax.tree.map(np.asarray, _cell(rounds))
 
-    def dense(name: str) -> np.ndarray:
-        return carry @ weights[name]["kernel"] + weights[name]["bias"]
+    def read(state: np.ndarray) -> np.ndarray:
+        def dense(name: str) -> np.ndarray:
+            return state @ weights[name]["kernel"] + weights[name]["bias"]
 
-    heard = senders & (messages != "blocked")
-    scores = (
-        np.einsum("eif,ejf->eij", dense("query"), dense("key")) / 4.0
-        if messages == "attention"
-        else np.zeros((3, 5, 5), np.float32)
-    )
-    top = np.where(heard, scores, -np.inf).max(-1, keepdims=True)
-    exp = np.where(heard, np.exp(scores - np.where(np.isfinite(top), top, 0.0)), 0.0)
-    total = exp.sum(-1, keepdims=True)
-    alpha = np.divide(exp, total, out=np.zeros_like(exp), where=total > 0)
-    message = np.einsum("eij,ejf->eif", alpha, dense("value"))
+        heard = senders & (messages != "blocked")
+        scores = (
+            np.einsum("eif,ejf->eij", dense("query"), dense("key")) / 4.0
+            if messages == "attention"
+            else np.zeros((3, 5, 5), np.float32)
+        )
+        top = np.where(heard, scores, -np.inf).max(-1, keepdims=True)
+        shift = np.where(np.isfinite(top), top, 0.0)
+        exp = np.where(heard, np.exp(scores - shift), 0.0)
+        total = exp.sum(-1, keepdims=True)
+        alpha = np.divide(exp, total, out=np.zeros_like(exp), where=total > 0)
+        return np.einsum("eij,ejf->eif", alpha, dense("value"))
+
+    message = read(carry)
+    if rounds == 2:
+        joined = np.concatenate([message, carry], -1)
+        message = read(np.tanh(joined @ weights["round"]["kernel"]))
+        assert set(weights["round"]) == {"kernel"}
     assert not message[0, 2].any()
     before = np.where((flags & valid)[..., None], 0.0, carry)
     updated, _ = nn.GRUCell(features=128).apply(
-        {"params": _cell()["GRUCell_1"]},
+        {"params": _cell(rounds)["GRUCell_1"]},
         jnp.asarray(before),
         jnp.asarray(np.concatenate([embedding, message], -1)),
     )
@@ -145,7 +171,8 @@ def test_one_tick_matches_a_numpy_reference(messages: str) -> None:
     )
 
 
-def test_gradient_is_finite_on_a_first_tick_with_no_valid_sender() -> None:
+@pytest.mark.parametrize("rounds", (1, 2))
+def test_gradient_is_finite_on_a_first_tick_with_no_valid_sender(rounds: int) -> None:
     generator = np.random.default_rng(2)
     features = jnp.asarray(generator.normal(0, 0.1, (2, 2, 5, ppo.ACTOR_FEATURE_SIZE)))
     starts = jnp.zeros((2, 2, 5), bool).at[0].set(True)
@@ -154,7 +181,7 @@ def test_gradient_is_finite_on_a_first_tick_with_no_valid_sender() -> None:
     def loss(params: ppo.Tree) -> Array:
         memory, logits = cast(
             tuple[Array, Array],
-            ppo.TarMACActor().apply(
+            ppo.TarMACActor(rounds=rounds).apply(
                 params,
                 jnp.asarray(generator.normal(size=(2, 5, 128)), jnp.float32),
                 features,
@@ -165,19 +192,20 @@ def test_gradient_is_finite_on_a_first_tick_with_no_valid_sender() -> None:
         )
         return jnp.sum(logits) + jnp.sum(memory)
 
-    gradient = cast(ppo.Tree, jax.grad(loss)(_learner().actor_params))
+    gradient = cast(ppo.Tree, jax.grad(loss)(_learner(rounds).actor_params))
     assert all(bool(jnp.all(jnp.isfinite(leaf))) for leaf in jax.tree.leaves(gradient))
 
 
+@pytest.mark.parametrize("rounds", (1, 2))
 @pytest.mark.parametrize("messages", ("attention", "blocked"))
-def test_a_message_arrives_one_tick_late(messages: str) -> None:
+def test_a_message_arrives_one_tick_late(messages: str, rounds: int) -> None:
     generator = np.random.default_rng(3)
     features = generator.normal(0, 0.1, (2, 2, 5, ppo.ACTOR_FEATURE_SIZE))
     carry = jnp.asarray(generator.normal(size=(2, 5, 128)), jnp.float32)
 
     def logits(view: np.ndarray) -> np.ndarray:
-        _, result = ppo.TarMACActor(messages=messages).apply(
-            _learner().actor_params,
+        _, result = ppo.TarMACActor(messages=messages, rounds=rounds).apply(
+            _learner(rounds).actor_params,
             carry,
             jnp.asarray(view, jnp.float32),
             jnp.zeros((2, 2, 5), bool),
@@ -440,6 +468,67 @@ def test_other_methods_refuse_a_messages_choice() -> None:
         )
     assert "messages" not in saved_settings(ppo.PPOConfig())
     assert saved_settings(ppo.PPOConfig(messages="mean"))["messages"] == "mean"
+
+
+def test_message_rounds_are_one_or_two_and_only_tarmac_has_two() -> None:
+    for rounds in (0, 3, 2.0, True):
+        with pytest.raises(ValueError, match="message_rounds must be 1 or 2"):
+            ppo.PPOConfig(message_rounds=rounds)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ValueError, match="Only TarMAC has message rounds"):
+        ppo.initialize_ppo(
+            jax.random.key(0), ppo.PPOConfig(message_rounds=2), method="happo"
+        )
+    assert "message_rounds" not in saved_settings(ppo.PPOConfig())
+    assert saved_settings(ppo.PPOConfig(message_rounds=2))["message_rounds"] == 2
+    assert ppo._tarmac_rounds(_learner(1).actor_params) == 1
+    assert ppo._tarmac_rounds(_learner(2).actor_params) == 2
+
+
+def test_two_round_actors_save_their_count_and_load_back(tmp_path: Path) -> None:
+    metadata: dict[str, object] = {
+        "run_id": "rounds",
+        "seed": 4,
+        "env_steps": 0,
+        "checkpoint_id": "c" * 64,
+    }
+    two = _learner(2).actor_params
+    with pytest.raises(ValueError, match="weights have 2 message rounds"):
+        export_system(
+            two,
+            tmp_path / "unclaimed",
+            metadata=metadata,
+            spawn_frame="left",
+            method="tarmac",
+        )
+    with pytest.raises(ValueError, match="Only TarMAC models have message rounds"):
+        export_system(
+            ppo.initialize_ppo(jax.random.key(0), method="mappo").actor_params,
+            tmp_path / "mappo",
+            metadata=metadata,
+            spawn_frame="left",
+            method="mappo",
+            message_rounds=2,
+        )
+    folder = export_system(
+        two,
+        tmp_path / "two",
+        metadata=metadata,
+        spawn_frame="left",
+        method="tarmac",
+        message_rounds=2,
+    )
+    assert read_checkpoint_details(folder)["message_rounds"] == 2
+    assert ppo._tarmac_rounds(load_system(folder).variables) == 2
+    one = export_system(
+        _learner().actor_params,
+        tmp_path / "one",
+        metadata=metadata,
+        spawn_frame="left",
+        method="tarmac",
+    )
+    assert "message_rounds" not in read_checkpoint_details(one)
+    with pytest.raises(ValueError, match="message_rounds differ from the new learner"):
+        load_initial_actor(folder, method="tarmac", input_scale=1.0, spawn_frame="left")
 
 
 @pytest.fixture(scope="module")

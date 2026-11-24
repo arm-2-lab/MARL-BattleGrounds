@@ -20,4 +20,5 @@ ppo:
   value_normalization: true
   parameter_sharing: all
   messages: attention
+  message_rounds: 2
   agent_specific_state: false

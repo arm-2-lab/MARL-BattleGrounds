@@ -51,9 +51,9 @@ own permitted view (Yu et al.'s agent-specific global state). HAPPO (method
 "happo", Kuba et al., ICLR 2022) keeps recurrent MAPPO's networks, inputs and
 critic update and replaces the joint actor step with one actor group at a time
 (``_sequential_update``). TarMAC (method "tarmac", Das et al., ICML 2019, one
-round) keeps recurrent MAPPO's critic and update and adds learned messages
-between teammates (TarMACActor): each actor reads, by attention, the messages
-its teammates sent at the end of the last tick, never within one. Its hook
+or two rounds) keeps recurrent MAPPO's critic and update and adds learned
+messages between teammates (TarMACActor): each actor reads, by attention, the
+messages its teammates sent at the end of the last tick, never within one. Its hook
 returns each tick's sender mask, which the batch stores and the update reads.
 Learners retain the compact rollout and construct only the selected
 minibatch's expanded features.
@@ -92,6 +92,7 @@ from marl_battlegrounds.baselines.config import (
     TARMAC_MESSAGES,
     TARMAC_VALUE_SIZE,
     check_ppo_method_settings,
+    tarmac_message_rounds,
     tarmac_messages,
     tarmac_name,
 )
@@ -968,23 +969,29 @@ class RecurrentActor(nn.Module):
 
 
 class TarMACRNN(nn.Module):
-    """Carry a team's five memories through time with one round of messages.
+    """Carry a team's five memories through time with one or two message rounds.
 
-    TarMAC's step (Das et al., ICML 2019, one round). On each tick, every
-    actor's memory from the end of its last decision gives a 16-float key k,
-    a 32-float value v and a 16-float query q (Dense layers named "key",
-    "value" and "query"). Receiver i attends softmax(q_i . k_j / 4) over its
-    valid senders j, its own last-tick message included (the paper's equation
-    2), and reads c_i = sum_j a_ij v_j. Its GRU then reads its 128-value
-    embedding joined with c_i (160 values). A message sent at tick t-1 is
-    read at tick t and never within a tick: rule 6 of the tournament rules,
-    "Each Agent Decides Alone". messages is "attention", "mean" (every valid
-    sender weighted equally) or "blocked" (every sender masked). Reset and
-    padding rules follow ScannedRNN: reset before the cell, invalid rows keep
-    their memory and emit zero.
+    TarMAC's step (Das et al., ICML 2019). On each tick, every actor's memory
+    h from the end of its last decision gives a 16-float key k, a 32-float
+    value v and a 16-float query q (Dense layers named "key", "value" and
+    "query"). Receiver i attends softmax(q_i . k_j / 4) over its valid senders
+    j, its own last-tick message included (the paper's equation 2), and reads
+    c_i = sum_j a_ij v_j. With rounds 2, the paper's equation 4 gives each
+    actor h'_i = tanh(W [c_i, h_i]) (Dense "round", no bias), and h' makes a
+    second round's keys, values and queries with the same three layers; its
+    c_i is the message read. The GRU then reads the 128-value embedding joined
+    with c_i (160 values). Both rounds use only last-tick memories and this
+    tick's sender mask, which holds only public team facts (who is present and
+    alive), so a message sent at tick t-1 is read at tick t and never within
+    a tick: rule 6 of the tournament rules, "Each Agent Decides Alone".
+    messages is "attention", "mean" (every valid sender weighted equally) or
+    "blocked" (every sender masked), in every round. Reset and padding rules
+    follow ScannedRNN: reset before the cell, invalid rows keep their memory
+    and emit zero.
     """
 
     messages: str = "attention"
+    rounds: int = 1
 
     @functools.partial(
         nn.scan,
@@ -1028,20 +1035,33 @@ class TarMACRNN(nn.Module):
         """
         features, resets, valid, senders = inputs
         messages = tarmac_messages(self.messages)
+        rounds = tarmac_message_rounds(self.rounds)
         if messages == "blocked":
             senders = jnp.zeros_like(senders)
-        key = nn.Dense(TARMAC_KEY_SIZE, name="key")(carry)
-        value = nn.Dense(TARMAC_VALUE_SIZE, name="value")(carry)
-        query = nn.Dense(TARMAC_KEY_SIZE, name="query")(carry)
-        if messages == "mean":
-            scores = jnp.zeros(senders.shape, jnp.float32)
-        else:
-            scores = jnp.einsum("...if,...jf->...ij", query, key) / jnp.sqrt(
-                jnp.float32(TARMAC_KEY_SIZE)
+        key_layer = nn.Dense(TARMAC_KEY_SIZE, name="key")
+        value_layer = nn.Dense(TARMAC_VALUE_SIZE, name="value")
+        query_layer = nn.Dense(TARMAC_KEY_SIZE, name="query")
+
+        def read(state: Array) -> Array:
+            """Return each receiver's (E,5,32) message for one round from state."""
+            key, value = key_layer(state), value_layer(state)
+            query = query_layer(state)
+            if messages == "mean":
+                scores = jnp.zeros(senders.shape, jnp.float32)
+            else:
+                scores = jnp.einsum("...if,...jf->...ij", query, key) / jnp.sqrt(
+                    jnp.float32(TARMAC_KEY_SIZE)
+                )
+            weights = jax.nn.softmax(jnp.where(senders, scores, _MASKED_SCORE), axis=-1)
+            weights = jnp.where(senders, weights, 0.0)
+            return jnp.einsum("...ij,...jf->...if", weights, value)
+
+        message = read(carry)
+        if rounds == 2:
+            joined = jnp.concatenate([message, carry], axis=-1)
+            message = read(
+                jnp.tanh(nn.Dense(HIDDEN_SIZE, use_bias=False, name="round")(joined))
             )
-        weights = jax.nn.softmax(jnp.where(senders, scores, _MASKED_SCORE), axis=-1)
-        weights = jnp.where(senders, weights, 0.0)
-        message = jnp.einsum("...ij,...jf->...if", weights, value)
         before = jnp.where((resets & valid)[..., None], 0.0, carry)
         # Named as ScannedRNN's cell so the two actors' trees read alike. Its
         # input kernels are 160 wide, so MAPPO's GRU weights do not load here.
@@ -1063,16 +1083,18 @@ class TarMACActor(nn.Module):
     valid masks bool (T,E,5) and the sender mask bool (T,E,5,5). The layers
     are recurrent MAPPO's (pre-torso, GRU, post-torso, 198-way head) with the
     GRU's input widened by the 32-float message (``TarMACRNN``): about 20,500
-    more weights. One shared network for all five actors (parameter sharing
-    "all" only). A message is a channel, not sight: it ignores the sensor
-    limits in ``source_availability``, as rule 6 ("Each Agent Decides Alone")
-    allows for messages sent on earlier ticks. No actor reads another's
-    current view. input_scale and messages are fixed settings, as in
-    RecurrentActor and PPOConfig.
+    more weights, and 20,480 more with rounds 2. One shared network for all
+    five actors (parameter sharing "all" only). A message is a channel, not
+    sight: it ignores the sensor limits in ``source_availability``, as rule 6 ("Each
+    Agent Decides Alone") allows for messages sent on earlier ticks. No actor reads
+    another's current view. input_scale and messages are fixed settings, as in
+    RecurrentActor and PPOConfig; rounds (1 or 2) must match the variables,
+    which code holding weights reads with ``_tarmac_rounds``.
     """
 
     input_scale: float = 1.0
     messages: str = "attention"
+    rounds: int = 1
 
     @nn.compact
     def __call__(
@@ -1109,7 +1131,8 @@ class TarMACActor(nn.Module):
         Raises
         ------
         ValueError
-            input_scale or messages is invalid, before any numerical work.
+            input_scale, messages or rounds is invalid, before any numerical
+            work.
 
         Notes
         -----
@@ -1119,11 +1142,37 @@ class TarMACActor(nn.Module):
         if scale != 1.0:
             features = features * scale
         embedding = MLPTorso(name="pre_torso")(features)
-        carry, embedding = TarMACRNN(messages=self.messages)(
+        carry, embedding = TarMACRNN(messages=self.messages, rounds=self.rounds)(
             carry, (embedding, resets, valid, senders)
         )
         embedding = MLPTorso(name="post_torso")(embedding)
         return carry, DiscreteActionHead(name="action_head")(embedding)
+
+
+def _tarmac_rounds(variables: Tree) -> int:
+    """Return how many message rounds a TarMAC actor's weights were built for.
+
+    Parameters
+    ----------
+    variables : PyTree
+        TarMACActor variables, as initialize_ppo makes them and checkpoints
+        restore them.
+
+    Returns
+    -------
+    int
+        2 when the weights hold the second round's layer ("round" in
+        TarMACRNN), else 1. Apply paths read the count here; saved actors
+        also record it, and every export and load checks that record against
+        the weights' layout.
+
+    Notes
+    -----
+    Reads only the tree's structure, so it works on the host and under jit. A
+    tree without TarMAC's cell reads 1, so layout checks report it.
+    """
+    cell = variables.get("params", {}).get("TarMACRNN_0", {})
+    return 2 if "round" in cell else 1
 
 
 def tarmac_sender_mask(inputs: SystemInput) -> Array:
@@ -1466,7 +1515,9 @@ default="mappo"
         features = jnp.zeros((1, 1, 5, ACTOR_FEATURE_SIZE))
         if method == "tarmac":
             actor = TarMACActor(
-                input_scale=config.input_scale, messages=config.messages
+                input_scale=config.input_scale,
+                messages=config.messages,
+                rounds=config.message_rounds,
             ).init(
                 actor_key,
                 memory,
@@ -1889,7 +1940,9 @@ def _apply_tarmac_actor(
     memory, logits = cast(
         tuple[Array, Array],
         TarMACActor(
-            input_scale=input_scale, messages=TARMAC_MESSAGES[messages_index]
+            input_scale=input_scale,
+            messages=TARMAC_MESSAGES[messages_index],
+            rounds=_tarmac_rounds(variables),
         ).apply(
             variables, memory, features[None], starts[None], valid[None], senders[None]
         ),
@@ -2551,7 +2604,11 @@ def _actor_logits(
     if method == "tarmac":
         _, logits = cast(
             tuple[Array, Array],
-            TarMACActor(input_scale=config.input_scale, messages=config.messages).apply(
+            TarMACActor(
+                input_scale=config.input_scale,
+                messages=config.messages,
+                rounds=_tarmac_rounds(params),
+            ).apply(
                 params,
                 batch.actor_memory,
                 batch.actor_features,

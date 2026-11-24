@@ -7,12 +7,13 @@ settings, games, reward, the 250,675,200-transition budget with the lineage's
 actor-retention settings. The expected values below are those runs' saved
 settings, written out independently of the generator. HAPPO and TarMAC, which
 have no tournament run yet, take recurrent MAPPO's recipe, seed and reward
-unchanged; HAPPO's method group adds one actor per class and TarMAC's lists
-messages.
+unchanged, except that TarMAC's recipe sets the paper's two message rounds;
+HAPPO's method group adds one actor per class and TarMAC's lists its message
+choices.
 Cover all original fields (plus actor retention, the Q methods' reward_scale,
-PQN normalization, TarMAC's messages, and validation_maps and task, whose
-defaults are left out of saved configs), eight method groups, complete pool
-replacement, ordinary Hydra overrides and rejection paths. Each method's
+PQN normalization, TarMAC's messages and message_rounds, and validation_maps and
+task, whose defaults are left out of saved configs), eight method groups,
+complete pool replacement, ordinary Hydra overrides and rejection paths. Each method's
 software_check settings file also builds a valid TrainConfig on its own, as the
 every-method software check reads it without the method group. Subprocess probes
 forbid numerical imports, factory calls and workers. These are software checks,
@@ -70,7 +71,7 @@ SELECTED: dict[str, tuple[int, int, dict[str, Any]]] = {
     "ff_mappo": (12259871, 512, {**PPO_SELECTED, "actor_lr": 0.0003}),
     "ff_ippo": (20261001, 512, PPO_SELECTED),
     "happo": (20261002, 512, {**PPO_SELECTED, "parameter_sharing": "class"}),
-    "tarmac": (20261002, 512, PPO_SELECTED),
+    "tarmac": (20261002, 512, {**PPO_SELECTED, "message_rounds": 2}),
     "qmix": (
         12259871,
         768,
@@ -185,8 +186,8 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
         "PQNConfig": ("pqn_vdn", "pqn"),
     }
     method, block = blocks.get(record, ("mappo", None))
-    if field == "messages":
-        # Only TarMAC's method group lists its message choice.
+    if field in ("messages", "message_rounds"):
+        # Only TarMAC's method group lists its message choices.
         method = "tarmac"
     cfg = composed(f"method={method}")
     resolved = resolve_training_config(cfg, base_dir=tmp_path)
@@ -224,8 +225,8 @@ def test_every_api_field_is_available(record: str, field: str, tmp_path: Path) -
 def test_original_census_and_generated_presets_do_not_drift() -> None:
     # Original 88 fields, opt-in actor retention, QMIX and PQN reward_scale,
     # PQN normalization, the validation map choice, the task, TarMAC's
-    # messages and the MAPPO critic's agent_specific_state.
-    assert len(FIELDS) == 96
+    # messages and message_rounds and the MAPPO critic's agent_specific_state.
+    assert len(FIELDS) == 97
     result = subprocess.run(
         [
             sys.executable,

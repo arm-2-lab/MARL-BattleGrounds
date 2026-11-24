@@ -57,6 +57,7 @@ from marl_battlegrounds.baselines.config import (
     PQNConfig,
     QMIXConfig,
     _pqn_normalization,  # pyright: ignore[reportPrivateUsage]
+    tarmac_message_rounds,
     tarmac_messages,
     with_later_settings,
 )
@@ -71,6 +72,7 @@ from marl_battlegrounds.baselines.methods import (
 )
 from marl_battlegrounds.baselines.ppo import (
     _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
+    _tarmac_rounds,  # pyright: ignore[reportPrivateUsage]
     initialize_ppo,
     make_ppo_system,
     validate_ppo_method,
@@ -116,6 +118,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
     _actor_input_scale as _actor_input_scale,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
+    _actor_message_rounds as _actor_message_rounds,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
     _actor_messages as _actor_messages,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
@@ -141,6 +146,9 @@ from marl_battlegrounds.training._checkpoint_metadata import (
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
     _config_input_scale as _config_input_scale,
+)
+from marl_battlegrounds.training._checkpoint_metadata import (
+    _config_message_rounds as _config_message_rounds,
 )
 from marl_battlegrounds.training._checkpoint_metadata import (
     _config_messages as _config_messages,
@@ -1114,9 +1122,9 @@ def save_checkpoint(
     ppo : PPOConfig, default DEFAULT_PPO_CONFIG
         Existing numerical learner settings used by boundary validation. Its
         input scale, spawn frame, value-normalization setting, TarMAC's
-        messages and agent_specific_state must equal the saved config's, and
-        the state must carry
-        matching statistics, else the save is refused before any file changes.
+        messages and message_rounds and agent_specific_state must equal the
+        saved config's, and the state must carry matching statistics, else the
+        save is refused before any file changes.
         The default's frame is "left".
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
 "pqn_vdn"}, default="mappo"
@@ -1206,6 +1214,10 @@ def save_checkpoint(
             )
         if _config_messages(context["config"]) != ppo.messages:
             raise ValueError("Checkpoint config messages differs from PPO settings")
+        if _config_message_rounds(context["config"]) != ppo.message_rounds:
+            raise ValueError(
+                "Checkpoint config message_rounds differs from PPO settings"
+            )
         if _config_agent_specific_state(context["config"]) != ppo.agent_specific_state:
             raise ValueError(
                 "Checkpoint config agent_specific_state differs from PPO settings"
@@ -1403,7 +1415,7 @@ def restore_checkpoint(
     ppo : PPOConfig, default DEFAULT_PPO_CONFIG
         Matched numerical update settings for restored-boundary validation. Its
         input scale, spawn frame, value-normalization setting and TarMAC's
-        messages must equal the checkpoint's, else restore
+        messages and message_rounds must equal the checkpoint's, else restore
         is refused before arrays are read. The default's frame is "left", so a
         checkpoint trained in "world" needs the matching config passed here.
     method : {"mappo", "ippo", "ff_mappo", "ff_ippo", "happo", "tarmac", "qmix", \
@@ -1557,6 +1569,8 @@ def restore_checkpoint(
             raise ValueError("Checkpoint value_normalization differs from PPO settings")
         if _actor_messages(details) != ppo.messages:
             raise ValueError("Checkpoint messages differs from PPO settings")
+        if _actor_message_rounds(details) != ppo.message_rounds:
+            raise ValueError("Checkpoint message_rounds differs from PPO settings")
     collection = _check_collection_compatibility(details, collection)
     recorded = details["metadata"].get("recording")
     if collection.recording != (recorded is not None):
@@ -1801,6 +1815,7 @@ def _actor_template(
     actor_input_schema: int = ACTOR_INPUT_SCHEMA_VERSION,
     parameter_sharing: str = "all",
     normalization: str = "batch_norm",
+    message_rounds: int = 1,
 ) -> Tree:
     """Cache actor shapes/dtypes for one checked method and actor input schema.
 
@@ -1817,6 +1832,9 @@ def _actor_template(
     normalization : {"batch_norm", "layer_norm"}, default="batch_norm"
         PQN-VDN hidden-layer normalization, which changes its parameter and
         statistic layout. Other methods accept only "batch_norm".
+    message_rounds : {1, 2}, default=1
+        TarMAC's message rounds; 2 adds the second round's layer. Other
+        methods accept only 1.
 
     Returns
     -------
@@ -1837,8 +1855,9 @@ def _actor_template(
     ------
     ValueError
         The method is unknown, actor_input_schema is not the int 1 or 2, the
-        sharing or normalization value is unknown, or a non-PQN method names
-        "layer_norm". Raised before tracing.
+        sharing or normalization value is unknown, a non-PQN method names
+        "layer_norm", or a non-TarMAC method names 2 message rounds. Raised
+        before tracing.
 
     Notes
     -----
@@ -1855,6 +1874,8 @@ def _actor_template(
         raise ValueError("actor_input_schema must be 1 or 2.")
     if _pqn_normalization(normalization) != "batch_norm" and method != "pqn_vdn":
         raise ValueError("Only PQN-VDN models have a normalization choice")
+    if tarmac_message_rounds(message_rounds) != 1 and method != "tarmac":
+        raise ValueError("Only TarMAC models have message rounds")
     if method == "qmix":
         template = qmix_actor_template(QMIXConfig(parameter_sharing=sharing))
     elif method == "pqn_vdn":
@@ -1862,12 +1883,14 @@ def _actor_template(
             pqn_actor_template(parameter_sharing=sharing, normalization=normalization)
         )
     else:
-        # TarMAC's message choice changes no parameter shape, so the default
-        # PPOConfig builds its template.
+        # TarMAC's message choice changes no parameter shape; its round count
+        # does (the second round's layer).
         template = jax.eval_shape(
             partial(
                 initialize_ppo,
-                config=PPOConfig(parameter_sharing=sharing),
+                config=PPOConfig(
+                    parameter_sharing=sharing, message_rounds=message_rounds
+                ),
                 method=validate_ppo_method(method),
             ),
             jax.random.key(0),
@@ -1955,6 +1978,7 @@ def export_system(
     normalization: str = "batch_norm",
     task: TaskName = "tdm",
     messages: str = "attention",
+    message_rounds: int = 1,
 ) -> Path:
     """Publish a standalone immutable actor artifact (sampled PPO, greedy Q-values).
 
@@ -2012,6 +2036,11 @@ def export_system(
         "mean" and "blocked" write a "messages" key, so the choice is part of
         the description and the inference identity. Other methods accept only
         "attention".
+    message_rounds : {1, 2}, default=1
+        TarMAC's message rounds used in training (PPOConfig.message_rounds),
+        which the weights' layout must match. Only 2 writes a "message_rounds"
+        key, so every earlier export keeps its description. Other methods
+        accept only 1.
 
     Returns
     -------
@@ -2051,6 +2080,13 @@ def export_system(
     messages = tarmac_messages(messages)
     if messages != "attention" and method != "tarmac":
         raise ValueError("Only TarMAC models have a messages choice")
+    if tarmac_message_rounds(message_rounds) != 1 and method != "tarmac":
+        raise ValueError("Only TarMAC models have message rounds")
+    if method == "tarmac" and _tarmac_rounds(actor_variables) != message_rounds:
+        raise ValueError(
+            f"The weights have {_tarmac_rounds(actor_variables)} message rounds; "
+            f"message_rounds is {message_rounds}"
+        )
     if method == "pqn_vdn":
         if not isinstance(cast(object, actor_variables), PQNInferenceVariables):
             raise TypeError("A PQN-VDN export takes PQNInferenceVariables")
@@ -2068,7 +2104,12 @@ def export_system(
             "which load_system reads directly."
         )
     if layout != _layout(
-        _actor_template(method, parameter_sharing=sharing, normalization=normalization)
+        _actor_template(
+            method,
+            parameter_sharing=sharing,
+            normalization=normalization,
+            message_rounds=message_rounds,
+        )
     ):
         raise ValueError("Actor variables differ from the selected model schema")
     if not all(
@@ -2093,6 +2134,7 @@ def export_system(
             and _actor_parameter_sharing(saved) == sharing
             and _actor_normalization(saved) == normalization
             and _actor_messages(saved) == messages
+            and _actor_message_rounds(saved) == message_rounds
             and saved["metadata"] == context
         ):
             return target
@@ -2117,6 +2159,8 @@ def export_system(
             details["normalization"] = normalization
         if messages != "attention":
             details["messages"] = messages
+        if message_rounds != 1:
+            details["message_rounds"] = message_rounds
         if method in ("qmix", "pqn_vdn"):
             details["epsilon"] = 0.0
             details["tie_rule"] = QMIX_TIE_RULE
@@ -2238,6 +2282,8 @@ def export_actor(
             actor["normalization"] = _actor_normalization(details)
         if _actor_messages(details) != "attention":
             actor["messages"] = _actor_messages(details)
+        if _actor_message_rounds(details) != 1:
+            actor["message_rounds"] = _actor_message_rounds(details)
         if method in ("qmix", "pqn_vdn"):
             actor.update(epsilon=0.0, tie_rule=QMIX_TIE_RULE)
         if frame != "world" or method == "pqn_vdn":
@@ -2398,15 +2444,17 @@ def _checked_actor_template(details: dict[str, Any]) -> Tree:
     """Build the installed actor template that a saved description needs.
 
     details is a checked actor or learner description. Its method, actor input
-    schema, parameter sharing and normalization choose the template; its saved
-    actor_layout must equal the template's layout. Returns the template tree
-    (shapes and dtypes only). Raises ValueError when the layouts differ.
+    schema, parameter sharing, normalization and message rounds choose the
+    template; its saved actor_layout must equal the template's layout. Returns
+    the template tree (shapes and dtypes only). Raises ValueError when the
+    layouts differ.
     """
     method = _schema_method(details["schemas"])
     schema = cast(int, details["schemas"]["actor_input"])
     sharing = _actor_parameter_sharing(details)
     normalization = _actor_normalization(details)
-    template = _actor_template(method, schema, sharing, normalization)
+    rounds = _actor_message_rounds(details)
+    template = _actor_template(method, schema, sharing, normalization, rounds)
     if details["actor_layout"] != _layout(template):
         raise ValueError("Actor artifact schema differs from the installed model")
     return template
@@ -2519,6 +2567,7 @@ def load_initial_actor(
     parameter_sharing: str = "all",
     normalization: str = "batch_norm",
     messages: str = "attention",
+    message_rounds: int = 1,
 ) -> tuple[System, dict[str, Any]]:
     """Load compatible built-in weights before a new training run opens files.
 
@@ -2528,7 +2577,8 @@ def load_initial_actor(
     address or a local released-layout folder. Only its actor is imported. The
     method, current actor schema, input scale, spawn frame, parameter sharing,
     (for PQN-VDN) hidden normalization and (for TarMAC) the message choice
-    (``messages``, default "attention") must match. For a folder,
+    (``messages``, default "attention") and round count (``message_rounds``,
+    default 1) must match. For a folder,
     load_system checks layout, dtypes, payload hashes and values. For a model
     file, portable_models.portable_actor_variables rebuilds the actor variables
     from the file's weights and checks them against the embedded original
@@ -2576,6 +2626,8 @@ def load_initial_actor(
         raise ValueError("Initial actor normalization differs from the new learner")
     if _actor_messages(details) != tarmac_messages(messages):
         raise ValueError("Initial actor messages differ from the new learner")
+    if _actor_message_rounds(details) != tarmac_message_rounds(message_rounds):
+        raise ValueError("Initial actor message_rounds differ from the new learner")
     if model_file is not None:
         if _layout(actor) != details["actor_layout"]:
             raise ValueError("Initial actor weights differ from their saved layout")

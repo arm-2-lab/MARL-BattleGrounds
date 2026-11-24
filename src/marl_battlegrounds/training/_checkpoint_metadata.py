@@ -31,6 +31,7 @@ from marl_battlegrounds.baselines.config import (
     PPOConfig,
     _parameter_sharing,
     _pqn_normalization,
+    tarmac_message_rounds,
     tarmac_messages,
     training_state_schema,
     validate_ppo_method,
@@ -444,6 +445,31 @@ def _config_agent_specific_state(config: object) -> bool:
     return value
 
 
+def _config_message_rounds(config: object) -> int:
+    """Read a saved learner config's TarMAC message rounds; absence is 1.
+
+    config is a JSON learner config. Its settings block leaves out
+    "message_rounds" when it is 1, so every other method's config, and
+    TarMAC's with one round, reads 1. Raises ValueError for a value other than
+    the int 1 or 2.
+    """
+    return tarmac_message_rounds(_settings_block(config).get("message_rounds", 1))
+
+
+def _actor_message_rounds(details: dict[str, Any]) -> int:
+    """Read a saved TarMAC message-round count; absence is 1.
+
+    details is a checked actor or learner description. Actor exports carry an
+    explicit "message_rounds" key only for 2; learner checkpoints read their
+    config (_config_message_rounds). Every saved model without the key (every
+    other method, and TarMAC with one round) means 1. Raises ValueError for a
+    value other than the int 1 or 2.
+    """
+    if details["kind"] == "actor":
+        return tarmac_message_rounds(details.get("message_rounds", 1))
+    return _config_message_rounds(details["metadata"]["config"])
+
+
 def _actor_messages(details: dict[str, Any]) -> str:
     """Read a saved TarMAC message choice; absence is "attention".
 
@@ -604,6 +630,8 @@ def read_checkpoint_description(path: str | Path) -> dict[str, Any]:
         required.add("normalization")
     if details["kind"] == "actor" and "messages" in details:
         required.add("messages")
+    if details["kind"] == "actor" and "message_rounds" in details:
+        required.add("message_rounds")
     if set(details) != required:
         raise ValueError("Checkpoint description fields differ from its schema")
     _actor_parameter_sharing(details)
@@ -611,6 +639,8 @@ def read_checkpoint_description(path: str | Path) -> dict[str, Any]:
         raise ValueError("Only PQN-VDN models have a normalization choice")
     if _actor_messages(details) != "attention" and method != "tarmac":
         raise ValueError("Only TarMAC models have a messages choice")
+    if _actor_message_rounds(details) != 1 and method != "tarmac":
+        raise ValueError("Only TarMAC models have message rounds")
     if method in ("qmix", "pqn_vdn") and details["kind"] == "actor":
         steps = _object(details["metadata"], "Actor provenance").get("optimizer_steps")
         if (
@@ -898,7 +928,7 @@ def _check_actor_origin(actor: dict[str, Any], learner: dict[str, Any]) -> None:
 
     Both descriptions must already pass their content-ID checks. Compare method,
     inference identity, sharing, PQN-VDN's normalization, TarMAC's messages and
-    original run/seed/step/optimizer facts. This
+    message rounds, and original run/seed/step/optimizer facts. This
     small-record check reads no files or arrays and proves no validation score.
     Raise ValueError for any mismatch, including a claimed but incorrect origin.
     """
@@ -922,6 +952,7 @@ def _check_actor_origin(actor: dict[str, Any], learner: dict[str, Any]) -> None:
         or _actor_parameter_sharing(actor) != _actor_parameter_sharing(learner)
         or _actor_normalization(actor) != _actor_normalization(learner)
         or _actor_messages(actor) != _actor_messages(learner)
+        or _actor_message_rounds(actor) != _actor_message_rounds(learner)
     ):
         raise ValueError("Saved actor differs from its originating checkpoint")
 
