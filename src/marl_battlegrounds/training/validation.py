@@ -2842,6 +2842,32 @@ def _saved_run(parent: Path, pass_id: str) -> Path | None:
 
     This folder belongs to exactly one persisted task. It is never a general
     newest-run lookup. A malformed or different pass is rejected before recovery.
+
+    Parameters
+    ----------
+    parent : Path
+        The pass folder (one opponent cell of a validation task).
+    pass_id : str
+        The pass the saved run must record; its results are checked against it.
+
+    Returns
+    -------
+    Path or None
+        The run folder holding run_details.json, or None when no run has started:
+        the folder is missing, empty, or holds only this pass's
+        sampling_facts.json. That file is written before the run starts, so a
+        process killed in between leaves it alone, and the pass then starts its
+        run as new (the facts are checked against the task again first).
+
+    Raises
+    ------
+    ValueError
+        If the folder holds more than one run, or anything else without a
+        run_details.json (such as a run folder whose writer died before its first
+        save): that output is unknown, so it is never reused or overwritten. Also
+        raised by load_results when the saved run does not hold pass_id.
+    OSError
+        If the saved run's files cannot be read.
     """
     if not parent.exists():
         return None
@@ -2849,7 +2875,7 @@ def _saved_run(parent: Path, pass_id: str) -> Path | None:
     if len(candidates) > 1:
         raise ValueError("A validation pass folder contains multiple M8 runs")
     if not candidates:
-        if any(parent.iterdir()):
+        if any(path.name != "sampling_facts.json" for path in parent.iterdir()):
             raise ValueError(
                 "A validation pass folder contains incomplete unknown output"
             )

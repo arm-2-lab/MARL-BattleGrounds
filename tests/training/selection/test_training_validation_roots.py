@@ -11,6 +11,9 @@ options and verifies only at that depth. The same games rewritten as a record
 saved before the Red Zone rule (schema 1 task, no depth option, kills read from
 scores) verify, and are reusable as a shared initialization, only when the
 caller passes red_zone_depth=None.
+A pass killed after its sampling_facts.json but before its games resumes and
+finishes in the same folder; a game-results folder left without run_details.json
+is still refused as unknown output.
 """
 
 # Tests inspect the validation owner's strict evidence boundaries.
@@ -308,6 +311,33 @@ def test_saved_random_sampling_bounds_rebuild_from_bound_pass_facts(
         validation.verify_random_result(
             record, actor_digest="fixed-inference", seed_pairs=1
         )
+
+
+def test_a_pass_killed_before_its_games_resumes_but_other_partial_output_is_refused(
+    fake_m8: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evaluator = import_module("marl_battlegrounds.evaluation.evaluate")
+    execute = evaluator._run_evaluation
+
+    def killed(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("worker killed")
+
+    monkeypatch.setattr(evaluator, "_run_evaluation", killed)
+    with pytest.raises(RuntimeError, match="worker killed"):
+        _capture(fake_m8, 19_043_001)
+    (facts,) = fake_m8["root"].rglob("sampling_facts.json")
+    cell = facts.parent
+    assert list(cell.iterdir()) == [facts]
+    monkeypatch.setattr(evaluator, "_run_evaluation", execute)
+    record = _capture(fake_m8, 19_043_001)
+    assert [Path(path).parent for path in record["pass_paths"]] == [cell]
+    assert len(fake_m8["calls"]) == 1
+    validation.verify_random_result(
+        record, actor_digest="fixed-inference", seed_pairs=4
+    )
+    (cell / "known-m8-run" / "run_details.json").unlink()
+    with pytest.raises(ValueError, match="incomplete unknown output"):
+        validation._saved_run(cell, "any-pass")
 
 
 def test_routine_and_confirmation_game_start_keys_do_not_overlap(
