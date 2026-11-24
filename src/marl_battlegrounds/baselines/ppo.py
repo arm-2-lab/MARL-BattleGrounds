@@ -968,6 +968,47 @@ class RecurrentActor(nn.Module):
         return carry, DiscreteActionHead(name="action_head")(embedding)
 
 
+def _tarmac_attention(
+    query: Array, key: Array, value: Array, senders: Array, *, mean: bool
+) -> Array:
+    """Return each receiver's message for one TarMAC round (the paper's equation 2).
+
+    Parameters
+    ----------
+    query, key : Array
+        Float32 (...,5,16): each actor's query and key for this round.
+    value : Array
+        Float32 (...,5,32): each actor's value for this round.
+    senders : Array
+        Bool (...,5,5) [receiver, sender]: True where the receiver hears the
+        sender, its own message included.
+    mean : bool
+        True weights every heard sender equally (the paper's no-attention
+        control); False uses softmax(q_i . k_j / 4) over heard senders.
+
+    Returns
+    -------
+    Array
+        Float32 (...,5,32): c_i = sum_j a_ij v_j. A receiver that hears no
+        sender reads zeros.
+
+    Notes
+    -----
+    Unheard senders get a large negative finite score (_MASKED_SCORE, -1e9)
+    and a second mask after the softmax (the double-where pattern), so the
+    value and the gradient stay finite when nobody is heard. Pure JAX.
+    """
+    if mean:
+        scores = jnp.zeros(senders.shape, jnp.float32)
+    else:
+        scores = jnp.einsum("...if,...jf->...ij", query, key) / jnp.sqrt(
+            jnp.float32(TARMAC_KEY_SIZE)
+        )
+    weights = jax.nn.softmax(jnp.where(senders, scores, _MASKED_SCORE), axis=-1)
+    weights = jnp.where(senders, weights, 0.0)
+    return jnp.einsum("...ij,...jf->...if", weights, value)
+
+
 class TarMACRNN(nn.Module):
     """Carry a team's five memories through time with one or two message rounds.
 
@@ -1045,16 +1086,9 @@ class TarMACRNN(nn.Module):
         def read(state: Array) -> Array:
             """Return each receiver's (E,5,32) message for one round from state."""
             key, value = key_layer(state), value_layer(state)
-            query = query_layer(state)
-            if messages == "mean":
-                scores = jnp.zeros(senders.shape, jnp.float32)
-            else:
-                scores = jnp.einsum("...if,...jf->...ij", query, key) / jnp.sqrt(
-                    jnp.float32(TARMAC_KEY_SIZE)
-                )
-            weights = jax.nn.softmax(jnp.where(senders, scores, _MASKED_SCORE), axis=-1)
-            weights = jnp.where(senders, weights, 0.0)
-            return jnp.einsum("...ij,...jf->...if", weights, value)
+            return _tarmac_attention(
+                query_layer(state), key, value, senders, mean=messages == "mean"
+            )
 
         message = read(carry)
         if rounds == 2:

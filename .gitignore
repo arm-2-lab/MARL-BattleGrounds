@@ -81,8 +81,9 @@ Thumbs.db
 !tests/fixtures/baseline_donor/mappo_registration_params.npz
 !tests/fixtures/baseline_donor/pqn.npz
 
-# HAPPO's reference numbers from its authors' code (HARL).
+# HAPPO's and TarMAC's reference numbers (HARL; XuanCe).
 !tests/fixtures/implementation_checks/happo_harl.npz
+!tests/fixtures/implementation_checks/tarmac_xuance.npz
 
 # Private local authoring product; public clients have no dependency on it.
 /.local/dev_client/
