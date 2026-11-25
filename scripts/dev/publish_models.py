@@ -564,8 +564,6 @@ class Entrant:
         Training method key, such as ``"ippo"`` or ``"pqn_vdn"``.
     seed : int
         Training seed.
-    recipe : str
-        Training recipe name.
     step : int
         The save that played Season 0.
     folder_name : str
@@ -584,7 +582,6 @@ class Entrant:
     label: str
     method: str
     seed: int
-    recipe: str
     step: int
     folder_name: str
     rank: int
@@ -945,7 +942,6 @@ def read_entrant(ratings: Path, case: str) -> Entrant:
         label=row["label"],
         method=row["method"],
         seed=int(row["seed"]),
-        recipe=row["recipe"],
         step=int(row["checkpoint_env_steps"]),
         folder_name=PurePosixPath(row["reference"]).name,
         rank=int(row["rank"]),
@@ -1283,7 +1279,6 @@ records.
 
 - **Method:** {entrant.label} (`{entrant.method}`)
 - **Learner Code:** {learner_code_text(entrant.method)}
-- **Training Recipe:** `{entrant.recipe}`
 - **Training Seed:** {entrant.seed}
 - **Saves:** {len(steps):,}, from step {first:,} to step {last:,}
 - **Season 0 Save:** Step {entrant.step:,} (`models/{model_file_name(entrant.step)}`)
