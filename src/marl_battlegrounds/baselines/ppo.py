@@ -760,7 +760,12 @@ class MLPTorso(nn.Module):
     layer_sizes: tuple[int, ...] = (HIDDEN_SIZE,)
 
     @nn.compact
-    def __call__(self, features: Array, own_view: Array | None = None) -> Array:
+    def __call__(
+        self,
+        features: Array,
+        own_view: Array | None = None,
+        handed: Array | None = None,
+    ) -> Array:
         """Map each feature row to 128 values without mixing rows.
 
         Parameters
@@ -779,6 +784,15 @@ class MLPTorso(nn.Module):
             projection is computed once and broadcast to own_view's rows (five,
             or one in a HAPPO group pass). None, the default, adds no parameter
             and leaves the computation unchanged.
+        handed : Array or None, default=None
+            Optional float32 (...,K) block for an actor torso: the current-action
+            oracle's rows, holding what the other agents chose earlier in the same
+            tick. Its leading axes match features'. A separate bias-free Dense
+            layer, named "handed", projects it to the last layer's width and adds
+            it before the last ReLU, so a torso of several layers reads it after
+            its first layers. A block of zeros adds exactly nothing, so the
+            network then computes what it computes without the weight. None, the
+            default, adds no parameter and leaves the computation unchanged.
 
         Returns
         -------
@@ -789,22 +803,28 @@ class MLPTorso(nn.Module):
         Raises
         ------
         ValueError
-            own_view is None but the parameters hold an "own_view" weight, so
-            an agent-specific critic would silently run as a shared-state one.
-            The check reads only the parameter tree's structure, so it costs
-            nothing at run time. The opposite case (own_view supplied to
-            parameters without that weight) fails in Flax as a missing
+            own_view (or handed) is None but the parameters hold an "own_view"
+            (or "handed") weight, so the network would silently run without an
+            input it was trained on. Pass a block of zeros to give an oracle
+            actor no help. The check reads only the parameter tree's structure,
+            so it costs nothing at run time. The opposite case (an input supplied
+            to parameters without its weight) fails in Flax as a missing
             parameter.
         """
-        if (
-            own_view is None
-            and not self.is_initializing()
-            and "own_view" in self.variables.get("params", {})
-        ):
-            raise ValueError(
-                "This critic was initialized with PPOConfig.agent_specific_state; "
-                "supply each row's own actor view (own_view)"
-            )
+        if not self.is_initializing():
+            params = self.variables.get("params", {})
+            if own_view is None and "own_view" in params:
+                raise ValueError(
+                    "This critic was initialized with "
+                    "PPOConfig.agent_specific_state; supply each row's own actor "
+                    "view (own_view)"
+                )
+            if handed is None and "handed" in params:
+                raise ValueError(
+                    "This actor was initialized to read handed actions (the "
+                    "current-action oracle); supply its block, zeros for no help"
+                )
+        last = len(self.layer_sizes) - 1
         for index, size in enumerate(self.layer_sizes):
             features = nn.Dense(size, kernel_init=nn.initializers.orthogonal(2**0.5))(
                 features
@@ -817,8 +837,55 @@ class MLPTorso(nn.Module):
                     name="own_view",
                 )(own_view)
                 features = features[..., None, :] + own
+            if index == last and handed is not None:
+                features = features + nn.Dense(
+                    size,
+                    use_bias=False,
+                    kernel_init=nn.initializers.orthogonal(2**0.5),
+                    name="handed",
+                )(handed)
             features = nn.relu(features)
         return features
+
+
+def _group_handed(
+    pre_activation: Array, layer_owner: Tree, handed: Array | None, groups: Array
+) -> Array:
+    """Add a grouped torso's handed-block term, as MLPTorso does for shared weights.
+
+    Parameters
+    ----------
+    pre_activation : Array
+        Float32 (...,H) output of the torso's last Dense layer, before its ReLU.
+    layer_owner : Tree
+        That torso's parameters, holding "Dense_k" layers and, for an oracle
+        actor, a bias-free "handed" layer with kernel (5,K,H).
+    handed : Array or None
+        Float32 (...,K) block with pre_activation's leading axes, or None.
+    groups : Array
+        Int32 (...) group IDs 0..4 for those leading axes.
+
+    Returns
+    -------
+    Array
+        pre_activation plus each row's own group's projection of its block, or
+        pre_activation unchanged when there is no "handed" weight and no block.
+
+    Raises
+    ------
+    ValueError
+        One of the block and the "handed" weight is present without the other.
+    """
+    if "handed" not in layer_owner:
+        if handed is not None:
+            raise ValueError("This actor has no weight for handed actions")
+        return pre_activation
+    if handed is None:
+        raise ValueError(
+            "This actor was initialized to read handed actions (the "
+            "current-action oracle); supply its block, zeros for no help"
+        )
+    return pre_activation + _group_dense(handed, layer_owner["handed"], groups)
 
 
 class ScannedRNN(nn.Module):
@@ -919,6 +986,7 @@ class RecurrentActor(nn.Module):
         valid: Array,
         *,
         actor_group: Array | None = None,
+        handed: Array | None = None,
     ) -> tuple[Array, Array]:
         """Read permitted feature sequences with independent actor memory.
 
@@ -938,6 +1006,10 @@ class RecurrentActor(nn.Module):
             Optional int32 (T,E,5) group IDs 0..4. Variables then have a
             leading axis of five independent actor groups. None preserves
             the shared network. Initialize groups by mapping the shared init.
+        handed : Array or None, default=None
+            Optional float32 (T,E,5,K) current-action oracle block. It enters the
+            post-memory layer only (see MLPTorso), never the memory, so the memory
+            is the same whatever is handed. None, the default, adds no parameter.
 
         Returns
         -------
@@ -945,12 +1017,17 @@ class RecurrentActor(nn.Module):
             Final float32 (E,5,128) memory and float32 (T,E,5,198) raw logits.
             Ignore logits for invalid rows. No action is sampled here.
 
+        Raises
+        ------
+        ValueError
+            input_scale is invalid, or handed does not match whether the
+            variables hold a "handed" weight (see MLPTorso).
+
         Notes
         -----
         Shapes, dtypes and information rights are caller preconditions. This
         Flax module works inside jit; its parameters are shared across time and
         actors. It reads no critic state and writes no external state.
-        An invalid input_scale raises ValueError before numerical application.
         """
         scale = _input_scale(self.input_scale)
         if scale != 1.0:
@@ -969,12 +1046,19 @@ class RecurrentActor(nn.Module):
                 actor_group,
             )
             x = nn.relu(
-                _group_dense(embedding, params["post_torso"]["Dense_0"], actor_group)
+                _group_handed(
+                    _group_dense(
+                        embedding, params["post_torso"]["Dense_0"], actor_group
+                    ),
+                    params["post_torso"],
+                    handed,
+                    actor_group,
+                )
             )
             return carry, _group_dense(x, params["action_head"]["Dense_0"], actor_group)
         embedding = MLPTorso(name="pre_torso")(features)
         carry, embedding = ScannedRNN()(carry, (embedding, resets, valid))
-        embedding = MLPTorso(name="post_torso")(embedding)
+        embedding = MLPTorso(name="post_torso")(embedding, handed=handed)
         return carry, DiscreteActionHead(name="action_head")(embedding)
 
 
@@ -1148,6 +1232,7 @@ class TarMACActor(nn.Module):
         resets: Array,
         valid: Array,
         senders: Array,
+        handed: Array | None = None,
     ) -> tuple[Array, Array]:
         """Read permitted feature sequences and last-tick teammate messages.
 
@@ -1165,6 +1250,10 @@ class TarMACActor(nn.Module):
             Boolean (T,E,5,5) sender masks, [receiver, sender], from
             ``tarmac_sender_mask`` at play and from the stored batch in the
             update.
+        handed : Array or None, default=None
+            Optional float32 (T,E,5,K) current-action oracle block. It enters
+            after the memory and message rounds, at the post-memory layer only
+            (see MLPTorso). None, the default, adds no parameter.
 
         Returns
         -------
@@ -1176,7 +1265,8 @@ class TarMACActor(nn.Module):
         ------
         ValueError
             input_scale, messages or rounds is invalid, before any numerical
-            work.
+            work; or handed does not match whether the variables hold a
+            "handed" weight (see MLPTorso).
 
         Notes
         -----
@@ -1189,7 +1279,7 @@ class TarMACActor(nn.Module):
         carry, embedding = TarMACRNN(messages=self.messages, rounds=self.rounds)(
             carry, (embedding, resets, valid, senders)
         )
-        embedding = MLPTorso(name="post_torso")(embedding)
+        embedding = MLPTorso(name="post_torso")(embedding, handed=handed)
         return carry, DiscreteActionHead(name="action_head")(embedding)
 
 
@@ -1340,14 +1430,25 @@ class FeedForwardActor(nn.Module):
     input_scale: float = 1.0
 
     @nn.compact
-    def __call__(self, features: Array, *, actor_group: Array | None = None) -> Array:
+    def __call__(
+        self,
+        features: Array,
+        *,
+        actor_group: Array | None = None,
+        handed: Array | None = None,
+    ) -> Array:
         """Return float32 (...,198) logits for float32 (...,F) permitted inputs.
 
         actor_group is optional int32 features.shape[:-1] with IDs 0..4;
         grouped variables have a leading axis of five. None keeps shared weights.
         F must match the initialized width. No time or memory axis is required.
-        No actions are sampled and inputs stay unchanged. Invalid input_scale
-        raises ValueError; the pure Flax application supports jit and vmap.
+        handed is the optional float32 (...,K) current-action oracle block; it
+        enters the second torso layer only (see MLPTorso), so the first layer's
+        result does not depend on it. None, the default, adds no parameter.
+        No actions are sampled and inputs stay unchanged. An invalid input_scale,
+        or a handed block that does not match whether the variables hold a
+        "handed" weight, raises ValueError; the pure Flax application supports
+        jit and vmap.
         """
         scale = _input_scale(self.input_scale)
         if scale != 1.0:
@@ -1356,11 +1457,14 @@ class FeedForwardActor(nn.Module):
             params = self.variables["params"]
             x = features
             for index in range(2):
-                x = nn.relu(
-                    _group_dense(x, params["torso"][f"Dense_{index}"], actor_group)
-                )
+                x = _group_dense(x, params["torso"][f"Dense_{index}"], actor_group)
+                if index == 1:
+                    x = _group_handed(x, params["torso"], handed, actor_group)
+                x = nn.relu(x)
             return _group_dense(x, params["action_head"]["Dense_0"], actor_group)
-        embedding = MLPTorso((HIDDEN_SIZE, HIDDEN_SIZE), name="torso")(features)
+        embedding = MLPTorso((HIDDEN_SIZE, HIDDEN_SIZE), name="torso")(
+            features, handed=handed
+        )
         return DiscreteActionHead(name="action_head")(embedding)
 
 

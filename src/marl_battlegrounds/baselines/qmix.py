@@ -117,6 +117,7 @@ from marl_battlegrounds.baselines.ppo import (
     _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
     _group_dense,  # pyright: ignore[reportPrivateUsage]
     _group_gru,  # pyright: ignore[reportPrivateUsage]
+    _group_handed,  # pyright: ignore[reportPrivateUsage]
     _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
     _input_scale,  # pyright: ignore[reportPrivateUsage]
     _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
@@ -381,6 +382,7 @@ class RecurrentQNetwork(nn.Module):
         valid: Array,
         *,
         actor_group: Array | None = None,
+        handed: Array | None = None,
     ) -> tuple[Array, Array]:
         """Read feature sequences with independent actor memory.
 
@@ -400,6 +402,10 @@ class RecurrentQNetwork(nn.Module):
             Optional int32 (T,E,5) group IDs 0..4. Variables then have a
             leading axis of five independent actor groups. None keeps the
             shared network. Initialize groups by mapping the shared init.
+        handed : Array or None, default=None
+            Optional float32 (T,E,5,K) current-action oracle block. It enters
+            the post-memory layer only (MLPTorso in baselines/ppo.py), never the
+            memory. None, the default, adds no parameter.
 
         Returns
         -------
@@ -410,7 +416,8 @@ class RecurrentQNetwork(nn.Module):
         Raises
         ------
         ValueError
-            input_scale is not a finite positive real number.
+            input_scale is not a finite positive real number, or handed does
+            not match whether the variables hold a "handed" weight.
         """
         scale = _input_scale(self.input_scale)
         if scale != 1.0:
@@ -429,14 +436,23 @@ class RecurrentQNetwork(nn.Module):
                 actor_group,
             )
             x = nn.relu(
-                _group_dense(embedding, params["post_torso"]["Dense_0"], actor_group)
+                _group_handed(
+                    _group_dense(
+                        embedding, params["post_torso"]["Dense_0"], actor_group
+                    ),
+                    params["post_torso"],
+                    handed,
+                    actor_group,
+                )
             )
             return carry, _group_dense(x, params["Dense_0"], actor_group)
         embedding = MLPTorso((QMIX_HIDDEN_SIZE,), name="pre_torso")(features)
         carry, embedding = QMIXScannedGRU(name="ScannedRNN_0")(
             carry, (embedding, resets, valid)
         )
-        embedding = MLPTorso((QMIX_HIDDEN_SIZE,), name="post_torso")(embedding)
+        embedding = MLPTorso((QMIX_HIDDEN_SIZE,), name="post_torso")(
+            embedding, handed=handed
+        )
         values = nn.Dense(NUM_ACTIONS, kernel_init=nn.initializers.orthogonal(0.01))(
             embedding
         )
