@@ -134,6 +134,16 @@ include = [
 
 [dependency-groups]
 jupyter = ["jupyterlab"]
+# The paper's outside games (SMAX and the particle games) and the JaxMARL learners
+# that train on them. Installed only into .venv-outside, never into the shared .venv:
+# UV_PROJECT_ENVIRONMENT=.venv-outside uv sync --locked --extra cuda13 --extra training --group outside-envs
+outside-envs = [
+  "jaxmarl @ git+https://github.com/bold-lab-ai/JaxMARL@200a9bd6df9217e7b30fc1e65337ad11c9de0f51",
+  "distrax==0.1.9",
+  "hydra-core==1.3.8",
+  "omegaconf==2.3.0",
+  "wandb",
+]
 
 [tool.uv]
 conflicts = [[{ extra = "cuda12" }, { extra = "cuda13" }, { extra = "rocm" }, { extra = "tpu" }]]
@@ -151,6 +161,8 @@ constraint-dependencies = [
 target-version = "py312"
 line-length = 88
 src = ["src", "tests"]
+# JaxMARL's learners, copied as they are; their diff from upstream is what gets reviewed.
+extend-exclude = ["scripts/paper_experiments/outside_environments/hosts"]
 
 [tool.ruff.lint]
 select = [
@@ -193,6 +205,8 @@ exclude = [
   "checkpoints",
   # Runs in its own pinned environment with torch and HARL (its requirements.txt).
   "scripts/paper_experiments/implementation_checks",
+  # Runs in .venv-outside with JaxMARL; checked there with its own pyrightconfig.json.
+  "scripts/paper_experiments/outside_environments",
 ]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
