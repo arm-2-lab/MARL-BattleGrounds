@@ -190,7 +190,7 @@ def test_saved_settings_keep_old_bytes_and_old_blocks_still_match() -> None:
     assert saved_settings(ppo) == {
         k: v
         for k, v in dataclasses.asdict(ppo).items()
-        if k not in ("messages", "agent_specific_state")
+        if k not in ("messages", "message_rounds", "agent_specific_state")
     }
     old_qmix, old_pqn = (
         saved_settings(qmix.QMIXConfig()),
