@@ -136,7 +136,7 @@ include = [
 jupyter = ["jupyterlab"]
 # The paper's outside games (SMAX and the particle games) and the JaxMARL learners
 # that train on them. Installed only into .venv-outside, never into the shared .venv:
-# UV_PROJECT_ENVIRONMENT=.venv-outside uv sync --locked --extra cuda13 --extra training --group outside-envs
+# UV_PROJECT_ENVIRONMENT=.venv-outside uv sync --locked --extra cuda13 --extra training --extra dev --group outside-envs
 outside-envs = [
   "jaxmarl @ git+https://github.com/bold-lab-ai/JaxMARL@200a9bd6df9217e7b30fc1e65337ad11c9de0f51",
   "distrax==0.1.9",

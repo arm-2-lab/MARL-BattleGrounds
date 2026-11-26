@@ -1,0 +1,14 @@
+// Strict type checking for the outside-games folder, run in .venv-outside (it holds JaxMARL):
+//   UV_PROJECT_ENVIRONMENT=.venv-outside uv run --no-sync pyright -p scripts/paper_experiments/outside_environments
+// The shared pyright run in pyproject.toml skips this folder. hosts/ holds JaxMARL's learners,
+// copied as they are, so it is left out here too.
+{
+  "include": ["."],
+  "exclude": ["hosts", "**/__pycache__"],
+  "typeCheckingMode": "strict",
+  "reportUnknownMemberType": "none",
+  "pythonVersion": "3.12",
+  "venvPath": "../../..",
+  "venv": ".venv-outside",
+  "extraPaths": ["../../.."]
+}
