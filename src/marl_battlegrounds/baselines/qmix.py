@@ -114,16 +114,21 @@ from marl_battlegrounds.baselines.ppo import (
     MLPTorso,
     _actor_group_presence,  # pyright: ignore[reportPrivateUsage]
     _actor_input_schema,  # pyright: ignore[reportPrivateUsage]
+    _ActorStep,  # pyright: ignore[reportPrivateUsage]
     _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
+    _declare_oracle_step,  # pyright: ignore[reportPrivateUsage]
     _group_dense,  # pyright: ignore[reportPrivateUsage]
     _group_gru,  # pyright: ignore[reportPrivateUsage]
     _group_handed,  # pyright: ignore[reportPrivateUsage]
     _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
+    _handed_features,  # pyright: ignore[reportPrivateUsage]
     _input_scale,  # pyright: ignore[reportPrivateUsage]
     _parameter_sharing,  # pyright: ignore[reportPrivateUsage]
     _spawn_frame,  # pyright: ignore[reportPrivateUsage]
     _update_actor_groups,  # pyright: ignore[reportPrivateUsage]
+    _world_probabilities,  # pyright: ignore[reportPrivateUsage]
 )
+from marl_battlegrounds.core.types import PreviousTimestepActionObservation
 from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
@@ -1035,6 +1040,95 @@ def _apply_q_actor(
     return SystemOutput(decode_actions(indices), memory)
 
 
+def _q_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-action oracle.
+    variables: QMIXActorVariables,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Run QMIX's actor once and keep its epsilon-greedy distribution.
+
+    Arguments are _apply_q_actor's (see there). handed is the current-action
+    oracle's optional rows (B,5,[5,part]) in world directions, mirrored with the
+    actor's view; they enter the post-memory layer only. None, which every
+    ordinary System call uses, gives exactly _apply_q_actor's result. The
+    distribution is action_probabilities' epsilon-greedy one, returned in world
+    directions; log_prob is the log of the chosen index's probability.
+    """
+    actors, frame_mask = inputs.actors, inputs.action_mask
+    flag: Array | None = None
+    spawn_frame = SPAWN_FRAMES[spawn_frame_index]
+    if spawn_frame != "world":
+        flag = spawn_frame_flag(actors, spawn_frame)
+        actors, frame_mask = mirror_team_view(
+            actors,
+            frame_mask,
+            flag,
+            obstacle_partners=team_obstacle_partners(actors),
+        )
+    features = encode_actor_inputs(actors)
+    block = _handed_features(handed, flag)
+    valid = jnp.broadcast_to(inputs.valid[:, None], inputs.active_mask.shape)
+    starts = jnp.broadcast_to(inputs.episode_start[:, None], inputs.active_mask.shape)
+    memory, values = cast(
+        tuple[Array, Array],
+        RecurrentQNetwork(input_scale=input_scale).apply(
+            variables.params,
+            memory,
+            features[None],
+            starts[None],
+            valid[None],
+            handed=None if block is None else block[None],
+        ),
+    )
+    return _epsilon_greedy_step(
+        values[0],
+        categorical_action_mask(frame_mask),
+        keys,
+        variables.epsilon,
+        flag,
+        memory,
+    )
+
+
+def _epsilon_greedy_step(
+    values: Array,
+    mask: Array,
+    keys: Array,
+    epsilon: Array,
+    flag: Array | None,
+    memory: Tree,
+) -> _ActorStep:
+    """Draw epsilon-greedy indices and keep the distribution they come from.
+
+    values are float32 (B,5,198) action values and mask the bool (B,5,198)
+    categorical mask, both in the frame the actor chose in; keys are B lane keys,
+    split into five actor streams as every QMIX hook does; epsilon is the 0-d
+    exploration rate; flag is the bool (B,5) spawn-frame flag, or None for world
+    directions. Indices and the epsilon-greedy distribution (action_probabilities)
+    are returned in world directions; log_prob is the log of each chosen index's
+    probability.
+    """
+    actor_keys = jax.vmap(functools.partial(jax.random.split, num=TEAM_SLOTS))(keys)
+    indices = _explore(greedy_actions(values, mask), mask, actor_keys, epsilon)
+    probabilities = action_probabilities(values, mask, epsilon)
+    log_prob = jnp.log(
+        jnp.take_along_axis(probabilities, indices[..., None], axis=-1)[..., 0]
+    )
+    if flag is None:
+        return _ActorStep(indices, memory, log_prob, probabilities)
+    return _ActorStep(
+        mirror_action_indices(indices, flag),
+        memory,
+        log_prob,
+        _world_probabilities(probabilities, flag),
+    )
+
+
 @functools.lru_cache(maxsize=16)
 def _q_actor_apply(
     scale: float, spawn_frame: str
@@ -1070,6 +1164,10 @@ def _q_actor_apply(
             spawn_frame_index=spawn_frame_index,
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(_q_step, input_scale=scale, spawn_frame_index=frame_index),
+    )
     return apply
 
 
@@ -1179,7 +1277,58 @@ def _grouped_qmix_actor_apply(
             indices = mirror_action_indices(indices, flag)
         return SystemOutput(decode_actions(indices), next_memory)
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _grouped_q_step,
+            input_scale=scale,
+            spawn_frame_index=SPAWN_FRAMES.index(frame),
+            parameter_sharing_index=_PARAMETER_SHARING.index(sharing),
+        ),
+    )
     return apply
+
+
+def _grouped_q_step(
+    variables: QMIXActorVariables,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    parameter_sharing_index: int,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Run QMIX's grouped actor (per-class or per-agent weights) with its distribution.
+
+    Arguments are the grouped hook's (see _grouped_qmix_actor_apply), settings by
+    index into SPAWN_FRAMES and _PARAMETER_SHARING. handed is the current-action
+    oracle's optional rows (B,5,[5,part]) in world directions, mirrored with the
+    actor's view; each row's own group reads it at the post-memory layer. None,
+    which every ordinary System call uses, gives exactly the hook's result.
+    """
+    features, mask, groups, flag = _grouped_actor_inputs(
+        inputs, _PARAMETER_SHARING[parameter_sharing_index], spawn_frame_index
+    )
+    block = _handed_features(handed, flag)
+    valid = jnp.broadcast_to(inputs.valid[:, None], inputs.active_mask.shape)
+    starts = jnp.broadcast_to(inputs.episode_start[:, None], inputs.active_mask.shape)
+    next_memory, values = cast(
+        tuple[Array, Array],
+        RecurrentQNetwork(input_scale=input_scale).apply(
+            variables.params,
+            memory,
+            features[None],
+            starts[None],
+            valid[None],
+            actor_group=groups[None],
+            handed=None if block is None else block[None],
+        ),
+    )
+    return _epsilon_greedy_step(
+        values[0], mask, keys, variables.epsilon, flag, next_memory
+    )
 
 
 def make_qmix_system(

@@ -134,6 +134,7 @@ except ImportError as error:
 
 from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
+    _log_probabilities,  # pyright: ignore[reportPrivateUsage]
     action_entropy,
     action_log_prob,
     categorical_action_mask,
@@ -148,12 +149,17 @@ from marl_battlegrounds.baselines.inputs import (
     SPAWN_FRAMES,
     TRAINING_STATE_FEATURE_SIZES,
     TRAINING_STATE_SCHEMA_VERSION,
+    _encode_handed_rows,  # pyright: ignore[reportPrivateUsage]
     encode_actor_inputs,
     schema_1_actor_input,
     spawn_frame_flag,
     team_obstacle_partners,
 )
-from marl_battlegrounds.core.types import AGENT_FEATURE_CLASS_ID, ActionMask
+from marl_battlegrounds.core.types import (
+    AGENT_FEATURE_CLASS_ID,
+    ActionMask,
+    PreviousTimestepActionObservation,
+)
 from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
@@ -163,6 +169,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
 from marl_battlegrounds.policies.input import (
     ActorInput,
     Observations,
+    _mirror_previous_actions,  # pyright: ignore[reportPrivateUsage]
     build_team_actor_input,
     mirror_team_view,
 )
@@ -1849,6 +1856,187 @@ def _apply_actor(
     )
 
 
+class _ActorStep(NamedTuple):
+    """One actor call's choices, next memory and full distribution (private).
+
+    The System hooks return the first three as a SystemOutput. The current-action
+    oracle (training/_oracle.py) also reads ``probabilities``.
+
+    Attributes
+    ----------
+    indices : Array
+        Int32 (B,5) categorical indices 0..197 in world directions.
+    memory : Tree
+        The actor's next memory, in the calling hook's layout.
+    log_prob : Array
+        Float32 (B,5) log-probability of each index, in the frame the actor
+        sampled in.
+    probabilities : Array
+        Float32 (B,5,198) masked distribution each index was drawn from, in world
+        directions. Illegal actions have probability zero.
+    """
+
+    indices: Array
+    memory: Tree
+    log_prob: Array
+    probabilities: Array
+
+
+_ORACLE_STEP_MARKER = "_marl_bgs_oracle_step"
+
+
+def _declare_oracle_step[Apply: Callable[..., object]](
+    apply: Apply, step: Callable[..., _ActorStep]
+) -> Apply:
+    """Attach a System hook's current-action oracle step, keeping its identity.
+
+    Parameters
+    ----------
+    apply : callable
+        A built-in System apply hook. Its own code is never changed.
+    step : callable
+        The hook's private step with the hook's settings bound, called as
+        ``step(variables, memory, inputs, keys, handed=None)``. With handed None
+        it gives exactly the hook's actions, next memory and learning values
+        (each pair is tested), and it also returns the distribution.
+
+    Returns
+    -------
+    callable
+        The same function object, now carrying the marker. Recorded method
+        identity reads code, closure and defaults, not attributes, so saved
+        identities do not change (as for ``_declare_lane_independent``). The
+        marker stores the hook itself, so a wrapper that copies attributes but
+        is a different object is not accepted (see ``oracle_step``).
+    """
+    setattr(apply, _ORACLE_STEP_MARKER, (apply, step))
+    return apply
+
+
+def oracle_step(apply: object) -> Callable[..., _ActorStep] | None:
+    """Return a marked System hook's oracle step, or None for any other callable.
+
+    The current-action oracle (training/_oracle.py) uses it to reach a fixed
+    opponent's action probabilities, and refuses any hook without a step.
+    """
+    marker = cast(
+        tuple[object, object] | None, getattr(apply, _ORACLE_STEP_MARKER, None)
+    )
+    if marker is None or marker[0] is not apply:
+        return None
+    return cast(Callable[..., _ActorStep], marker[1])
+
+
+def _handed_features(
+    handed: PreviousTimestepActionObservation | None, flag: Array | None
+) -> Array | None:
+    """Encode an oracle block in the actor's own frame, or return None.
+
+    handed holds float32 rows with leading axes (B,5) in world directions, as the
+    current-action oracle builds them; flag is the actor view's bool (B,5)
+    spawn-frame flag, or None when the actor plays in world directions. The
+    rows' move columns are mirrored exactly as the observation's last-tick rows.
+    """
+    if handed is None:
+        return None
+    if flag is not None:
+        handed = _mirror_previous_actions(handed, flag)
+    return _encode_handed_rows(handed)
+
+
+def _sampled_step(
+    logits: Array, mask: Array, keys: Array, flag: Array | None, memory: Tree
+) -> _ActorStep:
+    """Sample each actor's index from masked logits and keep its distribution.
+
+    logits are float32 (B,5,198) in the frame the actor sampled in; mask is that
+    frame's bool (B,5,198) categorical mask; keys are B lane keys, split into five actor
+    streams as every PPO hook does; flag is the bool (B,5) spawn-frame flag, or
+    None for world directions. Indices and probabilities are returned in world
+    directions; the log-probability stays in the sampling frame.
+    """
+    actor_keys = jax.vmap(functools.partial(jax.random.split, num=5))(keys)
+    indices = sample_actions(logits, mask, actor_keys)
+    # The probability belongs to the reflected frame the actor sampled in; the
+    # index is mapped back so the game and the stored rows see world directions.
+    log_prob = action_log_prob(logits, mask, indices)
+    probabilities = jnp.exp(_log_probabilities(logits, mask))
+    if flag is None:
+        return _ActorStep(indices, memory, log_prob, probabilities)
+    return _ActorStep(
+        mirror_action_indices(indices, flag),
+        memory,
+        log_prob,
+        _world_probabilities(probabilities, flag),
+    )
+
+
+def _world_probabilities(probabilities: Array, flag: Array) -> Array:
+    """Map float32 (B,5,198) distributions from flagged views back to world directions.
+
+    flag is the bool (B,5) spawn-frame flag. Mirroring swaps the East and West
+    move families of the categorical index (mirror_action_indices), and it is
+    its own inverse, so one reordering maps both ways. Unflagged rows are
+    returned unchanged.
+    """
+    order = mirror_action_indices(
+        jnp.arange(NUM_ACTIONS, dtype=jnp.int32), jnp.asarray(True)
+    )
+    return jnp.where(
+        flag[..., None], jnp.take(probabilities, order, axis=-1), probabilities
+    )
+
+
+def _actor_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-action oracle.
+    variables: Tree,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Run the shared recurrent actor once: _apply_actor's work, with its distribution.
+
+    Arguments are _apply_actor's (see there). handed is the current-action
+    oracle's optional rows (B,5,[5,part]) in world directions; they are mirrored
+    with the actor's view and enter only the post-memory layer. None, which every
+    ordinary System call uses, gives exactly _apply_actor's result.
+    """
+    actors, frame_mask = inputs.actors, inputs.action_mask
+    flag: Array | None = None
+    spawn_frame = SPAWN_FRAMES[spawn_frame_index]
+    if spawn_frame != "world":
+        flag = spawn_frame_flag(actors, spawn_frame)
+        # The five actors of a lane share one map table: match obstacles once
+        # per game rather than once per actor.
+        actors, frame_mask = mirror_team_view(
+            actors,
+            frame_mask,
+            flag,
+            obstacle_partners=team_obstacle_partners(actors),
+        )
+    features = encode_actor_inputs(actors)
+    block = _handed_features(handed, flag)
+    valid = jnp.broadcast_to(inputs.valid[:, None], inputs.active_mask.shape)
+    starts = jnp.broadcast_to(inputs.episode_start[:, None], inputs.active_mask.shape)
+    memory, logits = cast(
+        tuple[Array, Array],
+        RecurrentActor(input_scale=input_scale).apply(
+            variables,
+            memory,
+            features[None],
+            starts[None],
+            valid[None],
+            handed=None if block is None else block[None],
+        ),
+    )
+    return _sampled_step(
+        logits[0], categorical_action_mask(frame_mask), keys, flag, memory
+    )
+
+
 @functools.lru_cache(maxsize=16)
 def _scaled_actor_apply(
     scale: float, spawn_frame: str
@@ -1892,6 +2080,12 @@ def _scaled_actor_apply(
             spawn_frame_index=spawn_frame_index,
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _actor_step, input_scale=scale, spawn_frame_index=frame_index
+        ),
+    )
     return apply
 
 
@@ -2015,7 +2209,77 @@ def _grouped_ppo_actor_apply(
             learning_outputs=PPOLearningOutputs(indices, log_prob),
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _grouped_step,
+            input_scale=scale,
+            spawn_frame_index=SPAWN_FRAMES.index(frame),
+            parameter_sharing_index=_PARAMETER_SHARING.index(sharing),
+            recurrent_actor=recurrent,
+        ),
+    )
     return apply
+
+
+# The unscaled world-frame hook is used directly (make_recurrent_mappo_system).
+_declare_oracle_step(
+    _apply_actor,
+    functools.partial(_actor_step, input_scale=1.0, spawn_frame_index=0),
+)
+
+
+def _grouped_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-action oracle.
+    variables: Tree,
+    memory: Tree,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    parameter_sharing_index: int,
+    recurrent_actor: bool,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Run one grouped PPO actor (per-class or per-agent weights) with its distribution.
+
+    Arguments are the grouped hook's (see _grouped_ppo_actor_apply): settings by
+    index into SPAWN_FRAMES and _PARAMETER_SHARING, and recurrent_actor picking
+    the recurrent or feedforward network. handed is the current-action oracle's
+    optional rows (B,5,[5,part]) in world directions, mirrored with the actor's
+    view; each row's own group reads it at the post-memory layer. None, which
+    every ordinary System call uses, gives exactly the hook's result.
+    """
+    features, mask, groups, flag = _grouped_actor_inputs(
+        inputs, _PARAMETER_SHARING[parameter_sharing_index], spawn_frame_index
+    )
+    block = _handed_features(handed, flag)
+    if recurrent_actor:
+        valid = jnp.broadcast_to(inputs.valid[:, None], inputs.active_mask.shape)
+        starts = jnp.broadcast_to(
+            inputs.episode_start[:, None], inputs.active_mask.shape
+        )
+        memory, logits = cast(
+            tuple[Array, Array],
+            RecurrentActor(input_scale=input_scale).apply(
+                variables,
+                memory,
+                features[None],
+                starts[None],
+                valid[None],
+                actor_group=groups[None],
+                handed=None if block is None else block[None],
+            ),
+        )
+        logits = logits[0]
+    else:
+        logits = cast(
+            Array,
+            FeedForwardActor(input_scale=input_scale).apply(
+                variables, features, actor_group=groups, handed=block
+            ),
+        )
+    return _sampled_step(logits, mask, keys, flag, memory)
 
 
 def _apply_tarmac_actor(
@@ -2109,6 +2373,63 @@ def _apply_tarmac_actor(
     )
 
 
+def _tarmac_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-action oracle.
+    variables: Tree,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    messages_index: int,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Run TarMAC's actor once, with last-tick messages and its distribution.
+
+    Arguments are _apply_tarmac_actor's (see there). handed is the
+    current-action oracle's optional rows (B,5,[5,part]) in world directions,
+    mirrored with the actor's view; they enter after the memory and message
+    rounds. None, which every ordinary System call uses, gives exactly
+    _apply_tarmac_actor's result. The sender mask is rebuilt from inputs by the
+    caller that stores it.
+    """
+    senders = tarmac_sender_mask(inputs)
+    actors, frame_mask = inputs.actors, inputs.action_mask
+    flag: Array | None = None
+    spawn_frame = SPAWN_FRAMES[spawn_frame_index]
+    if spawn_frame != "world":
+        flag = spawn_frame_flag(actors, spawn_frame)
+        actors, frame_mask = mirror_team_view(
+            actors,
+            frame_mask,
+            flag,
+            obstacle_partners=team_obstacle_partners(actors),
+        )
+    features = encode_actor_inputs(actors)
+    block = _handed_features(handed, flag)
+    valid = jnp.broadcast_to(inputs.valid[:, None], inputs.active_mask.shape)
+    starts = jnp.broadcast_to(inputs.episode_start[:, None], inputs.active_mask.shape)
+    memory, logits = cast(
+        tuple[Array, Array],
+        TarMACActor(
+            input_scale=input_scale,
+            messages=TARMAC_MESSAGES[messages_index],
+            rounds=_tarmac_rounds(variables),
+        ).apply(
+            variables,
+            memory,
+            features[None],
+            starts[None],
+            valid[None],
+            senders[None],
+            None if block is None else block[None],
+        ),
+    )
+    return _sampled_step(
+        logits[0], categorical_action_mask(frame_mask), keys, flag, memory
+    )
+
+
 @functools.lru_cache(maxsize=16)
 def _tarmac_actor_apply(
     scale: float, spawn_frame: str, messages: str
@@ -2150,6 +2471,15 @@ def _tarmac_actor_apply(
             messages_index=tarmac_messages_index,
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _tarmac_step,
+            input_scale=scale,
+            spawn_frame_index=frame_index,
+            messages_index=messages_index,
+        ),
+    )
     return apply
 
 
@@ -2295,6 +2625,45 @@ def _apply_feedforward_actor(
     )
 
 
+def _feedforward_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-action oracle.
+    variables: Tree,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Run the shared feedforward actor once, with its distribution.
+
+    Arguments are _apply_feedforward_actor's (see there); memory is absent and
+    the returned memory is the empty tuple. handed is the current-action
+    oracle's optional rows (B,5,[5,part]) in world directions, mirrored with the
+    actor's view; they enter the second torso layer only. None, which every
+    ordinary System call uses, gives exactly _apply_feedforward_actor's result.
+    """
+    actors, frame_mask = inputs.actors, inputs.action_mask
+    flag: Array | None = None
+    frame = SPAWN_FRAMES[spawn_frame_index]
+    if frame != "world":
+        flag = spawn_frame_flag(actors, frame)
+        actors, frame_mask = mirror_team_view(
+            actors,
+            frame_mask,
+            flag,
+            obstacle_partners=team_obstacle_partners(actors),
+        )
+    logits = cast(
+        Array,
+        FeedForwardActor(input_scale=input_scale).apply(
+            variables,
+            encode_actor_inputs(actors),
+            handed=_handed_features(handed, flag),
+        ),
+    )
+    return _sampled_step(logits, categorical_action_mask(frame_mask), keys, flag, ())
+
+
 @functools.lru_cache(maxsize=16)
 def _feedforward_actor_apply(
     scale: float, frame: str
@@ -2330,6 +2699,14 @@ def _feedforward_actor_apply(
             spawn_frame_index=spawn_frame_index,
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _feedforward_oracle_step,
+            input_scale=scale,
+            spawn_frame_index=frame_index,
+        ),
+    )
     return apply
 
 
@@ -2389,6 +2766,28 @@ def _schema_1_feedforward_actor_apply(
         )
 
     return apply
+
+
+def _feedforward_oracle_step(
+    variables: Tree,
+    memory: tuple[()],
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    handed: PreviousTimestepActionObservation | None = None,
+) -> _ActorStep:
+    """Give _feedforward_step the hooks' common step signature (memory unused)."""
+    del memory
+    return _feedforward_step(
+        variables,
+        inputs,
+        keys,
+        input_scale=input_scale,
+        spawn_frame_index=spawn_frame_index,
+        handed=handed,
+    )
 
 
 def make_ppo_system(

@@ -80,6 +80,7 @@ from marl_battlegrounds.core.types import (
     TEAM_B_ID,
     EnvConfig,
     EnvState,
+    PreviousTimestepActionObservation,
 )
 from marl_battlegrounds.policies.input import (
     ActorInput,
@@ -746,6 +747,50 @@ def encode_actor_inputs(inputs: ActorInput) -> Array:
         permission[..., :, None, None], fields[objective_name], 0.0
     )
     return _pack(fields, layout, leading)
+
+
+_HANDED_PART_WIDTH = NUM_MOVE_ACTIONS + NUM_TARGET_ACTIONS + NUM_ULTIMATE_ACTIONS
+"""Values in one other agent's handed row: its move, target and Ultimate parts (22)."""
+
+_HANDED_WIDTH = 2 * MAX_AGENTS_PER_TEAM * _HANDED_PART_WIDTH
+"""Width K of one actor's flat handed block: five ally and five enemy rows (220)."""
+
+
+def _encode_handed_rows(  # pyright: ignore[reportUnusedFunction] - Used by the oracle and the PPO, QMIX and PQN steps.
+    rows: PreviousTimestepActionObservation,
+) -> Array:
+    """Flatten each actor's current-action oracle rows into its network block.
+
+    Parameters
+    ----------
+    rows : PreviousTimestepActionObservation
+        Float32 rows with leading axes L, then (5, part size) per field, in the
+        actor's own frame (after the same spawn-frame step as its observation).
+        The current-action oracle (training/_oracle.py) builds them.
+
+    Returns
+    -------
+    Array
+        Float32 (*L, 220), in a fixed order: ally move, ally target, ally
+        Ultimate, enemy move, enemy target, enemy Ultimate, each field's five
+        rows in relation-row order. A zero row means that agent was not handed.
+
+    Notes
+    -----
+    Pure JAX; works inside jit and vmap. This block is separate from the 5,165
+    actor features and enters only an oracle network's post-memory layer.
+    """
+    fields = (
+        rows.ally_previous_timestep_move_actions_one_hot,
+        rows.ally_previous_timestep_select_target_actions_one_hot,
+        rows.ally_previous_timestep_use_ultimate_actions_one_hot,
+        rows.enemy_previous_timestep_move_actions_one_hot,
+        rows.enemy_previous_timestep_select_target_actions_one_hot,
+        rows.enemy_previous_timestep_use_ultimate_actions_one_hot,
+    )
+    return jnp.concatenate(
+        [field.reshape((*field.shape[:-2], -1)) for field in fields], axis=-1
+    )
 
 
 def encode_training_state(

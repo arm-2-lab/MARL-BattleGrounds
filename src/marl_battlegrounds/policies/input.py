@@ -42,6 +42,7 @@ from marl_battlegrounds.core.types import (
     ActionMask,
     EnvConfig,
     Observation,
+    PreviousTimestepActionObservation,
 )
 from marl_battlegrounds.policies.shared_obs import (
     SharedObsSensorSourceBankV2,
@@ -480,6 +481,37 @@ def _permute_moves(values: Array, flag: Array) -> Array:
     )
 
 
+def _mirror_previous_actions(
+    previous: PreviousTimestepActionObservation, flag: Array
+) -> PreviousTimestepActionObservation:
+    """Mirror the move columns of action rows for flagged views.
+
+    Parameters
+    ----------
+    previous : PreviousTimestepActionObservation
+        Action rows with leading shape L, then (5, part size) per field: last
+        tick's actions from an observation, or the current-action oracle's handed
+        rows.
+    flag : Array
+        Boolean array of shape L. True selects a view that ``mirror_team_view``
+        reflects.
+
+    Returns
+    -------
+    PreviousTimestepActionObservation
+        The same rows with both move fields reordered by MOVE_MIRROR in flagged
+        views. Target and Ultimate rows, and unflagged views, are unchanged.
+    """
+    return previous._replace(
+        ally_previous_timestep_move_actions_one_hot=_permute_moves(
+            previous.ally_previous_timestep_move_actions_one_hot, flag
+        ),
+        enemy_previous_timestep_move_actions_one_hot=_permute_moves(
+            previous.enemy_previous_timestep_move_actions_one_hot, flag
+        ),
+    )
+
+
 def mirror_team_view(
     actors: ActorInput,
     mask: ActionMask,
@@ -579,14 +611,7 @@ def mirror_team_view(
             active=OBJECTIVE_FEATURE_IS_ACTIVE,
             x_column=OBJECTIVE_FEATURE_X,
         ),
-        previous_timestep_actions=previous._replace(
-            ally_previous_timestep_move_actions_one_hot=_permute_moves(
-                previous.ally_previous_timestep_move_actions_one_hot, flag
-            ),
-            enemy_previous_timestep_move_actions_one_hot=_permute_moves(
-                previous.enemy_previous_timestep_move_actions_one_hot, flag
-            ),
-        ),
+        previous_timestep_actions=_mirror_previous_actions(previous, flag),
         spawn_lifecycle=observation.spawn_lifecycle._replace(
             spawn_pad_positions_by_agent_by_team=_reflect_pads(
                 observation.spawn_lifecycle.spawn_pad_positions_by_agent_by_team,

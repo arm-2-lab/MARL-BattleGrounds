@@ -120,7 +120,9 @@ from marl_battlegrounds.baselines.ppo import (
     _PARAMETER_SHARING,  # pyright: ignore[reportPrivateUsage]
     _actor_group_presence,  # pyright: ignore[reportPrivateUsage]
     _actor_input_schema,  # pyright: ignore[reportPrivateUsage]
+    _ActorStep,  # pyright: ignore[reportPrivateUsage]
     _batch_actor_groups,  # pyright: ignore[reportPrivateUsage]
+    _declare_oracle_step,  # pyright: ignore[reportPrivateUsage]
     _group_dense,  # pyright: ignore[reportPrivateUsage]
     _group_gru,  # pyright: ignore[reportPrivateUsage]
     _grouped_actor_inputs,  # pyright: ignore[reportPrivateUsage]
@@ -132,6 +134,7 @@ from marl_battlegrounds.baselines.ppo import (
 from marl_battlegrounds.baselines.qmix import (
     TEAM_SLOTS,
     _count,  # pyright: ignore[reportPrivateUsage]
+    _epsilon_greedy_step,  # pyright: ignore[reportPrivateUsage]
     _explore,  # pyright: ignore[reportPrivateUsage]
     _finite,  # pyright: ignore[reportPrivateUsage]
     _unit_interval,  # pyright: ignore[reportPrivateUsage]
@@ -1106,6 +1109,60 @@ def _apply_pqn_actor(
     )
 
 
+def _pqn_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-action oracle.
+    variables: PQNActorVariables,
+    memory: Array,
+    inputs: SystemInput,
+    keys: Array,
+    *,
+    input_scale: float,
+    spawn_frame_index: int,
+    normalization_index: int,
+) -> _ActorStep:
+    """Run PQN's shared actor once and keep its epsilon-greedy distribution.
+
+    Arguments are _apply_pqn_actor's (see there), which this step's result gives
+    exactly. The distribution is QMIX's epsilon-greedy one (action_probabilities),
+    returned with the indices in world directions; the current-action oracle
+    reads it for a fixed PQN-VDN opponent. The returned memory is the next one.
+    """
+    actors, frame_mask = inputs.actors, inputs.action_mask
+    flag: Array | None = None
+    spawn_frame = SPAWN_FRAMES[spawn_frame_index]
+    if spawn_frame != "world":
+        flag = spawn_frame_flag(actors, spawn_frame)
+        actors, frame_mask = mirror_team_view(
+            actors,
+            frame_mask,
+            flag,
+            obstacle_partners=team_obstacle_partners(actors),
+        )
+    features = encode_actor_inputs(actors)
+    next_memory, values = cast(
+        tuple[Array, Array],
+        PQNNetwork(
+            input_scale=input_scale,
+            normalization=PQN_NORMALIZATIONS[normalization_index],
+        ).apply(
+            _flax_variables(variables.network),
+            memory,
+            features[None],
+            inputs.episode_start[None],
+            inputs.valid[None],
+            inputs.active_mask[None],
+            train=False,
+        ),
+    )
+    return _epsilon_greedy_step(
+        values[0],
+        categorical_action_mask(frame_mask),
+        keys,
+        variables.epsilon,
+        flag,
+        next_memory,
+    )
+
+
 @functools.lru_cache(maxsize=16)
 def _pqn_actor_apply(
     scale: float, spawn_frame: str
@@ -1142,6 +1199,15 @@ def _pqn_actor_apply(
             spawn_frame_index=spawn_frame_index,
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _pqn_step,
+            input_scale=scale,
+            spawn_frame_index=frame_index,
+            normalization_index=0,
+        ),
+    )
     return apply
 
 
@@ -1344,6 +1410,15 @@ def _layer_norm_pqn_actor_apply(
             normalization_index=normalization_index,
         )
 
+    _declare_oracle_step(
+        apply,
+        functools.partial(
+            _pqn_step,
+            input_scale=scale,
+            spawn_frame_index=frame_index,
+            normalization_index=PQN_NORMALIZATIONS.index("layer_norm"),
+        ),
+    )
     return apply
 
 
