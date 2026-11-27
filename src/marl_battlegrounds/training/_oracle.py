@@ -18,7 +18,8 @@ linear in each actor's one-hot action. The network's flat block is encoded from
 these rows by ``baselines.inputs._encode_handed_rows``.
 
 Main entry points: ``handed_rows`` (the rows, from ``action_part_probabilities``),
-``turn_order`` and ``chosen_before`` (who chooses when, and who is handed whom),
+``turn_order``, ``oracle_ranks`` and ``chosen_before`` (who chooses when, and who
+is handed whom), ``ORACLE_MODES`` (what each oracle setting hands),
 ``choose_in_order`` (one tick of ten turns), ``fixed_member_step`` (a fixed
 opponent's route, refused when it has none), ``oracle_member`` (a team member
 the oracle can hand rows to) and ``oracle_apply_systems`` (the oracle's form of
@@ -29,7 +30,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -39,10 +40,6 @@ from marl_battlegrounds.baselines.actions import (
     NUM_ACTIONS,
     decode_actions,
     encode_actions,
-)
-from marl_battlegrounds.baselines.ppo import (
-    _ActorStep,  # pyright: ignore[reportPrivateUsage]
-    oracle_step,
 )
 from marl_battlegrounds.core.env import (
     _build_ally_enemy_one_hot_action_tensors,  # pyright: ignore[reportPrivateUsage]
@@ -76,6 +73,11 @@ from marl_battlegrounds.evaluation.policy_execution import (
 )
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.input import Observations
+
+if TYPE_CHECKING:
+    from marl_battlegrounds.baselines.ppo import (
+        _ActorStep,  # pyright: ignore[reportPrivateUsage]
+    )
 
 
 def action_part_probabilities(probabilities: Array) -> tuple[Array, Array, Array]:
@@ -249,6 +251,51 @@ def turn_order(key: Array, fixed_first: Array) -> Array:
     return jnp.argsort(jnp.argsort(priority)).astype(jnp.int32)
 
 
+ORACLE_MODES: dict[str, tuple[bool, bool]] = {
+    "probabilities": (False, False),
+    "teammate_probabilities": (True, False),
+    "sampled_actions": (False, True),
+}
+"""Each oracle setting's (teammates_only, hand_sampled_actions) for choose_in_order.
+
+"probabilities" hands every earlier agent's distribution, "teammate_probabilities"
+only earlier teammates' distributions, and "sampled_actions" every earlier
+agent's sampled action as a certain row. "off" is not a key: it runs no oracle.
+"""
+
+
+def oracle_ranks(action_keys: Array, fixed_opponent: Array) -> Array:
+    """Draw every game's order for one training decision.
+
+    Parameters
+    ----------
+    action_keys : Array
+        The B typed lane action keys the training loop gives ``apply_systems``
+        this decision. Each game's order key is
+        ``jax.random.fold_in(key, ORACLE_ORDER_TAG)``, so no actor key is reused.
+    fixed_opponent : Array
+        Bool (B,): True for games whose Team B is a fixed opponent (a saved team
+        or the scripted bots), whose five slots then choose first.
+
+    Returns
+    -------
+    Array
+        Int32 (B,10) ranks from ``turn_order``, one row per game.
+    """
+    games = fixed_opponent.shape[0]
+    fixed_first = jnp.concatenate(
+        [
+            jnp.zeros((games, MAX_AGENTS_PER_TEAM), jnp.bool_),
+            jnp.broadcast_to(fixed_opponent[:, None], (games, MAX_AGENTS_PER_TEAM)),
+        ],
+        axis=1,
+    )
+    keys = jax.vmap(jax.random.fold_in, in_axes=(0, None))(
+        action_keys, ORACLE_ORDER_TAG
+    )
+    return jax.vmap(turn_order)(keys, fixed_first)
+
+
 def chosen_before(ranks: Array, present: Array, *, teammates_only: bool) -> Array:
     """Mark, for each observer, the slots that chose before it this tick.
 
@@ -312,7 +359,7 @@ class OracleChoices(NamedTuple):
 type Tree = object
 """Any JAX tree of arrays (memory or learning values)."""
 
-PairStep = Callable[
+type PairStep = Callable[
     [PreviousTimestepActionObservation, PreviousTimestepActionObservation],
     tuple[_ActorStep, _ActorStep],
 ]
@@ -353,6 +400,13 @@ def fixed_member_step(member: System) -> Callable[..., _ActorStep]:
         member is neither a marked built-in method nor a team of the three
         scripted bots. The oracle never falls back to zero rows.
     """
+    # PPO needs the training extra; the generic collection imports this module
+    # without it, so the PPO steps load only when an oracle is built.
+    from marl_battlegrounds.baselines.ppo import (
+        _ActorStep,  # pyright: ignore[reportPrivateUsage]
+        oracle_step,
+    )
+
     step = oracle_step(member.apply)
     if step is not None:
         return step
@@ -749,6 +803,10 @@ def oracle_apply_systems(
     computes exactly what ``apply_systems`` computes (proved by the switch's
     off-equivalence test). Pure JAX; works inside jit and scan.
     """
+    from marl_battlegrounds.baselines.ppo import (
+        _ActorStep,  # pyright: ignore[reportPrivateUsage]
+    )
+
     execution_a, execution_b = _execution(actor), _execution(opponent)
     ids, generations = state.episode_id, state.reset_generation
     reset = (generations != memory.reset_generation) & ~state.done.done

@@ -6,8 +6,11 @@ step. A named pinned opponent plays lanes assigned to the separate pin (-2): a J
 method inside the compiled step, a host method through a host loop in
 collect_training_rollout. An optional ActorVariablesAtStep hook, such as QMIX
 exploration, sets changing actor values from the round count before every
-decision; without one the step is unchanged. No critic, optimizer, replay,
-learning run or durable learner checkpoint lives here.
+decision; without one the step is unchanged. An optional current-action oracle
+(an upper-bound run) wraps the learner, its copies and the fixed opponents so
+that each decision runs as ten turns through ``_oracle.oracle_apply_systems``;
+when it is "off" the step is unchanged. No critic, optimizer, replay, learning
+run or durable learner checkpoint lives here.
 """
 
 from __future__ import annotations
@@ -39,7 +42,11 @@ from marl_battlegrounds.baselines.inputs import (
     training_state_schema,
 )
 from marl_battlegrounds.collection import _check_collection_writer, collect_rollout
-from marl_battlegrounds.core.types import Action, ActionMask
+from marl_battlegrounds.core.types import (
+    Action,
+    ActionMask,
+    PreviousTimestepActionObservation,
+)
 from marl_battlegrounds.environment import (
     Environment,
     EnvironmentState,
@@ -92,7 +99,20 @@ from marl_battlegrounds.training._content import (
     pinned_opponent_evidence,
     prepare_training_content,
 )
-from marl_battlegrounds.training._execution import _apply_and_track, _reset_finished
+from marl_battlegrounds.training._execution import (
+    _apply_and_track,
+    _reset_finished,
+    _step_and_track,
+)
+from marl_battlegrounds.training._oracle import (
+    ORACLE_MODES,
+    OracleMemory,
+    _team_rows,
+    _zero_rows,
+    oracle_apply_systems,
+    oracle_member,
+    oracle_ranks,
+)
 from marl_battlegrounds.training.curriculum import (
     ScheduleArrays,
     TrainingProgress,
@@ -267,6 +287,10 @@ class TrainingTransition(NamedTuple):
     otherwise None. It stays separate from native rewards and built-in shaping.
     learner_active is optional bool (B,5) ownership; None means all active
     slots learn. It never replaces the physical active mask. Padding owns none.
+    handed is None unless the current-action oracle is on; then it holds the
+    float32 rows Team A's five slots were handed at their own turns (leading
+    axes (B,5)), which the learner hands its network again when it recomputes
+    the update. Padding hands zeros.
     Invalid padding has neutral-only masks, zero payloads and -1 identities.
     """
 
@@ -296,6 +320,7 @@ class TrainingTransition(NamedTuple):
     training_state: Array | None
     custom_rewards: Array | None = None
     learner_active: Array | None = None
+    handed: PreviousTimestepActionObservation | None = None
 
 
 class TrainingRollout(NamedTuple):
@@ -363,6 +388,12 @@ class TrainingCollection:
     actor copies use the mirrored learner slots and a separate partner draw.
     task is the run's mode name, "tdm" by default; training_state_schema
     follows from it and sets the encoded training-state width.
+    current_action_oracle is "off" (the default, the unchanged step) or a key
+    of ``_oracle.ORACLE_MODES``. When on, actor and opponent are built from
+    ``oracle_member`` wrappers (the learner and its copies read handed rows;
+    fixed opponents choose first and read none), each decision runs as ten
+    turns, transitions carry Team A's handed rows, and learner_actor keeps the
+    plain learner for validation.
     Reuse this descriptor across blocks to reuse compiled functions. It is not
     a PyTree or a durable checkpoint and must stay outside numerical carry.
     """
@@ -403,6 +434,7 @@ class TrainingCollection:
     pinned_system: System | None = None
     reward_component_keys: tuple[str, ...] = ()
     task: TaskName = "tdm"
+    current_action_oracle: str = "off"
 
     @property
     def training_state_schema(self) -> int:
@@ -628,12 +660,17 @@ def _learner_active(
 
 
 def learner_memory(carry: TrainingCarry) -> Tree:
-    """Return only the learner's memory; fixed partners keep their own full trees."""
-    return (
+    """Return only the learner's memory; fixed partners keep their own full trees.
+
+    In a current-action oracle run, Team A's memory is an OracleMemory, and this
+    returns its inner memory, which is what the learner's network carries.
+    """
+    memory = (
         carry.memory.team_a
         if carry.partner_selection is None
         else carry.memory.team_a.members[0]
     )
+    return memory.inner if isinstance(memory, OracleMemory) else memory
 
 
 def _partner_inputs(
@@ -1590,7 +1627,13 @@ def change_training_reward(
     if carry.root_key.committed:
         changed = jax.device_put(changed, carry.root_key.sharding)
     shape = jax.eval_shape(
-        partial(_apply, actor=collection.actor, opponent=collection.opponent), changed
+        partial(
+            _apply,
+            actor=collection.actor,
+            opponent=collection.opponent,
+            oracle=collection.current_action_oracle,
+        ),
+        changed,
     )
     reward, reward_identity, component_keys = _prepare_collection_reward(
         reward, reward_identity, changed, shape[4][4], shape[4][1]
@@ -1745,6 +1788,7 @@ def init_training_collection(
     partner_population: Mapping[str, System | Policy | str] | None = None,
     partner_selection: Mapping[str, float] | Sequence[str] | None = None,
     task: TaskName = "tdm",
+    current_action_oracle: str = "off",
 ) -> tuple[TrainingCollection, TrainingCarry]:
     """Verify and initialize one fixed-batch experiment without choosing actions.
 
@@ -1879,6 +1923,14 @@ def init_training_collection(
         given prepared binding must play it. It also sets the collection's
         training_state_schema (2 for "tdm", 3 for other modes), so
         collect_training_state rows have that schema's width.
+    current_action_oracle : str, default="off"
+        "off" runs today's step. A key of ``_oracle.ORACLE_MODES``
+        ("probabilities", "teammate_probabilities" or "sampled_actions") makes
+        this an upper-bound run: each decision is ten turns in a random order,
+        fixed opponents first, and each agent is handed what the earlier agents
+        chose. The actor must be a built-in method whose network takes a handed
+        block. Every fixed opponent must be a built-in method or a team of the
+        scripted bots, on JAX execution; fixed partners are refused.
 
     Returns
     -------
@@ -1900,9 +1952,16 @@ def init_training_collection(
         pinned opponent without a positive share, an unresolvable reference, an
         independent roster that the schedule would break, a variables hook that
         changes the tree or has no JSON identity, or failed initialization.
+        An unknown current_action_oracle value, an oracle with fixed partners,
+        or a learner or fixed opponent the oracle has no route for.
         Errors from a factory propagate with their own type.
         Failures precede any real transition.
     """
+    if current_action_oracle != "off" and current_action_oracle not in ORACLE_MODES:
+        raise ValueError(
+            f"current_action_oracle must be 'off' or one of {sorted(ORACLE_MODES)}"
+        )
+    oracle = current_action_oracle != "off"
     if not isinstance(cast(object, actor), System):
         raise TypeError("actor must be a native JAX System")
     if not isinstance(cast(object, schedule), TrainingSchedule):
@@ -2013,6 +2072,8 @@ def init_training_collection(
         if frozen_members:
             pinned_opponent = pool({member: 1.0 for member in frozen_members})
     slots = _check_learner_slots(learner_slots, schedule)
+    if oracle and slots is not None:
+        raise ValueError("The current-action oracle cannot train with fixed partners")
     partner_names = () if partner_population is None else tuple(partner_population)
     partner_systems: list[System] = []
     partner_records: list[dict[str, Any]] = []
@@ -2071,6 +2132,19 @@ def init_training_collection(
             ]
         )
         export = _export_path(reference)
+        playing = system
+        if oracle:
+            # Each fixed member gets its own wrapper; a host member has no route.
+            playing = (
+                pool(
+                    {
+                        oracle_member(member, reads_rows=False): 1.0
+                        for member in frozen_members
+                    }
+                )
+                if generic
+                else oracle_member(system, reads_rows=False)
+            )
         if system.execution == "host":
             host = HostOpponent(system, schedule.num_envs, external_selection=generic)
             pinned_system = HOST_ACTIONS_SYSTEM
@@ -2079,8 +2153,12 @@ def init_training_collection(
             memory_rule = "host only, not saved" if host.stateful else "none"
             variables_digest = None
         else:
-            _, variables, template = prepare_evaluation_system(frozen)
-            pinned_system = system
+            # The record's registration names the plain method; its values
+            # are the ones in play (the oracle's wrappers keep the weights).
+            _, variables, template = prepare_evaluation_system(
+                playing if oracle else frozen
+            )
+            pinned_system = playing
             # A loaded export's weights arrive committed to one device while
             # the rest of the fresh carry is not; that mix makes the rollout
             # and the update compile twice. Give them the carry's placement.
@@ -2109,6 +2187,9 @@ def init_training_collection(
                 }
             )
         )
+    plain_actor = actor
+    if oracle:
+        actor = oracle_member(actor, reads_rows=True)
     opponent = make_opponent_system(
         actor, pinned=pinned_system, vectorize_lanes=vectorize_opponent_lanes
     )
@@ -2267,7 +2348,10 @@ def init_training_collection(
         _frozen_host_values(host, host_partners),
     )
     _check_carry(carry)
-    shape = jax.eval_shape(partial(_apply, actor=actor, opponent=opponent), carry)
+    shape = jax.eval_shape(
+        partial(_apply, actor=actor, opponent=opponent, oracle=current_action_oracle),
+        carry,
+    )
     reward, reward_identity, component_keys = _prepare_collection_reward(
         reward, reward_identity, carry, shape[4][4], shape[4][1]
     )
@@ -2303,13 +2387,18 @@ def init_training_collection(
         reward_component_keys=component_keys,
         vectorize_opponent_lanes=vectorize_opponent_lanes,
         learner_slots=slots,
-        learner_actor=None if slots is None else replace(native_actor, variables=()),
+        learner_actor=replace(plain_actor, variables=())
+        if oracle
+        else None
+        if slots is None
+        else replace(native_actor, variables=()),
         partner_names=partner_names,
         partner_records=tuple(partner_records),
         partner_systems=tuple(partner_systems),
         host_partners=host_partners,
         pinned_system=pinned_system,
         task=task,
+        current_action_oracle=current_action_oracle,
     )
     return _opponent_component_table(collection, carry), carry
 
@@ -2400,8 +2489,16 @@ def _check_variables_hook(hook: ActorVariablesAtStep, variables: Tree) -> None:
         )
 
 
-def _apply(carry: TrainingCarry, actor: System, opponent: System) -> Tree:
-    """Supply exact action/step keys and dynamic variables to the shared step."""
+def _apply(
+    carry: TrainingCarry, actor: System, opponent: System, oracle: str = "off"
+) -> Tree:
+    """Supply exact action/step keys and dynamic variables to the shared step.
+
+    Returns ``_apply_and_track``'s five parts, then Team A's handed rows: None
+    when oracle is "off", else the (B,5)-leading rows each Team A slot was
+    handed. With the oracle on, Team B's slots choose first on games where a
+    pinned or named fixed opponent plays (snapshot -2 beside a pinned System).
+    """
     state = carry.state
     local_step = state.core_state.step_count - state.initial_step_count
     variables_a, variables_b = _team_variables(
@@ -2413,30 +2510,72 @@ def _apply(carry: TrainingCarry, actor: System, opponent: System) -> Tree:
         carry.partner_values,
         carry.partner_actions,
     )
-    return _apply_and_track(
-        carry.env,
+    action_keys = training_keys(
+        carry.root_key,
+        state.reset_generation,
+        stream="action",
+        decision_step=local_step,
+    )
+    step_keys = training_keys(
+        carry.root_key,
+        state.reset_generation,
+        stream="step",
+        decision_step=local_step,
+    )
+    if oracle == "off":
+        return (
+            *_apply_and_track(
+                carry.env,
+                carry.observations,
+                state,
+                carry.memory,
+                carry.tracking,
+                actor=actor,
+                opponent=opponent,
+                variables_a=variables_a,
+                variables_b=variables_b,
+                action_keys=action_keys,
+                step_keys=step_keys,
+                source_indices=carry.source_indices,
+                source_class_ids=carry.source_class_ids,
+            ),
+            None,
+        )
+    fixed = (
+        carry.history.lane_snapshot == -2
+        if len(carry.pinned_opponent)
+        else jnp.zeros_like(carry.history.lane_snapshot, jnp.bool_)
+    )
+    teammates_only, hand_sampled_actions = ORACLE_MODES[oracle]
+    step = oracle_apply_systems(
+        actor,
+        opponent,
+        carry.memory,
         carry.observations,
         state,
-        carry.memory,
-        carry.tracking,
-        actor=actor,
-        opponent=opponent,
+        action_keys,
         variables_a=variables_a,
         variables_b=variables_b,
-        action_keys=training_keys(
-            carry.root_key,
-            state.reset_generation,
-            stream="action",
-            decision_step=local_step,
-        ),
-        step_keys=training_keys(
-            carry.root_key,
-            state.reset_generation,
-            stream="step",
-            decision_step=local_step,
-        ),
+        ranks=oracle_ranks(action_keys, fixed),
+        teammates_only=teammates_only,
+        hand_sampled_actions=hand_sampled_actions,
+    )
+    tracking, result = _step_and_track(
+        carry.env,
+        state,
+        step.actions,
+        carry.tracking,
+        step_keys=step_keys,
         source_indices=carry.source_indices,
         source_class_ids=carry.source_class_ids,
+    )
+    return (
+        step.actions,
+        step.memory,
+        step.learning_outputs,
+        tracking,
+        result,
+        _team_rows(step.handed, 0),
     )
 
 
@@ -2485,6 +2624,7 @@ def _padding(
         learner_active=None
         if collection.learner_slots is None
         else jnp.zeros((b, 5), jnp.bool_),
+        handed=None if collection.current_action_oracle == "off" else _zero_rows(b),
     )
 
 
@@ -2601,8 +2741,8 @@ def _real_step(
                 )
             )
         )
-    actions, memory, learning, tracking, result = _apply(
-        acting, collection.actor, collection.opponent
+    actions, memory, learning, tracking, result, handed = _apply(
+        acting, collection.actor, collection.opponent, collection.current_action_oracle
     )
     observations, state, rewards, _, info = result
     progress, tracking, info = _advance_training_schedule(
@@ -2743,6 +2883,7 @@ def _real_step(
         else None,
         custom_rewards=custom,
         learner_active=_learner_active(collection, before),
+        handed=handed,
     )
     policy_ids = jnp.full_like(memory.policy_trace.policy_ids, -1)
     if collection.recording:
@@ -3371,8 +3512,11 @@ def append_training_opponents(
     new members receive invalid-lane placeholder initialization. New games use
     selection, or retain the previous rule when None. A larger pool changes
     static structure and may compile a new program. No action or game reset runs.
-    Legacy permanent-pin collections cannot use this route. Invalid names or
-    member contracts raise before a new collection is returned.
+    Legacy permanent-pin collections cannot use this route. In a current-action
+    oracle run every member, old and new, plays through its own oracle wrapper,
+    while the record still names the plain members; a member with no oracle
+    route raises. Invalid names or member contracts raise before a new
+    collection is returned.
     """
     if collection.pinned_opponent_share:
         raise ValueError("Append named opponents through the generic selection API")
@@ -3393,7 +3537,13 @@ def append_training_opponents(
     names = (*collection.opponent_names, *additions)
     systems = (*collection.opponent_systems, *new_systems)
     combined = pool({member: 1.0 for member in systems})
-    _, variables, template = prepare_evaluation_system(combined)
+    # An oracle run plays wrapped members; its record still names the plain ones.
+    playing = systems
+    played = combined
+    if collection.current_action_oracle != "off":
+        playing = tuple(oracle_member(member, reads_rows=False) for member in systems)
+        played = pool(dict.fromkeys(playing, 1.0))
+    _, variables, template = prepare_evaluation_system(played)
     old_count = len(collection.opponent_names)
     old_holder = collection.host_opponent
     old_values = (
@@ -3425,7 +3575,7 @@ def append_training_opponents(
     keys = _initialization_keys(carry.memory.init_key, carry.state.episode_id, 1)
     new_memories = []
     for index in range(old_count, len(systems)):
-        execution = _execution(systems[index])
+        execution = _execution(playing[index])
         new_memories.append(
             _initial_memory(
                 execution,
@@ -3479,7 +3629,7 @@ def append_training_opponents(
     else:
         pinned_values = (variables, template)
         team_b = (network_memory, memory)
-        pinned_system = combined
+        pinned_system = played
     registration = normalize_system_registration(
         combined, phase="validation", frozen=True
     )[1]

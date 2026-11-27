@@ -20,11 +20,18 @@ shared runner's pair call against a pool of a saved team and a bot team, an
 oracle whose handed weight starts at zero gives exactly the runner's actions,
 learning values and memory, tick after tick, in both arms; and each slot is
 handed all five enemies (which choose first) and exactly the teammates chosen
-before it, each once.
+before it, each once. In training collection the same holds game for game:
+against a saved team, the bots, the current learner and a frozen copy of it,
+an oracle run whose handed weight is zero, with a saved team added at a stage
+boundary, collects exactly the plain run's actions, learning values, rewards
+and learner memory, while storing the rows
+Team A was handed (all five enemies where a fixed opponent plays). An unknown
+oracle setting, a fixed opponent with no route and fixed partners are refused.
 """
 
 import functools
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -64,6 +71,17 @@ from marl_battlegrounds.evaluation.policy_execution import (
 )
 from marl_battlegrounds.policies.actor import ActorAction
 from marl_battlegrounds.policies.input import Observations
+from marl_battlegrounds.training import (
+    PreparedTrainingContent,
+    TrainingCarry,
+    TrainingCollection,
+    TrainingRollout,
+    init_training_collection,
+    make_training_schedule,
+    prepare_training_content,
+    refresh_opponents,
+    scan_training_rollout,
+)
 from marl_battlegrounds.training._oracle import (
     action_part_probabilities,
     choose_in_order,
@@ -73,6 +91,10 @@ from marl_battlegrounds.training._oracle import (
     oracle_apply_systems,
     oracle_member,
     turn_order,
+)
+from marl_battlegrounds.training.collection import (
+    append_training_opponents,
+    learner_memory,
 )
 
 Parts = tuple[Array, Array, Array]
@@ -119,7 +141,7 @@ def _core(
 
 
 def _per_row(per_actor: Array) -> tuple[Array, Array]:
-    """Spread an (observer, actor) array over Core's ally and enemy relation rows."""
+    # Spread an (observer, actor) array over Core's ally and enemy relation rows.
     return (
         jnp.einsum("ora,oa->or", ALLY_OF, per_actor),
         jnp.einsum("ora,oa->or", ENEMY_OF, per_actor),
@@ -242,7 +264,7 @@ def test_chosen_before_hands_only_earlier_present_slots(teammates_only: bool) ->
 
 
 def _counting_step(rows: PreviousTimestepActionObservation) -> _ActorStep:
-    """Choose index = how many other agents' rows this slot was handed."""
+    # Choose index = how many other agents' rows this slot was handed.
     count = rows.ally_previous_timestep_move_actions_one_hot.sum(
         (-2, -1)
     ) + rows.enemy_previous_timestep_move_actions_one_hot.sum((-2, -1))
@@ -449,3 +471,117 @@ def test_each_slot_is_handed_every_earlier_choice_once() -> None:
     enemies = step.handed.enemy_previous_timestep_move_actions_one_hot.sum((-2, -1))
     np.testing.assert_allclose(allies + enemies, earlier.sum(-1), atol=1e-5)
     np.testing.assert_allclose(enemies[:, :5], 5.0, atol=1e-5)
+
+
+@pytest.fixture(scope="module")
+def prepared() -> PreparedTrainingContent:
+    return prepare_training_content()
+
+
+def _collected(
+    prepared: PreparedTrainingContent, oracle: str
+) -> tuple[TrainingCollection, TrainingCarry, TrainingRollout]:
+    def params(seed: int) -> Tree:
+        values = initialize_ppo(
+            jax.random.key(seed), DEFAULT_PPO_CONFIG, method="mappo"
+        ).actor_params
+        return values if oracle == "off" else _with_handed_weight(values)
+
+    saved = initialize_ppo(jax.random.key(2), DEFAULT_PPO_CONFIG, method="mappo")
+    collection, carry = init_training_collection(
+        make_ppo_system(params(1)),
+        params(1),
+        schedule=make_training_schedule(total_env_steps=64, num_envs=4),
+        seed=5,
+        prepared=prepared,
+        metrics="none",
+        opponent_population={
+            "saved": make_ppo_system(saved.actor_params),
+            "bots": shared_policy(policy("tdm-alpha")),
+        },
+        opponent_selection=["saved", "bots", "self", "self"],
+        current_action_oracle=oracle,
+    )
+    # A member added at a stage boundary; no game draws it in these ticks.
+    later = initialize_ppo(jax.random.key(3), DEFAULT_PPO_CONFIG, method="mappo")
+    collection, carry = append_training_opponents(
+        collection, carry, {"later": make_ppo_system(later.actor_params)}
+    )
+    assert collection.opponent_names == ("saved", "bots", "later")
+
+    def rollout(values: TrainingCarry) -> tuple[TrainingCarry, TrainingRollout]:
+        return scan_training_rollout(collection, values, length=2)
+
+    scan = cast(
+        Callable[[TrainingCarry], tuple[TrainingCarry, TrainingRollout]],
+        jax.jit(rollout),
+    )
+    carry, _ = scan(carry)
+    history, event = refresh_opponents(
+        carry.history,
+        params(4),
+        completed_rounds=carry.progress.rounds,
+        update_index=jnp.int32(1),
+        schedule=carry.schedule,
+    )
+    assert bool(event.created)
+    # The last game meets the frozen copy, as a game start that drew "past" does.
+    history = history._replace(lane_snapshot=history.lane_snapshot.at[3].set(0))
+    carry, rows = scan(carry._replace(history=history))
+    return collection, carry, rows
+
+
+def test_a_zero_started_oracle_collects_the_plain_games(
+    prepared: PreparedTrainingContent,
+) -> None:
+    _, plain_end, plain = _collected(prepared, "off")
+    _, oracle_end, oracle = _collected(prepared, "probabilities")
+    rows, stored = plain.transitions, oracle.transitions
+    np.testing.assert_array_equal(rows.opponent_snapshot, [[-3, -4, -1, 0]] * 2)
+    assert bool(np.all(rows.valid)) and bool(np.all(rows.active))
+    for name in ("actions", "learning_outputs", "task_rewards", "alive", "ended"):
+        for left, right in zip(
+            jax.tree.leaves(getattr(stored, name)),
+            jax.tree.leaves(getattr(rows, name)),
+            strict=True,
+        ):
+            np.testing.assert_array_equal(left, right)
+    for left, right in zip(
+        jax.tree.leaves(learner_memory(oracle_end)),
+        jax.tree.leaves(learner_memory(plain_end)),
+        strict=True,
+    ):
+        np.testing.assert_array_equal(left, right)
+    assert rows.handed is None and stored.handed is not None
+    enemies = stored.handed.enemy_previous_timestep_move_actions_one_hot.sum((-2, -1))
+    np.testing.assert_allclose(enemies[:, :2], 5.0, atol=1e-5)
+
+
+@pytest.mark.parametrize("case", ["setting", "route", "partners"])
+def test_unsupported_oracle_runs_are_refused(
+    prepared: PreparedTrainingContent, case: str
+) -> None:
+    values = _with_handed_weight(
+        initialize_ppo(
+            jax.random.key(1), DEFAULT_PPO_CONFIG, method="mappo"
+        ).actor_params
+    )
+    settings: dict[str, Any] = {
+        "current_action_oracle": "actions" if case == "setting" else "probabilities"
+    }
+    if case == "route":
+        settings["opponent_population"] = {"random": shared_policy(policy("random"))}
+        settings["opponent_selection"] = ["random"]
+    if case == "partners":
+        settings["learner_slots"] = (0, 1, 2)
+        settings["partner_population"] = {"bots": shared_policy(policy("tdm-alpha"))}
+    message = {"setting": "must be 'off'", "route": "no route", "partners": "partners"}
+    with pytest.raises(ValueError, match=message[case]):
+        init_training_collection(
+            make_ppo_system(values),
+            values,
+            schedule=make_training_schedule(total_env_steps=8, num_envs=2),
+            prepared=prepared,
+            metrics="none",
+            **settings,
+        )

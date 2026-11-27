@@ -76,14 +76,41 @@ def _apply_and_track(
         variables_a=variables_a,
         variables_b=variables_b,
     )
-    tracking, result = track_episode_step(
+    tracking, result = _step_and_track(
+        env,
+        state,
+        actions,
+        tracking,
+        step_keys=step_keys,
+        source_indices=source_indices,
+        source_class_ids=source_class_ids,
+    )
+    return actions, memory, learning, tracking, result
+
+
+def _step_and_track(
+    env: Environment,
+    state: EnvironmentState,
+    actions: Action,
+    tracking: EpisodeTrackingState,
+    *,
+    step_keys: Array,
+    source_indices: Array,
+    source_class_ids: Array,
+) -> tuple[EpisodeTrackingState, StepResult]:
+    """Step once with already chosen actions and certify that transition.
+
+    The second half of ``_apply_and_track``, for a caller that chooses the
+    actions itself (the current-action oracle). Arguments mean the same as
+    there; return the successor tracker and the enriched five-part result.
+    """
+    return track_episode_step(
         tracking,
         state,
         env.step(step_keys, state, actions),
         source_indices=source_indices,
         source_class_ids=source_class_ids,
     )
-    return actions, memory, learning, tracking, result
 
 
 def _reset_finished(
