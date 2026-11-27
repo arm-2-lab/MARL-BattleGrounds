@@ -97,7 +97,8 @@ print(members["episode_id"], members["global_slot"], members["member"])
 `team` gives each Team A slot one owner; slots are numbers 0-4 or class names such
 as `"priest"`. `pool` draws one member when each game starts and keeps it until
 that game ends. Both return an ordinary System. Owning a slot grants no extra
-information: each actor still sees only its own permitted view.
+information: every member receives the same team inputs, which hold only what the
+team can see.
 
 **Watch Out:** members are recorded only in saved runs. A pool can field different
 members in a spawn pair's two games; evaluate each member alone for paired results.

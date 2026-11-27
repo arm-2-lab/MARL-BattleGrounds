@@ -20,9 +20,10 @@ higher.
 5. **Fast Enough to Play.** Your entry must play at least 5,000 game steps per
    second within 10 GB of GPU memory in `entry check`'s speed test on our card,
    which runs 512 games at once.
-6. **Each Agent Decides Alone.** Within a tick each agent acts only on what it
-   sees, its teammates' sight included, and on messages its teammates sent on
-   earlier ticks.
+6. **Only What Your Team Sees.** Every action uses only what your team can
+   see. Your program may act for each agent or for the whole team, and
+   teammates may send each other messages. Whole-team programs and teammate
+   messages open on December 10, 2026.
 7. **Learn Only in Our Run.** Your run may bring nothing trained or recorded
    on MARL-BGs except released MARL-BGs models: training with or against them
    is free, but starting from, containing or imitating one adds its training
@@ -40,3 +41,21 @@ higher.
 How we run and score entries is in the
 [tournaments guide](tournaments.md#enter-the-leaderboard). Ask us if a rule is
 unclear.
+
+## Execution and Teammate Messages
+
+The leaderboard's What Each Entry Cost table shows how each entry runs, in two
+columns.
+
+**Execution.** Decentralized: the program decides for each agent separately,
+using only that agent's view (which includes what its teammates see), its own
+memory and the messages sent to it. Centralized: one program picks all five
+actions together, so on the same tick it can also use each teammate's memory and
+the actions it picks for them.
+
+**Teammate Messages.** None: the program sends no messages. Next tick: the
+program sends messages, and each one reaches its teammates one tick after it is
+sent. A centralized entry shows a dash.
+
+A centralized program's cost can grow with team size. Every leaderboard game is
+5 v 5, so Play Speed and Play Memory show that cost at five agents only.

@@ -314,9 +314,10 @@ rolls forward to the next season and keeps its place in the queue.
 - Rank 1 of each season joins the Hall of Champions. A system that stays Rank 1
   gets one banner showing its reign.
 - Each table shows every entry's type (Learned, Scripted, Hybrid or Language
-  Model) and five costs from our run: Steps to Entry (the game steps of training
-  behind the entered save), Run Steps (every game step the run played), Training
-  Time, Play Speed and Play Memory. They never change rank, rating or admission.
+  Model), how it runs (Execution and Teammate Messages) and five costs from our
+  run: Steps to Entry (the game steps of training behind the entered save), Run
+  Steps (every game step the run played), Training Time, Play Speed and Play
+  Memory. None of these changes rank, rating or admission.
 - If a rule break is found later, the system the entry pushed out returns.
 
 **What We Publish.** For every entry, whether it joins the leaderboard or not,
