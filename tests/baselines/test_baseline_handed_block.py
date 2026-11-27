@@ -2,9 +2,12 @@
 
 A network initialized with a block gains only one bias-free "handed" weight, on
 its post-memory layer (the feedforward actor: its second torso layer); every
-other weight starts exactly as it does without the block. A block of zeros gives
-exactly the logits or values and memory of the same network without that weight.
-A nonzero block changes the outputs and never the memory. A network with the
+other weight starts exactly as it does without the block. The weight starts at
+zero, so at initialization any block gives exactly the outputs of a zero block,
+while its gradient is not zero, so it learns. A block of zeros gives exactly the
+logits or values and memory of the same network without that weight. Once the
+weight is not zero, a nonzero block changes the outputs and never the memory. A
+network with the
 weight refuses to run without a block, and one without it refuses a block, in
 the shared and the grouped paths. The grouped path with five equal groups
 matches the shared path.
@@ -129,6 +132,14 @@ def _without_handed(variables: Tree, owner: str) -> Tree:
     return {"params": params}
 
 
+def _trained(variables: Tree, owner: str) -> Tree:
+    params = dict(variables["params"])
+    kernel = params[owner]["handed"]["kernel"]
+    weight = jax.random.normal(jax.random.key(3), kernel.shape) / K**0.5
+    params[owner] = {**params[owner], "handed": {"kernel": weight}}
+    return {"params": params}
+
+
 def _stack_five(leaf: Array) -> Array:
     return jnp.stack([leaf] * 5)
 
@@ -166,10 +177,32 @@ def test_a_zero_block_adds_exactly_nothing(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", NETWORKS)
-def test_a_block_changes_outputs_never_memory(name: str) -> None:
-    build, _ = NETWORKS[name]
+def test_the_weight_starts_at_zero_and_still_learns(name: str) -> None:
+    build, owner = NETWORKS[name]
     init, apply = build()
     oracle = init(BLOCK)
+    np.testing.assert_array_equal(oracle["params"][owner]["handed"]["kernel"], 0.0)
+    memory, out = apply(oracle, BLOCK, None)
+    zero_memory, zero_out = apply(oracle, jnp.zeros_like(BLOCK), None)
+    np.testing.assert_array_equal(out, zero_out)
+    if memory is not None:
+        np.testing.assert_array_equal(memory, zero_memory)
+
+    def loss(kernel: Array) -> Array:
+        params = dict(oracle["params"])
+        params[owner] = {**params[owner], "handed": {"kernel": kernel}}
+        return jnp.sum(apply({"params": params}, BLOCK, None)[1] ** 2)
+
+    kernel = cast(Array, oracle["params"][owner]["handed"]["kernel"])
+    gradient = cast(Array, jax.grad(loss)(kernel))
+    assert np.any(np.asarray(gradient) != 0.0)
+
+
+@pytest.mark.parametrize("name", NETWORKS)
+def test_a_block_changes_outputs_never_memory(name: str) -> None:
+    build, owner = NETWORKS[name]
+    init, apply = build()
+    oracle = _trained(init(BLOCK), owner)
     memory, out = apply(oracle, BLOCK, None)
     zero_memory, zero_out = apply(oracle, jnp.zeros_like(BLOCK), None)
     assert not np.allclose(out, zero_out)
@@ -195,9 +228,9 @@ def test_the_block_and_its_weight_come_together(name: str) -> None:
 
 @pytest.mark.parametrize("name", GROUPED)
 def test_five_equal_groups_match_the_shared_network(name: str) -> None:
-    build, _ = NETWORKS[name]
+    build, owner = NETWORKS[name]
     init, apply = build()
-    oracle = init(BLOCK)
+    oracle = _trained(init(BLOCK), owner)
     memory, out = apply(oracle, BLOCK, None)
     group_memory, group_out = apply(_five_groups(oracle), BLOCK, GROUPS)
     np.testing.assert_allclose(group_out, out, atol=3e-6, rtol=3e-5)

@@ -797,9 +797,12 @@ class MLPTorso(nn.Module):
             tick. Its leading axes match features'. A separate bias-free Dense
             layer, named "handed", projects it to the last layer's width and adds
             it before the last ReLU, so a torso of several layers reads it after
-            its first layers. A block of zeros adds exactly nothing, so the
-            network then computes what it computes without the weight. None, the
-            default, adds no parameter and leaves the computation unchanged.
+            its first layers. The weight starts at zero, so a freshly initialized
+            oracle actor computes exactly what its control computes, whatever it
+            is handed; it still learns, because the weight's gradient is the
+            block times the error. A block of zeros always adds exactly nothing.
+            None, the default, adds no parameter and leaves the computation
+            unchanged.
 
         Returns
         -------
@@ -848,7 +851,7 @@ class MLPTorso(nn.Module):
                 features = features + nn.Dense(
                     size,
                     use_bias=False,
-                    kernel_init=nn.initializers.orthogonal(2**0.5),
+                    kernel_init=nn.initializers.zeros,
                     name="handed",
                 )(handed)
             features = nn.relu(features)
