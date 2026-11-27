@@ -11,7 +11,7 @@ higher.
    one Git commit that passes `entry check`.
 2. **One Run, One Budget.** We train your entry once on
    [our RTX 5090](tournaments.md#how-we-run-and-score) with no internet for at
-   most 8 hours, and it must stop itself within 255 million game steps,
+   most 10 hours, and it must stop itself within 255 million game steps,
    counting each tick of every game.
 3. **Only Our Run Counts.** Your entry is the last model our run chose to
    enter, or else the last model it saved.
