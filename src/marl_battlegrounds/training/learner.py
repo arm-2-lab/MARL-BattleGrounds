@@ -809,6 +809,8 @@ default="mappo"
         First-row start lanes have zero temporary initial actor/critic memory;
         continuing/dead lanes preserve it. Old values and final values use the
         same supplied critic. Padding values and terminal bootstraps are zero.
+        A current-action oracle rollout's stored handed rows pass through
+        unchanged as the batch's handed field, None otherwise.
 
     Raises
     ------
@@ -976,6 +978,7 @@ default="mappo"
         old_normalized_values,
         rows.learner_active,
         rows.learning_outputs.sender_mask,
+        handed=rows.handed,
     )
     return _owned_ppo_batch(batch), memory
 

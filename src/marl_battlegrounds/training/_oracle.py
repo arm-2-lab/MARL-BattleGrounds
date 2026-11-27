@@ -1,4 +1,4 @@
-"""Run the current-action oracle for an upper-bound training run.
+"""Run the current-action oracle, a reference training run.
 
 The oracle hands each agent, as it chooses, the action probabilities of every
 agent that has already chosen on the same tick. This private module owns that
@@ -251,16 +251,12 @@ def turn_order(key: Array, fixed_first: Array) -> Array:
     return jnp.argsort(jnp.argsort(priority)).astype(jnp.int32)
 
 
-ORACLE_MODES: dict[str, tuple[bool, bool]] = {
-    "probabilities": (False, False),
-    "teammate_probabilities": (True, False),
-    "sampled_actions": (False, True),
-}
-"""Each oracle setting's (teammates_only, hand_sampled_actions) for choose_in_order.
+ORACLE_MODES: dict[str, bool] = {"probabilities": False, "sampled_actions": True}
+"""Each oracle setting's hand_sampled_actions flag for choose_in_order.
 
-"probabilities" hands every earlier agent's distribution, "teammate_probabilities"
-only earlier teammates' distributions, and "sampled_actions" every earlier
-agent's sampled action as a certain row. "off" is not a key: it runs no oracle.
+"probabilities" hands every earlier agent's distribution, and "sampled_actions"
+every earlier agent's sampled action as a certain row. "off" is not a key: it
+runs no oracle.
 """
 
 
@@ -296,7 +292,7 @@ def oracle_ranks(action_keys: Array, fixed_opponent: Array) -> Array:
     return jax.vmap(turn_order)(keys, fixed_first)
 
 
-def chosen_before(ranks: Array, present: Array, *, teammates_only: bool) -> Array:
+def chosen_before(ranks: Array, present: Array) -> Array:
     """Mark, for each observer, the slots that chose before it this tick.
 
     Parameters
@@ -306,9 +302,6 @@ def chosen_before(ranks: Array, present: Array, *, teammates_only: bool) -> Arra
     present : Array
         Bool (10,): True for configured, living slots. An absent or dead slot
         chooses nothing, so no one is handed its row.
-    teammates_only : bool
-        Static. True keeps only each observer's own teammates (the
-        teammates-only arm); False keeps both teams.
 
     Returns
     -------
@@ -317,12 +310,7 @@ def chosen_before(ranks: Array, present: Array, *, teammates_only: bool) -> Arra
         ``handed_rows``. An observer's own entry is always False, since its rank
         is never below itself.
     """
-    earlier = ranks[None, :] < ranks[:, None]
-    chosen = earlier & present[None, :]
-    if teammates_only:
-        team = jnp.arange(MAX_AGENT_SLOTS) // MAX_AGENTS_PER_TEAM
-        chosen = chosen & (team[:, None] == team[None, :])
-    return chosen
+    return (ranks[None, :] < ranks[:, None]) & present[None, :]
 
 
 class OracleChoices(NamedTuple):
@@ -449,7 +437,6 @@ def choose_in_order(
     present: Array,
     pair: PairStep,
     *,
-    teammates_only: bool,
     hand_sampled_actions: bool,
 ) -> OracleChoices:
     """Let the ten slots choose in turn, each handed everything chosen before it.
@@ -467,9 +454,6 @@ def choose_in_order(
         Slots 0..4 and 5..9, called once per turn with the rows each team's
         slots would be handed then; under jit the work that does not read the
         rows (encoder and memory) is the same in every call.
-    teammates_only : bool
-        Static. True hands only each slot's own teammates (the teammates-only
-        arm).
     hand_sampled_actions : bool
         Static. False (the main oracle) hands probabilities; True hands each
         chosen slot's sampled action as a one-hot row (the sampled-action
@@ -488,9 +472,7 @@ def choose_in_order(
     inside jit.
     """
     games = ranks.shape[0]
-    chosen = jax.vmap(functools.partial(chosen_before, teammates_only=teammates_only))(
-        ranks, present
-    )
+    chosen = jax.vmap(chosen_before)(ranks, present)
     known = jnp.zeros((games, MAX_AGENT_SLOTS, NUM_ACTIONS), jnp.float32)
     indices = jnp.zeros((games, MAX_AGENT_SLOTS), jnp.int32)
     probabilities = jnp.zeros((games, MAX_AGENT_SLOTS, NUM_ACTIONS), jnp.float32)
@@ -762,7 +744,6 @@ def oracle_apply_systems(
     variables_a: Tree,
     variables_b: Tree,
     ranks: Array,
-    teammates_only: bool,
     hand_sampled_actions: bool,
 ) -> OracleStep:
     """Choose both teams' actions in the oracle's order, once per training decision.
@@ -788,7 +769,7 @@ def oracle_apply_systems(
         Each team's dynamic variables, as for ``apply_systems``.
     ranks : Array
         Int32 (B,10) turn ranks from ``turn_order``.
-    teammates_only, hand_sampled_actions : bool
+    hand_sampled_actions : bool
         Static; see ``choose_in_order``.
 
     Returns
@@ -881,7 +862,6 @@ def oracle_apply_systems(
         ranks,
         state.core_state.alive_mask,
         pair,
-        teammates_only=teammates_only,
         hand_sampled_actions=hand_sampled_actions,
     )
     chosen = decode_actions(choices.indices)

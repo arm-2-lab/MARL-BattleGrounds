@@ -143,6 +143,7 @@ from marl_battlegrounds.baselines.actions import (
     sample_actions,
 )
 from marl_battlegrounds.baselines.inputs import (
+    _HANDED_WIDTH,  # pyright: ignore[reportPrivateUsage]
     ACTOR_FEATURE_SIZE,
     ACTOR_FEATURE_SIZES,
     ACTOR_INPUT_SCHEMA_VERSION,
@@ -540,6 +541,13 @@ class PPOBatch(NamedTuple):
         TarMAC only: Bool (T,B,5,5) [receiver, sender] masks stored from
         collection (PPOLearningOutputs.sender_mask). Required for "tarmac"
         and None for every other method.
+    handed : PreviousTimestepActionObservation or None, default=None
+        Current-action oracle runs only: the float32 rows each Team A slot was
+        handed at its own turn, leading axes (T,B,5), in world directions, as
+        collection stored them (TrainingTransition.handed). The update hands
+        each actor the same block again, in its own frame, so the first epoch
+        recomputes exactly the stored probabilities. None for ordinary runs;
+        an actor holding a "handed" weight needs it, and one without refuses it.
 
     Notes
     -----
@@ -567,6 +575,7 @@ class PPOBatch(NamedTuple):
     old_normalized_values: Array | None = None
     learner_active: Array | None = None
     sender_mask: Array | None = None
+    handed: PreviousTimestepActionObservation | None = None
 
 
 def _owned_ppo_batch(batch: PPOBatch) -> PPOBatch:
@@ -657,6 +666,10 @@ class PPOMinibatch(NamedTuple):
     sender_mask : Array or None, default=None
         TarMAC only: Boolean (G,T,E,5,5) [receiver, sender] masks stored at
         collection. None for every other method.
+    handed : Array or None, default=None
+        Current-action oracle runs only: float32 (G,T,E,S,220) or (G,Q,S,220)
+        encoded handed blocks in each actor's own frame, the same block the
+        actor was handed when it acted. None for ordinary runs.
 
     Notes
     -----
@@ -686,6 +699,7 @@ class PPOMinibatch(NamedTuple):
     actor_group: Array | None = None
     actor_weight: Array | None = None
     sender_mask: Array | None = None
+    handed: Array | None = None
 
 
 class PPOMetrics(NamedTuple):
@@ -1605,6 +1619,7 @@ def initialize_ppo(
     *,
     method: str = "mappo",
     training_state_schema: int = TRAINING_STATE_SCHEMA_VERSION,
+    handed: bool = False,
 ) -> PPOTrainState:
     """Initialize untrained BG-width actor/critic parameters and optimizers.
 
@@ -1631,6 +1646,13 @@ default="mappo"
         input width: 920 features for 2 (Team Deathmatch) and 973 for 3
         (``baselines.inputs.training_state_schema``). Methods with a local
         critic (IPPO, FF-IPPO) ignore it.
+    handed : bool, default=False
+        Keyword-only. True adds the actor weight that reads the current-action
+        oracle's handed block ("handed" in the last torso layer, a bias-free
+        220 x 128 kernel, per group under class or slot sharing), starting at
+        exactly zero, so an oracle actor first acts as its control does; its
+        optimizer state covers the weight. Such an actor must always be handed
+        a block. False leaves every tree exactly as before.
 
     Returns
     -------
@@ -1673,6 +1695,7 @@ default="mappo"
         starts = jnp.zeros((1, 1, 5), jnp.bool_)
         valid = jnp.ones_like(starts)
         features = jnp.zeros((1, 1, 5, ACTOR_FEATURE_SIZE))
+        block = jnp.zeros((1, 1, 5, _HANDED_WIDTH)) if handed else None
         if method == "tarmac":
             actor = TarMACActor(
                 input_scale=config.input_scale,
@@ -1685,6 +1708,7 @@ default="mappo"
                 starts,
                 valid,
                 jnp.zeros((1, 1, 5, 5), jnp.bool_),
+                block,
             )
         else:
             actor_init = functools.partial(
@@ -1693,6 +1717,7 @@ default="mappo"
                 features=features,
                 resets=starts,
                 valid=valid,
+                handed=block,
             )
             actor = (
                 actor_init(actor_key)
@@ -1715,6 +1740,7 @@ default="mappo"
         actor_init = functools.partial(
             FeedForwardActor(input_scale=config.input_scale).init,
             features=jnp.zeros((1, 5, ACTOR_FEATURE_SIZE)),
+            handed=jnp.zeros((1, 5, _HANDED_WIDTH)) if handed else None,
         )
         actor = (
             actor_init(actor_key)
@@ -3163,7 +3189,8 @@ def _actor_logits(
     of size one under class or slot sharing names one group for every row:
     that group's weights then run as one dense network, the grouped route's
     calculation (equal up to float rounding) without its per-step sorting.
-    TarMAC replays each sequence with the batch's stored sender masks.
+    TarMAC replays each sequence with the batch's stored sender masks, and a
+    current-action oracle run hands each row its stored block.
     """
     if method == "tarmac":
         _, logits = cast(
@@ -3179,6 +3206,7 @@ def _actor_logits(
                 batch.episode_start,
                 batch.valid,
                 batch.sender_mask,
+                batch.handed,
             ),
         )
         return logits
@@ -3207,13 +3235,14 @@ def _actor_logits(
                 batch.episode_start,
                 batch.valid,
                 actor_group=groups,
+                handed=batch.handed,
             ),
         )
     else:
         logits = cast(
             Array,
             FeedForwardActor(input_scale=config.input_scale).apply(
-                params, batch.actor_features, actor_group=groups
+                params, batch.actor_features, actor_group=groups, handed=batch.handed
             ),
         )
     return logits
@@ -3926,6 +3955,15 @@ default="mappo"
         starts = jnp.broadcast_to(pick(batch.episode_start)[..., None], lane_shape)
         member = keep(member)
         senders = None if batch.sender_mask is None else pick(batch.sender_mask)
+        handed = None
+        if batch.handed is not None:
+            flag = (
+                None
+                if config.spawn_frame == "world"
+                else spawn_frame_flag(actor_inputs, config.spawn_frame)
+            )
+            block = _handed_features(jax.tree.map(pick, batch.handed), flag)
+            handed = keep(cast(Array, block))
         return PPOMinibatch(
             features,
             critic,
@@ -3949,6 +3987,7 @@ default="mappo"
             first(batch.critic_memory[selected]) if recurrent else (),
             owners,
             sender_mask=senders,
+            handed=handed,
         )
 
     def run_epochs(

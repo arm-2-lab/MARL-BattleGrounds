@@ -9,27 +9,30 @@ split follows the 198-way action codec, and the network's flat block
 (baselines/inputs.py) keeps its documented order and width. Each tick's order
 ranks a fixed opponent's slots first and is otherwise a permutation that
 changes with the key; the chosen-before matrix never hands an observer its own,
-an absent or a later slot's row, and the teammates-only arm drops the other
-team. Choosing in turn hands each slot exactly the slots chosen before it, in
-games against a fixed opponent and against a copy, with probabilities or with
-sampled actions, and keeps each slot's result from its own turn. A fixed
-opponent's route is its own marked step for a built-in method; a team of the
-scripted bots hands its unchanged actions as certain one-hot rows, the same
-whatever key it gets; any other fixed opponent is refused. Played through the
-shared runner's pair call against a pool of a saved team and a bot team, an
-oracle whose handed weight starts at zero gives exactly the runner's actions,
-learning values and memory, tick after tick, in both arms; and each slot is
+an absent or a later slot's row. Choosing in turn hands each slot exactly the
+slots chosen before it, in games against a fixed opponent and against a copy,
+with probabilities or with sampled actions, and keeps each slot's result from
+its own turn. A fixed opponent's route is its own marked step for a built-in
+method; a team of the scripted bots hands its unchanged actions as certain
+one-hot rows, the same whatever key it gets; any other fixed opponent is
+refused. Played through the shared runner's pair call against a pool of a saved
+team and a bot team, an oracle actor initialized with its handed weight (which
+starts at zero) gives exactly the runner's actions, learning values and memory,
+tick after tick, handed probabilities or sampled actions; and each slot is
 handed all five enemies (which choose first) and exactly the teammates chosen
 before it, each once. In training collection the same holds game for game:
 against a saved team, the bots, the current learner and a frozen copy of it,
-an oracle run whose handed weight is zero, with a saved team added at a stage
-boundary, collects exactly the plain run's actions, learning values, rewards
-and learner memory, while storing the rows
-Team A was handed (all five enemies where a fixed opponent plays). An unknown
-oracle setting, a fixed opponent with no route and fixed partners are refused.
+with a saved team added at a stage boundary, a zero-weight oracle run collects
+exactly the plain run's actions, learning values, rewards and learner memory,
+while storing the rows Team A was handed (all five enemies where a fixed
+opponent plays). With a nonzero handed weight, the PPO update hands each actor
+its stored rows again, mirrored into its own frame: the first pass recomputes
+exactly the stored probabilities, which differ with no rows or unmirrored rows.
+An unknown oracle setting, a fixed opponent with no route and fixed partners
+are refused.
 """
 
-import functools
+import dataclasses
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -41,7 +44,12 @@ from jax import Array
 from tests.helpers.evaluation_fixtures import evaluation_env_config
 
 import marl_battlegrounds as marl_bgs
-from marl_battlegrounds.baselines.actions import decode_actions, encode_actions
+from marl_battlegrounds.baselines import ppo
+from marl_battlegrounds.baselines.actions import (
+    action_log_prob,
+    decode_actions,
+    encode_actions,
+)
 from marl_battlegrounds.baselines.inputs import (
     _HANDED_WIDTH,  # pyright: ignore[reportPrivateUsage]
     _encode_handed_rows,  # pyright: ignore[reportPrivateUsage]
@@ -74,7 +82,6 @@ from marl_battlegrounds.policies.input import Observations
 from marl_battlegrounds.training import (
     PreparedTrainingContent,
     TrainingCarry,
-    TrainingCollection,
     TrainingRollout,
     init_training_collection,
     make_training_schedule,
@@ -248,19 +255,16 @@ def test_fixed_opponents_choose_first_and_orders_vary() -> None:
     assert len({int(np.argmin(r)) for r in open_orders}) > 2
 
 
-@pytest.mark.parametrize("teammates_only", [False, True])
-def test_chosen_before_hands_only_earlier_present_slots(teammates_only: bool) -> None:
+def test_chosen_before_hands_only_earlier_present_slots() -> None:
     ranks = turn_order(jax.random.key(3), jnp.zeros(10, bool))
     present = jnp.ones(10, bool).at[2].set(False)
-    chosen = np.asarray(chosen_before(ranks, present, teammates_only=teammates_only))
+    chosen = np.asarray(chosen_before(ranks, present))
     r = np.asarray(ranks)
     assert not chosen.diagonal().any()
     assert not chosen[:, 2].any()
     for o in range(10):
         for a in range(10):
-            same_team = o // 5 == a // 5
-            expected = r[a] < r[o] and a != 2 and (same_team or not teammates_only)
-            assert chosen[o, a] == expected
+            assert chosen[o, a] == (r[a] < r[o] and a != 2)
 
 
 def _counting_step(rows: PreviousTimestepActionObservation) -> _ActorStep:
@@ -278,10 +282,7 @@ def _counting_step(rows: PreviousTimestepActionObservation) -> _ActorStep:
 
 
 @pytest.mark.parametrize("sampled", [False, True])
-@pytest.mark.parametrize("teammates_only", [False, True])
-def test_choosing_in_turn_hands_each_slot_the_earlier_slots(
-    teammates_only: bool, sampled: bool
-) -> None:
+def test_choosing_in_turn_hands_each_slot_the_earlier_slots(sampled: bool) -> None:
     env = marl_bgs.make("tdm", map_id=0, num_envs=4)
     states = env.reset(jax.random.key(0))[1].core_state
     fixed = jnp.array([True, True, False, False])[:, None] & (jnp.arange(10) >= 5)
@@ -293,12 +294,9 @@ def test_choosing_in_turn_hands_each_slot_the_earlier_slots(
         ranks,
         present,
         lambda rows_a, rows_b: (_counting_step(rows_a), _counting_step(rows_b)),
-        teammates_only=teammates_only,
         hand_sampled_actions=sampled,
     )
-    expected = jax.vmap(
-        functools.partial(chosen_before, teammates_only=teammates_only)
-    )(ranks, present).sum(-1)
+    expected = jax.vmap(chosen_before)(ranks, present).sum(-1)
     np.testing.assert_array_equal(choices.indices, expected)
     np.testing.assert_array_equal(choices.probabilities.argmax(-1), expected)
     fixed_ranks = np.asarray(ranks)[:2, 5:]
@@ -362,17 +360,15 @@ def test_unrouted_fixed_opponents_are_refused() -> None:
             fixed_member_step(member)
 
 
-def _with_handed_weight(params: Tree) -> Tree:
-    torso = {
-        **params["params"]["post_torso"],
-        "handed": {"kernel": jnp.zeros((_HANDED_WIDTH, 128), jnp.float32)},
-    }
-    return {"params": {**params["params"], "post_torso": torso}}
+def _actor(seed: int, *, handed: bool) -> Tree:
+    return initialize_ppo(
+        jax.random.key(seed), DEFAULT_PPO_CONFIG, method="mappo", handed=handed
+    ).actor_params
 
 
-@pytest.mark.parametrize("teammates_only", [False, True])
+@pytest.mark.parametrize("sampled", [False, True])
 def test_a_zero_started_oracle_plays_exactly_as_the_shared_runner(
-    teammates_only: bool,
+    sampled: bool,
 ) -> None:
     env = marl_bgs.make(
         "tdm",
@@ -381,17 +377,14 @@ def test_a_zero_started_oracle_plays_exactly_as_the_shared_runner(
         metrics="none",
     )
     observations, game = env.reset(jax.random.key(11))
-    learner = initialize_ppo(jax.random.key(1), DEFAULT_PPO_CONFIG, method="mappo")
-    saved = initialize_ppo(jax.random.key(2), DEFAULT_PPO_CONFIG, method="mappo")
+    saved = make_ppo_system(_actor(2, handed=False))
     bots = shared_policy(policy("tdm-alpha"))
-    plain_a = make_ppo_system(learner.actor_params)
-    plain_b = pool({make_ppo_system(saved.actor_params): 1.0, bots: 1.0})
-    oracle_a = oracle_member(
-        make_ppo_system(_with_handed_weight(learner.actor_params)), reads_rows=True
-    )
+    plain_a = make_ppo_system(_actor(1, handed=False))
+    plain_b = pool({saved: 1.0, bots: 1.0})
+    oracle_a = oracle_member(make_ppo_system(_actor(1, handed=True)), reads_rows=True)
     oracle_b = pool(
         {
-            oracle_member(make_ppo_system(saved.actor_params), reads_rows=False): 1.0,
+            oracle_member(saved, reads_rows=False): 1.0,
             oracle_member(bots, reads_rows=False): 1.0,
         }
     )
@@ -413,8 +406,7 @@ def test_a_zero_started_oracle_plays_exactly_as_the_shared_runner(
             variables_a=oracle_a.variables,
             variables_b=oracle_b.variables,
             ranks=jax.vmap(turn_order)(_lane_keys(40 + tick), fixed),
-            teammates_only=teammates_only,
-            hand_sampled_actions=False,
+            hand_sampled_actions=sampled,
         )
         oracle = step.memory
         for left, right in zip(step.actions, actions, strict=True):
@@ -437,14 +429,12 @@ def test_each_slot_is_handed_every_earlier_choice_once() -> None:
         metrics="none",
     )
     observations, game = env.reset(jax.random.key(12))
-    learner = initialize_ppo(jax.random.key(1), DEFAULT_PPO_CONFIG, method="mappo")
-    saved = initialize_ppo(jax.random.key(2), DEFAULT_PPO_CONFIG, method="mappo")
-    team_a = oracle_member(
-        make_ppo_system(_with_handed_weight(learner.actor_params)), reads_rows=True
-    )
+    team_a = oracle_member(make_ppo_system(_actor(1, handed=True)), reads_rows=True)
     team_b = pool(
         {
-            oracle_member(make_ppo_system(saved.actor_params), reads_rows=False): 1.0,
+            oracle_member(
+                make_ppo_system(_actor(2, handed=False)), reads_rows=False
+            ): 1.0,
             oracle_member(shared_policy(policy("tdm-beta")), reads_rows=False): 1.0,
         }
     )
@@ -461,12 +451,9 @@ def test_each_slot_is_handed_every_earlier_choice_once() -> None:
         variables_a=team_a.variables,
         variables_b=team_b.variables,
         ranks=ranks,
-        teammates_only=False,
         hand_sampled_actions=False,
     )
-    earlier = jax.vmap(functools.partial(chosen_before, teammates_only=False))(
-        ranks, game.core_state.alive_mask
-    )
+    earlier = jax.vmap(chosen_before)(ranks, game.core_state.alive_mask)
     allies = step.handed.ally_previous_timestep_move_actions_one_hot.sum((-2, -1))
     enemies = step.handed.enemy_previous_timestep_move_actions_one_hot.sum((-2, -1))
     np.testing.assert_allclose(allies + enemies, earlier.sum(-1), atol=1e-5)
@@ -478,48 +465,41 @@ def prepared() -> PreparedTrainingContent:
     return prepare_training_content()
 
 
-def _collected(
-    prepared: PreparedTrainingContent, oracle: str
-) -> tuple[TrainingCollection, TrainingCarry, TrainingRollout]:
-    def params(seed: int) -> Tree:
-        values = initialize_ppo(
-            jax.random.key(seed), DEFAULT_PPO_CONFIG, method="mappo"
-        ).actor_params
-        return values if oracle == "off" else _with_handed_weight(values)
+type Scan = Callable[[TrainingCarry], tuple[TrainingCarry, TrainingRollout]]
 
-    saved = initialize_ppo(jax.random.key(2), DEFAULT_PPO_CONFIG, method="mappo")
+
+def _prepared_run(
+    prepared: PreparedTrainingContent, oracle: str
+) -> tuple[TrainingCarry, Scan]:
+    handed = oracle != "off"
     collection, carry = init_training_collection(
-        make_ppo_system(params(1)),
-        params(1),
+        make_ppo_system(_actor(1, handed=handed)),
+        _actor(1, handed=handed),
         schedule=make_training_schedule(total_env_steps=64, num_envs=4),
         seed=5,
         prepared=prepared,
         metrics="none",
         opponent_population={
-            "saved": make_ppo_system(saved.actor_params),
+            "saved": make_ppo_system(_actor(2, handed=False)),
             "bots": shared_policy(policy("tdm-alpha")),
         },
         opponent_selection=["saved", "bots", "self", "self"],
         current_action_oracle=oracle,
     )
     # A member added at a stage boundary; no game draws it in these ticks.
-    later = initialize_ppo(jax.random.key(3), DEFAULT_PPO_CONFIG, method="mappo")
     collection, carry = append_training_opponents(
-        collection, carry, {"later": make_ppo_system(later.actor_params)}
+        collection, carry, {"later": make_ppo_system(_actor(3, handed=False))}
     )
     assert collection.opponent_names == ("saved", "bots", "later")
 
     def rollout(values: TrainingCarry) -> tuple[TrainingCarry, TrainingRollout]:
         return scan_training_rollout(collection, values, length=2)
 
-    scan = cast(
-        Callable[[TrainingCarry], tuple[TrainingCarry, TrainingRollout]],
-        jax.jit(rollout),
-    )
+    scan = cast(Scan, jax.jit(rollout))
     carry, _ = scan(carry)
     history, event = refresh_opponents(
         carry.history,
-        params(4),
+        _actor(4, handed=handed),
         completed_rounds=carry.progress.rounds,
         update_index=jnp.int32(1),
         schedule=carry.schedule,
@@ -527,15 +507,20 @@ def _collected(
     assert bool(event.created)
     # The last game meets the frozen copy, as a game start that drew "past" does.
     history = history._replace(lane_snapshot=history.lane_snapshot.at[3].set(0))
-    carry, rows = scan(carry._replace(history=history))
-    return collection, carry, rows
+    return carry._replace(history=history), scan
+
+
+@pytest.fixture(scope="module")
+def oracle_run(prepared: PreparedTrainingContent) -> tuple[TrainingCarry, Scan]:
+    return _prepared_run(prepared, "probabilities")
 
 
 def test_a_zero_started_oracle_collects_the_plain_games(
-    prepared: PreparedTrainingContent,
+    prepared: PreparedTrainingContent, oracle_run: tuple[TrainingCarry, Scan]
 ) -> None:
-    _, plain_end, plain = _collected(prepared, "off")
-    _, oracle_end, oracle = _collected(prepared, "probabilities")
+    plain_carry, plain_scan = _prepared_run(prepared, "off")
+    plain_end, plain = plain_scan(plain_carry)
+    oracle_end, oracle = oracle_run[1](oracle_run[0])
     rows, stored = plain.transitions, oracle.transitions
     np.testing.assert_array_equal(rows.opponent_snapshot, [[-3, -4, -1, 0]] * 2)
     assert bool(np.all(rows.valid)) and bool(np.all(rows.active))
@@ -557,15 +542,120 @@ def test_a_zero_started_oracle_collects_the_plain_games(
     np.testing.assert_allclose(enemies[:, :2], 5.0, atol=1e-5)
 
 
+class _CapturedError(Exception):
+    pass
+
+
+# One minibatch of all four games, so both spawn ends (mirrored or not) are in it.
+TWO_TICKS = dataclasses.replace(
+    DEFAULT_PPO_CONFIG,
+    rollout_length=2,
+    value_normalization=False,
+    groups=1,
+    minibatches=1,
+)
+
+
+def test_the_update_hands_each_actor_its_stored_rows_again(
+    oracle_run: tuple[TrainingCarry, Scan],
+) -> None:
+    carry, scan = oracle_run
+    current = carry.history.current_variables
+    torso = current["params"]["post_torso"]
+    kernel = 2.0 * jax.random.normal(jax.random.key(8), torso["handed"]["kernel"].shape)
+    trained = {
+        "params": {
+            **current["params"],
+            "post_torso": {**torso, "handed": {"kernel": kernel}},
+        }
+    }
+    history = carry.history._replace(current_variables=trained)
+    _, rollout = scan(carry._replace(history=history))
+    rows = rollout.transitions
+    assert rows.handed is not None
+    zeros = jnp.zeros(rows.task_rewards.shape, jnp.float32)
+    batch = ppo.PPOBatch(
+        rows.observations,
+        None,
+        rows.action_mask,
+        rows.learning_outputs.action_indices,
+        rows.learning_outputs.log_prob,
+        zeros,
+        zeros,
+        rows.ended,
+        rows.episode_start,
+        rows.valid,
+        rows.active,
+        rows.alive,
+        zeros[0],
+        rollout.initial_memory,
+        jnp.zeros_like(rollout.initial_memory),
+        handed=rows.handed,
+    )
+    state = initialize_ppo(
+        jax.random.key(4), TWO_TICKS, method="ippo", handed=True
+    )._replace(actor_params=trained)
+    captured: list[ppo.PPOMinibatch] = []
+    seen: list[tuple[PreviousTimestepActionObservation, Array | None]] = []
+    encode = ppo._handed_features  # pyright: ignore[reportPrivateUsage]
+
+    def record(
+        handed: PreviousTimestepActionObservation | None, flag: Array | None
+    ) -> Array | None:
+        assert handed is not None
+        seen.append((handed, flag))
+        return encode(handed, flag)
+
+    def capture(
+        state: ppo.PPOTrainState,
+        minibatch: ppo.PPOMinibatch,
+        config: ppo.PPOConfig = TWO_TICKS,
+        *,
+        method: str = "mappo",
+    ) -> tuple[ppo.PPOTrainState, ppo.PPOMetrics]:
+        captured.append(minibatch)
+        raise _CapturedError
+
+    with pytest.MonkeyPatch.context() as patch, jax.disable_jit():
+        patch.setattr(ppo, "_handed_features", record)
+        patch.setattr(ppo, "update_minibatch", capture)
+        with pytest.raises(_CapturedError):
+            ppo.update_ppo(state, batch, jax.random.key(6), TWO_TICKS, method="ippo")
+
+    def first(value: Array) -> Array:
+        return value[0]
+
+    group = jax.tree.map(first, captured[0])
+    picked, flag = jax.tree.map(first, seen[0])
+    assert flag is not None and bool(jnp.any(flag)) and bool(jnp.any(~flag))
+
+    def gap(block: Array) -> float:
+        logits = ppo._actor_logits(  # pyright: ignore[reportPrivateUsage]
+            trained, group._replace(handed=block), TWO_TICKS, method="ippo"
+        )
+        replayed = action_log_prob(logits, group.action_mask, group.actions)
+        return float(
+            jnp.max(
+                jnp.where(
+                    group.actor_samples, jnp.abs(replayed - group.old_log_prob), 0
+                )
+            )
+        )
+
+    assert group.handed is not None
+    unmirrored = _encode_handed_rows(picked)
+    changed = jnp.any(group.handed != unmirrored, axis=-1)
+    assert bool(jnp.all(changed <= flag)) and bool(jnp.any(changed))
+    assert gap(group.handed) < 1e-6
+    assert gap(jnp.zeros_like(group.handed)) > 1e-2
+    assert gap(unmirrored) > 1e-4
+
+
 @pytest.mark.parametrize("case", ["setting", "route", "partners"])
 def test_unsupported_oracle_runs_are_refused(
     prepared: PreparedTrainingContent, case: str
 ) -> None:
-    values = _with_handed_weight(
-        initialize_ppo(
-            jax.random.key(1), DEFAULT_PPO_CONFIG, method="mappo"
-        ).actor_params
-    )
+    values = _actor(1, handed=True)
     settings: dict[str, Any] = {
         "current_action_oracle": "actions" if case == "setting" else "probabilities"
     }

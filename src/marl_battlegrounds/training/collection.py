@@ -7,7 +7,7 @@ method inside the compiled step, a host method through a host loop in
 collect_training_rollout. An optional ActorVariablesAtStep hook, such as QMIX
 exploration, sets changing actor values from the round count before every
 decision; without one the step is unchanged. An optional current-action oracle
-(an upper-bound run) wraps the learner, its copies and the fixed opponents so
+(a reference run) wraps the learner, its copies and the fixed opponents so
 that each decision runs as ten turns through ``_oracle.oracle_apply_systems``;
 when it is "off" the step is unchanged. No critic, optimizer, replay, learning
 run or durable learner checkpoint lives here.
@@ -1925,8 +1925,8 @@ def init_training_collection(
         collect_training_state rows have that schema's width.
     current_action_oracle : str, default="off"
         "off" runs today's step. A key of ``_oracle.ORACLE_MODES``
-        ("probabilities", "teammate_probabilities" or "sampled_actions") makes
-        this an upper-bound run: each decision is ten turns in a random order,
+        ("probabilities" or "sampled_actions") makes this a current-action
+        oracle run: each decision is ten turns in a random order,
         fixed opponents first, and each agent is handed what the earlier agents
         chose. The actor must be a built-in method whose network takes a handed
         block. Every fixed opponent must be a built-in method or a team of the
@@ -2546,7 +2546,6 @@ def _apply(
         if len(carry.pinned_opponent)
         else jnp.zeros_like(carry.history.lane_snapshot, jnp.bool_)
     )
-    teammates_only, hand_sampled_actions = ORACLE_MODES[oracle]
     step = oracle_apply_systems(
         actor,
         opponent,
@@ -2557,8 +2556,7 @@ def _apply(
         variables_a=variables_a,
         variables_b=variables_b,
         ranks=oracle_ranks(action_keys, fixed),
-        teammates_only=teammates_only,
-        hand_sampled_actions=hand_sampled_actions,
+        hand_sampled_actions=ORACLE_MODES[oracle],
     )
     tracking, result = _step_and_track(
         carry.env,
