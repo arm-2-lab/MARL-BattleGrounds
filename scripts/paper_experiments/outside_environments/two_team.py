@@ -8,8 +8,9 @@ evaders, for example), build a second ``TwoTeamEnv`` with ``team_a`` and ``team_
 swapped: that side becomes Team A, and the default ``global_state`` and
 ``team_reward`` then serve it. Each game's own file builds one ``TwoTeamEnv`` from a
 JaxMARL ``MultiAgentEnv`` plus the few facts that differ per game (which agents form
-each team, the critic's global state, the team reward, who is alive, and whether the
-game has a win or a loss).
+each team, the critic's global state, the team reward, who is alive, and the game's
+win rule, if it has one). A game that drives the opponents itself, such as JaxMARL's
+``HeuristicEnemySMAX``, is wrapped with an empty Team B.
 
 Who uses it: the vendored JaxMARL learners in ``hosts/``, the opponent panels and the
 run scripts in this folder. It runs only in ``.venv-outside``, the environment that
@@ -39,6 +40,7 @@ from typing import Any, NamedTuple, cast
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.typing import DTypeLike
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv, State
 from jaxmarl.environments.spaces import Box, Discrete
 
@@ -70,7 +72,7 @@ class EpisodeResult(NamedTuple):
     outcome: jax.Array
     """Team A's result, a scalar int32: +1 for a win, -1 for a loss, 0 for a draw.
     Set only on the step where ``TeamStep.done`` is true, and only in a game built
-    with ``has_outcome=True`` (SMAX); it is always 0 in games scored by return."""
+    with an ``outcome`` rule (SMAX); it is always 0 in games scored by return."""
 
 
 class TeamStep(NamedTuple):
@@ -81,6 +83,8 @@ class TeamStep(NamedTuple):
     When ``done`` is true the game has already reset itself: the observations, masks
     and global state describe the next episode's first step, while the rewards and
     ``result`` belong to the episode that just ended (JaxMARL's auto-reset).
+    An empty Team B gives Team B arrays with no rows: ``obs_b`` and ``avail_b`` of
+    shape ``(0, 0)``, ``alive_b`` and ``reward_b`` of shape ``(0,)``.
     """
 
     obs_a: jax.Array
@@ -194,7 +198,8 @@ class Opponent(NamedTuple):
 
     A frozen panel member is ``Opponent(act=<the host's saved policy step>,
     init_carry=<its zero memory>)``; each game's file builds its scripted enemy the
-    same way.
+    same way. A game with an empty Team B needs no ``Opponent``: pass an empty
+    ``actions_b``.
     """
 
     act: Callable[..., tuple[jax.Array, Any]]
@@ -202,6 +207,18 @@ class Opponent(NamedTuple):
 
     init_carry: Any
     """The memory ``act`` starts from at the first episode (``()`` if none)."""
+
+
+def _pad_rows(rows: list[jax.Array], width: int, dtype: DTypeLike) -> jax.Array:
+    """Stack 1-D rows into ``(len(rows), width)`` of ``dtype``, padding each at its end.
+
+    Padding is 0 (False for bool). No rows, an empty team, give shape ``(0, width)``.
+    """
+    if not rows:
+        return jnp.zeros((0, width), dtype)
+    return jnp.stack(
+        [jnp.pad(row.astype(dtype), (0, width - row.shape[0])) for row in rows]
+    )
 
 
 def _team_indices(env: MultiAgentEnv, team: Sequence[str]) -> np.ndarray:
@@ -223,11 +240,13 @@ class TwoTeamEnv:
         The JaxMARL game, built with discrete actions. Every agent named in
         ``team_a`` and ``team_b`` must have a ``Discrete`` action space.
     team_a
-        Team A's agent names, in the order every Team A array uses. Team A is the
-        side that learns the method.
+        Team A's agent names, in the order every Team A array uses; at least one.
+        Team A is the side that learns the method.
     team_b
         Team B's agent names, in its fixed order. Together with ``team_a`` it must
-        name every agent in ``env.agents`` exactly once.
+        name every agent in ``env.agents`` exactly once. It is empty when the game
+        drives the opponents itself: JaxMARL's ``HeuristicEnemySMAX`` lists only the
+        allies as agents, and its scripted enemies act inside its own ``step``.
     global_state
         ``global_state(obs, env_state)`` returns Team A's global state, a flat
         float32 vector the same width every step. The default joins every agent's
@@ -242,12 +261,14 @@ class TwoTeamEnv:
         ``alive(env_state)`` returns a ``(num_agents,)`` bool array in
         ``env.agents`` order, True for each living agent. ``None`` (the default)
         means no agent ever dies.
-    has_outcome
-        True for a game won by wiping out the other team (SMAX). The step that ends
-        an episode then sets ``EpisodeResult.outcome`` from the final step's alive
-        masks: +1 when Team B is all dead and a Team A agent lives, -1 for the
-        reverse, 0 otherwise (a timeout, or both teams dying together). False (the
-        default) keeps ``outcome`` at 0, for games scored by return.
+    outcome
+        ``outcome(final_state)`` returns Team A's result, a scalar int: +1 for a win,
+        -1 for a loss, 0 for a draw. It reads the game's state from the last step of
+        an episode, before the reset replaces it, and the adapter keeps its value
+        only on the step that ends the episode. The game owns this rule because only
+        the game state knows every unit: for SMAX it reads the units' alive flags,
+        which works whether or not Team B is agents. ``None`` (the default) keeps
+        ``EpisodeResult.outcome`` at 0, for games scored by return.
 
     Attributes
     ----------
@@ -256,19 +277,21 @@ class TwoTeamEnv:
     team_a, team_b
         The two teams' agent names, in their fixed orders.
     has_outcome
-        Whether ``EpisodeResult.outcome`` carries a win or a loss.
+        True when the game has an ``outcome`` rule, so ``EpisodeResult.outcome``
+        carries a win or a loss.
     width_a, width_b
-        Each team's observation width after padding.
+        Each team's observation width after padding; 0 for an empty Team B.
     actions_a, actions_b
-        Each team's action count after padding: its largest agent's count.
+        Each team's action count after padding: its largest agent's count; 0 for an
+        empty Team B.
     action_counts_a, action_counts_b
         Each agent's own action count, in team order.
 
     Raises
     ------
     ValueError
-        If the two teams do not name every agent exactly once, or an agent's action
-        space is not ``Discrete``.
+        If ``team_a`` is empty, the two teams do not name every agent exactly once,
+        or an agent's action space is not ``Discrete``.
 
     Notes
     -----
@@ -294,17 +317,22 @@ class TwoTeamEnv:
         global_state: Callable[[Observations, State], jax.Array] | None = None,
         team_reward: Callable[[jax.Array], jax.Array] = jnp.sum,
         alive: Callable[[State], jax.Array] | None = None,
-        has_outcome: bool = False,
+        outcome: Callable[[State], jax.Array] | None = None,
     ) -> None:
         self.env = env
         self.team_a = tuple(team_a)
         self.team_b = tuple(team_b)
+        if not self.team_a:
+            raise ValueError(
+                "team_a must name at least one agent: the side that learns."
+            )
         if sorted(self.team_a + self.team_b) != sorted(env.agents):
             raise ValueError(
                 f"team_a {self.team_a} and team_b {self.team_b} must name every agent "
                 f"in {env.agents} exactly once."
             )
-        self.has_outcome = has_outcome
+        self.has_outcome = outcome is not None
+        self._outcome_rule = outcome
         self._index_a = _team_indices(env, self.team_a)
         self._index_b = _team_indices(env, self.team_b)
         self._global_state = global_state or self._joined_observations
@@ -330,9 +358,9 @@ class TwoTeamEnv:
         self.action_counts_a = tuple(action_count(name) for name in self.team_a)
         self.action_counts_b = tuple(action_count(name) for name in self.team_b)
         self.actions_a = max(self.action_counts_a)
-        self.actions_b = max(self.action_counts_b)
+        self.actions_b = max(self.action_counts_b, default=0)
         self.width_a = max(obs_width(name) for name in self.team_a)
-        self.width_b = max(obs_width(name) for name in self.team_b)
+        self.width_b = max((obs_width(name) for name in self.team_b), default=0)
 
     def reset(self, key: jax.Array) -> tuple[TeamStep, TwoTeamState]:
         """Start a new episode.
@@ -379,7 +407,8 @@ class TwoTeamEnv:
             Each must be available in the previous ``TeamStep.avail_a``; the game
             does not check this.
         actions_b
-            One action per Team B agent, shape ``(agents_b,)``, int, in team order.
+            One action per Team B agent, shape ``(agents_b,)``, int, in team order;
+            shape ``(0,)`` when Team B is empty.
 
         Returns
         -------
@@ -405,12 +434,8 @@ class TwoTeamEnv:
         env_state: State = jax.tree.map(pick, state_reset, state_end)
         obs: Observations = jax.tree.map(pick, obs_reset, obs_end)
 
-        reward_a = jnp.stack([rewards[name] for name in self.team_a]).astype(
-            jnp.float32
-        )
-        reward_b = jnp.stack([rewards[name] for name in self.team_b]).astype(
-            jnp.float32
-        )
+        reward_a = jnp.array([rewards[name] for name in self.team_a], jnp.float32)
+        reward_b = jnp.array([rewards[name] for name in self.team_b], jnp.float32)
         return_a = state.return_a + reward_a
         return_b = state.return_b + reward_b
         length = state.length + 1
@@ -439,8 +464,8 @@ class TwoTeamEnv:
         self, obs: Observations, team: tuple[str, ...], width: int
     ) -> jax.Array:
         """Stack one team's observations into ``(agents, width)``, zero-padded."""
-        rows = [obs[name].reshape(-1).astype(jnp.float32) for name in team]
-        return jnp.stack([jnp.pad(row, (0, width - row.shape[0])) for row in rows])
+        rows = [obs[name].reshape(-1) for name in team]
+        return _pad_rows(rows, width, jnp.float32)
 
     def _stack_avail(
         self,
@@ -455,7 +480,7 @@ class TwoTeamEnv:
             rows = [masks[name].astype(jnp.bool_) for name in team]
         else:
             rows = [jnp.ones(count, jnp.bool_) for count in counts]
-        return jnp.stack([jnp.pad(row, (0, actions - row.shape[0])) for row in rows])
+        return _pad_rows(rows, actions, jnp.bool_)
 
     def _alive_all(self, env_state: State) -> jax.Array:
         """Return the ``(num_agents,)`` alive mask in ``env.agents`` order."""
@@ -464,15 +489,10 @@ class TwoTeamEnv:
         return self._alive(env_state).astype(jnp.bool_)
 
     def _outcome(self, state_end: State, done: jax.Array) -> jax.Array:
-        """Team A's +1, 0 or -1 from the final state, or 0 before the end."""
-        if not self.has_outcome:
+        """Team A's +1, 0 or -1 from the game's rule at an episode's end, else 0."""
+        if self._outcome_rule is None:
             return jnp.int32(0)
-        alive = self._alive_all(state_end)
-        a_lives = alive[self._index_a].any()
-        b_lives = alive[self._index_b].any()
-        win = a_lives & ~b_lives
-        loss = b_lives & ~a_lives
-        return jnp.where(done, win.astype(jnp.int32) - loss.astype(jnp.int32), 0)
+        return jnp.where(done, self._outcome_rule(state_end).astype(jnp.int32), 0)
 
     def _team_step(
         self,

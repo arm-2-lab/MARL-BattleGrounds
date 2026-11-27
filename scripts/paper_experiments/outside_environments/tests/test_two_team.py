@@ -18,12 +18,17 @@ Contracts checked:
   (relative 1e-6), because XLA compiles them inside a different program.
 - Episode totals: on the step that ends an episode, result holds the summed rewards
   and the step count; the totals restart from zero on the next step.
-- Outcome: in SMAX, +1, -1 and 0 from hand-built final states (Team B wiped out,
+- Outcome: the game's outcome rule is read from the episode's final state, before
+  the reset. In SMAX, +1, -1 and 0 from hand-built final states (Team B wiped out,
   Team A wiped out, both at once, and a timeout).
+- An empty Team B: JaxMARL's HeuristicEnemySMAX, whose scripted enemies are not
+  agents, runs with Team B arrays of no rows; its game states equal its own compiled
+  step under the same keys bit for bit, across an episode end; and a timeout scores
+  0, not a win.
 - others(): each Team A agent gets its teammates in order without itself, every
   enemy, and masks that follow the alive flags.
-- Construction: teams that do not name every agent once, and continuous actions,
-  are refused.
+- Construction: an empty Team A, teams that do not name every agent once, and
+  continuous actions are refused.
 - Batching: reset and step run under jax.jit and jax.vmap over 32 games.
 """
 
@@ -37,6 +42,10 @@ import numpy as np
 import pytest
 from jaxmarl.environments.mpe.simple_world_comm import SimpleWorldCommMPE
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv, State
+from jaxmarl.environments.smax.heuristic_enemy_smax_env import HeuristicEnemySMAX
+from jaxmarl.environments.smax.heuristic_enemy_smax_env import (
+    State as HeuristicState,
+)
 from jaxmarl.environments.smax.smax_env import SMAX
 from jaxmarl.environments.smax.smax_env import State as SMAXState
 from scripts.paper_experiments.outside_environments.two_team import (
@@ -79,6 +88,18 @@ def _smax_alive(state: State) -> jax.Array:
     return cast(SMAXState, state).unit_alive
 
 
+def _smax_outcome(units: SMAXState, allies: int) -> jax.Array:
+    a_lives = units.unit_alive[:allies].any()
+    b_lives = units.unit_alive[allies:].any()
+    return (a_lives & ~b_lives).astype(jnp.int32) - (b_lives & ~a_lives).astype(
+        jnp.int32
+    )
+
+
+def _heuristic_units(state: State) -> SMAXState:
+    return cast(SMAXState, cast(HeuristicState, state).state)
+
+
 def _world_comm(max_steps: int = 25) -> SimpleWorldCommMPE:
     return SimpleWorldCommMPE(action_type="Discrete", max_steps=max_steps)
 
@@ -96,7 +117,21 @@ def _smax() -> tuple[SMAX, TwoTeamEnv]:
         global_state=lambda obs, state: obs["world_state"],
         team_reward=lambda reward: reward[0],
         alive=_smax_alive,
-        has_outcome=True,
+        outcome=lambda state: _smax_outcome(cast(SMAXState, state), 3),
+    )
+    return env, teams
+
+
+def _heuristic_smax(max_steps: int = 100) -> tuple[HeuristicEnemySMAX, TwoTeamEnv]:
+    env = HeuristicEnemySMAX(num_allies=3, num_enemies=3, max_steps=max_steps)
+    teams = TwoTeamEnv(
+        env,
+        env.agents,
+        [],
+        global_state=lambda obs, state: obs["world_state"],
+        team_reward=lambda reward: reward[0],
+        alive=lambda state: _heuristic_units(state).unit_alive[:3],
+        outcome=lambda state: _smax_outcome(_heuristic_units(state), 3),
     )
     return env, teams
 
@@ -244,6 +279,28 @@ def test_smax_outcome_from_the_final_state(
     assert int(team_step.result.outcome) == outcome
 
 
+def test_heuristic_smax_runs_with_an_empty_team_b_like_its_own_step() -> None:
+    env, teams = _heuristic_smax(max_steps=3)
+    teams_step = cast(Step, jax.jit(teams.step))
+    env_step = jax.jit(env.step)
+    team_step, state = teams.reset(jax.random.PRNGKey(9))
+    _, env_state = _game_reset(env, jax.random.PRNGKey(9))
+    stop, none = jnp.full(3, 4, jnp.int32), jnp.zeros(0, jnp.int32)
+    for t in range(5):
+        key = jax.random.PRNGKey(300 + t)
+        team_step, state = teams_step(key, state, stop, none)
+        obs, env_state, _, dones, _ = _game_step(
+            env_step, key, env_state, dict(zip(teams.team_a, stop, strict=True))
+        )
+
+        _assert_rows(team_step, obs, teams)
+        _assert_states_equal(state.env_state, env_state)
+        assert bool(team_step.done) == bool(dones["__all__"]) == (t % 3 == 2)
+        assert team_step.obs_b.shape == team_step.avail_b.shape == (0, 0)
+        assert team_step.alive_b.shape == team_step.reward_b.shape == (0,)
+        assert int(team_step.result.outcome) == 0
+
+
 def test_others_leaves_each_agent_out_and_masks_the_dead() -> None:
     rows_a = jnp.arange(6.0).reshape(3, 2)
     rows_b = jnp.arange(10.0, 14.0).reshape(2, 2)
@@ -262,6 +319,8 @@ def test_construction_refuses_bad_teams_and_continuous_actions() -> None:
     env = _world_comm()
     with pytest.raises(ValueError, match="exactly once"):
         TwoTeamEnv(env, [env.leader], env.good_agents)
+    with pytest.raises(ValueError, match="at least one agent"):
+        TwoTeamEnv(env, [], _agents(env))
     continuous = SimpleWorldCommMPE()
     with pytest.raises(ValueError, match="discrete"):
         _chasers_vs_evaders(continuous)
