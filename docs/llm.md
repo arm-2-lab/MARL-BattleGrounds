@@ -21,8 +21,9 @@ makes no request: it returns a host `System` that asks the model once per living
 tick, with only that actor's permitted view as text, and checks each reply against the legal
 moves. Use it wherever a System goes: `evaluate`, `run_tournament`, `team`, `battle_client`.
 
-**Watch Out:** each actor gets only its own view. Returning a whole team's actions does not
-let actors share private inputs or memory. The model, not the simulator, sets the pace.
+**Watch Out:** a prompt may hold only what your team can see, never what the game hides from
+it. A System you write yourself may also send one prompt for the whole team. The model, not the
+simulator, sets the pace.
 
 ## Settings and Endpoint Rules
 

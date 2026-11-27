@@ -98,9 +98,9 @@ from marl_battlegrounds.baselines.inputs import encode_training_state
 critic_input = encode_training_state(env.training_state(state), state.config)  # (32, 920); env, state from above
 ```
 
-Each agent may act only on its own permitted view, which already includes what its teammates
-share; returning a whole team's actions grants no extra rights. `info`, `env.training_state` and
-training facts reveal hidden facts: they may feed a critic, a mixer or a reward, never an actor.
+Nothing that picks an action may read what the game hides from the whole team; teammates may
+share anything their team can see. `info`, `env.training_state` and training facts reveal hidden
+facts: they may feed a critic, a mixer or a reward, never an actor.
 
 **Watch Out:** predicting hidden facts from allowed inputs is fine; reading them is not. See
 [own_learner.py](../examples/your_method/own_learner.py), a complete small CTDE learner (centralized training, decentralized execution).
