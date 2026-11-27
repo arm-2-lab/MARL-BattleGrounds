@@ -1160,7 +1160,7 @@ def _pqn_step(  # pyright: ignore[reportUnusedFunction] - Used by the current-ac
         variables.epsilon,
         flag,
         next_memory,
-    )
+    )._replace(learning_outputs=PQNLearningOutputs(memory))
 
 
 @functools.lru_cache(maxsize=16)

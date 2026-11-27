@@ -1864,8 +1864,9 @@ def _apply_actor(
 class _ActorStep(NamedTuple):
     """One actor call's choices, next memory and full distribution (private).
 
-    The System hooks return the first three as a SystemOutput. The current-action
-    oracle (training/_oracle.py) also reads ``probabilities``.
+    The System hooks return the indices, memory and learning values as a
+    SystemOutput. The current-action oracle (training/_oracle.py) also reads
+    ``probabilities``.
 
     Attributes
     ----------
@@ -1879,12 +1880,17 @@ class _ActorStep(NamedTuple):
     probabilities : Array
         Float32 (B,5,198) masked distribution each index was drawn from, in world
         directions. Illegal actions have probability zero.
+    learning_outputs : Tree
+        Exactly the hook's own learning values (SystemOutput.learning_outputs):
+        PPOLearningOutputs for the PPO family, with TarMAC's senders, PQN-VDN's
+        memory record, or () for QMIX and the scripted bots. Default ().
     """
 
     indices: Array
     memory: Tree
     log_prob: Array
     probabilities: Array
+    learning_outputs: Tree = ()
 
 
 _ORACLE_STEP_MARKER = "_marl_bgs_oracle_step"
@@ -1958,7 +1964,8 @@ def _sampled_step(
     frame's bool (B,5,198) categorical mask; keys are B lane keys, split into five actor
     streams as every PPO hook does; flag is the bool (B,5) spawn-frame flag, or
     None for world directions. Indices and probabilities are returned in world
-    directions; the log-probability stays in the sampling frame.
+    directions; the log-probability stays in the sampling frame. The learning
+    values are the PPO hooks' PPOLearningOutputs(world indices, log-probability).
     """
     actor_keys = jax.vmap(functools.partial(jax.random.split, num=5))(keys)
     indices = sample_actions(logits, mask, actor_keys)
@@ -1966,13 +1973,15 @@ def _sampled_step(
     # index is mapped back so the game and the stored rows see world directions.
     log_prob = action_log_prob(logits, mask, indices)
     probabilities = jnp.exp(_log_probabilities(logits, mask))
-    if flag is None:
-        return _ActorStep(indices, memory, log_prob, probabilities)
+    if flag is not None:
+        indices = mirror_action_indices(indices, flag)
+        probabilities = _world_probabilities(probabilities, flag)
     return _ActorStep(
-        mirror_action_indices(indices, flag),
+        indices,
         memory,
         log_prob,
-        _world_probabilities(probabilities, flag),
+        probabilities,
+        PPOLearningOutputs(indices, log_prob),
     )
 
 
@@ -2430,8 +2439,11 @@ def _tarmac_step(  # pyright: ignore[reportUnusedFunction] - Used by the current
             None if block is None else block[None],
         ),
     )
-    return _sampled_step(
+    step = _sampled_step(
         logits[0], categorical_action_mask(frame_mask), keys, flag, memory
+    )
+    return step._replace(
+        learning_outputs=PPOLearningOutputs(step.indices, step.log_prob, senders)
     )
 
 

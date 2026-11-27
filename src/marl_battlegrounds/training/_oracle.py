@@ -352,6 +352,7 @@ def fixed_member_step(member: System) -> Callable[..., _ActorStep]:
                 output.next_memory,
                 jnp.zeros(indices.shape, jnp.float32),
                 jax.nn.one_hot(indices, NUM_ACTIONS, dtype=jnp.float32),
+                output.learning_outputs,
             )
 
         return bot_step

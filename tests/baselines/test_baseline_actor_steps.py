@@ -35,7 +35,6 @@ from marl_battlegrounds.baselines.actions import categorical_action_mask, decode
 from marl_battlegrounds.baselines.ppo import (
     _PARAMETER_SHARING,  # pyright: ignore[reportPrivateUsage]
     DEFAULT_PPO_CONFIG,
-    PPOLearningOutputs,
     _actor_step,  # pyright: ignore[reportPrivateUsage]
     _ActorStep,  # pyright: ignore[reportPrivateUsage]
     _apply_actor,  # pyright: ignore[reportPrivateUsage]
@@ -211,7 +210,7 @@ def test_value_methods_hand_their_epsilon_greedy_distribution(
 
 def _hook_pairs(
     inputs: SystemInput,
-) -> dict[str, tuple[_ActorStep, SystemOutput, Tree]]:
+) -> dict[str, tuple[_ActorStep, SystemOutput]]:
     """Run each step and its frozen hook on the same arguments."""
     recurrent = _ppo_params("mappo")
     feedforward = _ppo_params("ff_ippo")
@@ -232,7 +231,6 @@ def _hook_pairs(
                 input_scale=1.0,
                 spawn_frame_index=LEFT,
             ),
-            None,
         ),
         "feedforward": (
             PPO_STEPS["feedforward"](inputs),
@@ -244,12 +242,10 @@ def _hook_pairs(
                 input_scale=1.0,
                 spawn_frame_index=LEFT,
             ),
-            None,
         ),
         "per_class": (
             PPO_STEPS["per_class"](inputs),
             hook(grouped, _memory(), inputs, _keys(3)),
-            None,
         ),
         "tarmac": (
             PPO_STEPS["tarmac"](inputs),
@@ -262,7 +258,6 @@ def _hook_pairs(
                 input_scale=1.0,
                 spawn_frame_index=LEFT,
             ),
-            "senders",
         ),
         "qmix": (
             _q_step(inputs, 0.3),
@@ -274,7 +269,6 @@ def _hook_pairs(
                 input_scale=1.0,
                 spawn_frame_index=LEFT,
             ),
-            "values",
         ),
         "pqn_vdn": (
             _pqn_step(inputs, 0.3),
@@ -286,7 +280,6 @@ def _hook_pairs(
                 input_scale=1.0,
                 spawn_frame_index=LEFT,
             ),
-            "values",
         ),
     }
 
@@ -295,7 +288,7 @@ def _hook_pairs(
 def test_every_step_with_nothing_handed_is_its_frozen_hook(
     teams: tuple[SystemInput, SystemInput], team: int
 ) -> None:
-    for name, (step, output, kind) in _hook_pairs(teams[team]).items():
+    for name, (step, output) in _hook_pairs(teams[team]).items():
         for left, right in zip(
             decode_actions(step.indices), output.actions, strict=True
         ):
@@ -306,14 +299,15 @@ def test_every_step_with_nothing_handed_is_its_frozen_hook(
             strict=True,
         ):
             np.testing.assert_array_equal(left, right, err_msg=name)
-        if kind is None:
-            expected = PPOLearningOutputs(step.indices, step.log_prob)
-            for left, right in zip(expected, output.learning_outputs, strict=True):
-                np.testing.assert_array_equal(left, right, err_msg=name)
-        elif kind == "senders":
-            outputs = output.learning_outputs
-            np.testing.assert_array_equal(step.indices, outputs.action_indices)
-            np.testing.assert_array_equal(step.log_prob, outputs.log_prob)
+        assert jax.tree.structure(step.learning_outputs) == jax.tree.structure(
+            output.learning_outputs
+        ), name
+        for left, right in zip(
+            jax.tree.leaves(step.learning_outputs),
+            jax.tree.leaves(output.learning_outputs),
+            strict=True,
+        ):
+            np.testing.assert_array_equal(left, right, err_msg=name)
 
 
 def _marked_systems() -> dict[str, tuple[System, Tree]]:
