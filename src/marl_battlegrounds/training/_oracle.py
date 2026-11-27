@@ -19,8 +19,10 @@ these rows by ``baselines.inputs._encode_handed_rows``.
 
 Main entry points: ``handed_rows`` (the rows, from ``action_part_probabilities``),
 ``turn_order`` and ``chosen_before`` (who chooses when, and who is handed whom),
-``choose_in_order`` (one tick of ten turns) and ``fixed_member_step`` (a fixed
-opponent's route, refused when it has none).
+``choose_in_order`` (one tick of ten turns), ``fixed_member_step`` (a fixed
+opponent's route, refused when it has none), ``oracle_member`` (a team member
+the oracle can hand rows to) and ``oracle_apply_systems`` (the oracle's form of
+``apply_systems`` for one training decision).
 """
 
 from __future__ import annotations
@@ -33,7 +35,11 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from marl_battlegrounds.baselines.actions import NUM_ACTIONS, encode_actions
+from marl_battlegrounds.baselines.actions import (
+    NUM_ACTIONS,
+    decode_actions,
+    encode_actions,
+)
 from marl_battlegrounds.baselines.ppo import (
     _ActorStep,  # pyright: ignore[reportPrivateUsage]
     oracle_step,
@@ -48,16 +54,28 @@ from marl_battlegrounds.core.types import (
     NUM_MOVE_ACTIONS,
     NUM_TARGET_ACTIONS,
     NUM_ULTIMATE_ACTIONS,
+    Action,
     EnvState,
     PreviousTimestepActionObservation,
 )
+from marl_battlegrounds.environment import EnvironmentState
 from marl_battlegrounds.evaluation.policy_execution import (
     System,
     SystemInput,
+    SystemOutput,
+    SystemState,
+    _action_keys,  # pyright: ignore[reportPrivateUsage]
     _adapter_actions,  # pyright: ignore[reportPrivateUsage]
+    _apply_system_pair,  # pyright: ignore[reportPrivateUsage]
+    _declare_lane_independent,  # pyright: ignore[reportPrivateUsage]
     _execution,  # pyright: ignore[reportPrivateUsage]
+    _initialization_keys,  # pyright: ignore[reportPrivateUsage]
+    _reset_for_decision,  # pyright: ignore[reportPrivateUsage]
     controller_identity,
+    system_inputs,
 )
+from marl_battlegrounds.policies.actor import ActorAction
+from marl_battlegrounds.policies.input import Observations
 
 
 def action_part_probabilities(probabilities: Array) -> tuple[Array, Array, Array]:
@@ -268,33 +286,41 @@ class OracleChoices(NamedTuple):
     indices : Array
         Int32 (B,10) categorical indices in world directions, one per slot,
         each taken from the call at that slot's own turn.
-    log_prob : Array
-        Float32 (B,10) log-probability of each index under its slot's own
-        distribution, in the frame the slot chose in.
     probabilities : Array
         Float32 (B,10,198) each slot's distribution at its own turn, in world
         directions.
     handed : PreviousTimestepActionObservation
         The rows each slot was handed at its own turn, leading axes (B,10). The
         learner stores Team A's rows and recomputes its update with them.
+    learning_outputs : tuple[Tree, Tree]
+        Each team's learning values, every leaf (B,5,...) taken per slot from
+        that slot's own turn (for the PPO family, its index and
+        log-probability).
     memory_a, memory_b : Tree
         Each team step's next memory. A block never enters memory, so every
         turn's call gives the same memory, and the last one is kept.
     """
 
     indices: Array
-    log_prob: Array
     probabilities: Array
     handed: PreviousTimestepActionObservation
+    learning_outputs: tuple[Tree, Tree]
     memory_a: object
     memory_b: object
 
 
-TeamStep = Callable[[PreviousTimestepActionObservation], _ActorStep]
-"""A team's step with its weights, memory, inputs and keys already bound.
+type Tree = object
+"""Any JAX tree of arrays (memory or learning values)."""
 
-It receives the rows handed to its five slots (leading axes (B,5)) and returns
-an _ActorStep for those slots. A fixed opponent's step ignores the rows.
+PairStep = Callable[
+    [PreviousTimestepActionObservation, PreviousTimestepActionObservation],
+    tuple[_ActorStep, _ActorStep],
+]
+"""Both teams' steps for one turn, with weights, memory, inputs and keys bound.
+
+It receives the rows handed to Team A's and Team B's five slots (leading axes
+(B,5) each) and returns one _ActorStep per team. A fixed opponent ignores its
+rows. One call computes both teams, as the shared System runner does.
 """
 
 
@@ -367,8 +393,7 @@ def choose_in_order(
     states: EnvState,
     ranks: Array,
     present: Array,
-    team_a: TeamStep,
-    team_b: TeamStep,
+    pair: PairStep,
     *,
     teammates_only: bool,
     hand_sampled_actions: bool,
@@ -384,10 +409,10 @@ def choose_in_order(
         Int32 (B,10) turn ranks from ``turn_order``.
     present : Array
         Bool (B,10) configured, living slots.
-    team_a, team_b : TeamStep
-        Slots 0..4 and slots 5..9. Each is called once per turn with the rows
-        its slots would be handed then; under jit the work that does not read
-        the rows (encoder and memory) is the same in every call.
+    pair : PairStep
+        Slots 0..4 and 5..9, called once per turn with the rows each team's
+        slots would be handed then; under jit the work that does not read the
+        rows (encoder and memory) is the same in every call.
     teammates_only : bool
         Static. True hands only each slot's own teammates (the teammates-only
         arm).
@@ -399,8 +424,8 @@ def choose_in_order(
     Returns
     -------
     OracleChoices
-        Each slot's index, log-probability, distribution and handed rows from its
-        own turn, and both teams' next memories.
+        Each slot's index, distribution, handed rows and learning values from
+        its own turn, and both teams' next memories.
 
     Notes
     -----
@@ -414,35 +439,45 @@ def choose_in_order(
     )
     known = jnp.zeros((games, MAX_AGENT_SLOTS, NUM_ACTIONS), jnp.float32)
     indices = jnp.zeros((games, MAX_AGENT_SLOTS), jnp.int32)
-    log_prob = jnp.zeros((games, MAX_AGENT_SLOTS), jnp.float32)
     probabilities = jnp.zeros((games, MAX_AGENT_SLOTS, NUM_ACTIONS), jnp.float32)
     handed: PreviousTimestepActionObservation | None = None
+    learning: tuple[Tree, Tree] | None = None
     memory_a: object = None
     memory_b: object = None
     for turn in range(MAX_AGENT_SLOTS):
         move, target, ultimate = action_part_probabilities(known)
         rows = jax.vmap(handed_rows)(states, move, target, ultimate, chosen)
-        step_a = team_a(_team_rows(rows, 0))
-        step_b = team_b(_team_rows(rows, 1))
+        step_a, step_b = pair(_team_rows(rows, 0), _team_rows(rows, 1))
         memory_a, memory_b = step_a.memory, step_b.memory
         now = ranks == turn
         step_index = jnp.concatenate((step_a.indices, step_b.indices), axis=1)
-        step_log_prob = jnp.concatenate((step_a.log_prob, step_b.log_prob), axis=1)
         step_probabilities = jnp.concatenate(
             (step_a.probabilities, step_b.probabilities), axis=1
         )
         indices = jnp.where(now, step_index, indices)
-        log_prob = jnp.where(now, step_log_prob, log_prob)
         probabilities = jnp.where(now[..., None], step_probabilities, probabilities)
         handed = rows if handed is None else _keep_turn_rows(now, rows, handed)
+        turn_learning = (step_a.learning_outputs, step_b.learning_outputs)
+        learning = (
+            turn_learning
+            if learning is None
+            else (
+                _keep_turn_tree(
+                    now[:, :MAX_AGENTS_PER_TEAM], turn_learning[0], learning[0]
+                ),
+                _keep_turn_tree(
+                    now[:, MAX_AGENTS_PER_TEAM:], turn_learning[1], learning[1]
+                ),
+            )
+        )
         offered = (
             jax.nn.one_hot(step_index, NUM_ACTIONS, dtype=jnp.float32)
             if hand_sampled_actions
             else step_probabilities
         )
         known = jnp.where(now[..., None], offered, known)
-    assert handed is not None
-    return OracleChoices(indices, log_prob, probabilities, handed, memory_a, memory_b)
+    assert handed is not None and learning is not None
+    return OracleChoices(indices, probabilities, handed, learning, memory_a, memory_b)
 
 
 def _team_rows(
@@ -464,4 +499,337 @@ def _keep_turn_rows(
     mask = now[:, :, None, None]
     return PreviousTimestepActionObservation(
         *(jnp.where(mask, new, old) for new, old in zip(rows, kept, strict=True))
+    )
+
+
+def _keep_turn_tree(now: Array, new: Tree, kept: Tree) -> Tree:
+    """Keep each slot's leaves from the turn where now (B,5) marks it.
+
+    Every leaf of new and kept must have leading axes (B,5), as every built-in
+    hook's learning values do; anything else is refused rather than broadcast.
+    """
+
+    def keep(fresh: Array, old: Array) -> Array:
+        """Select one leaf per slot."""
+        if fresh.shape[:2] != now.shape:
+            raise ValueError(
+                "The oracle keeps learning values per slot; each leaf needs "
+                f"leading axes {now.shape}, got {fresh.shape}"
+            )
+        mask = now.reshape(now.shape + (1,) * (fresh.ndim - 2))
+        return jnp.where(mask, fresh, old)
+
+    return jax.tree.map(keep, new, kept)
+
+
+class OracleMemory(NamedTuple):
+    """One wrapped member's memory in an oracle run (see ``oracle_member``).
+
+    Every leaf has the games axis first, so pools, teams and the copy wrapper
+    carry it per game like any other memory.
+
+    Attributes
+    ----------
+    inner : Tree
+        The member's own memory, exactly as its hook keeps it.
+    rows : PreviousTimestepActionObservation
+        Float32 rows with leading axes (B,5): what the member's five slots are
+        handed on the current turn. The oracle writes them before each call.
+    probabilities : Array
+        Float32 (B,5,198) distribution, in world directions, of each slot the
+        member acted for on the current turn (valid games, owned slots), and
+        zero elsewhere. The oracle zeroes it before each call.
+    """
+
+    inner: Tree
+    rows: PreviousTimestepActionObservation
+    probabilities: Array
+
+
+def _zero_rows(games: int) -> PreviousTimestepActionObservation:
+    """Return float32 rows handing nothing to five slots of each game."""
+    allies, enemies = MAX_AGENTS_PER_TEAM, MAX_AGENTS_PER_TEAM
+    shape = (games, MAX_AGENTS_PER_TEAM)
+    return PreviousTimestepActionObservation(
+        jnp.zeros((*shape, allies, NUM_MOVE_ACTIONS), jnp.float32),
+        jnp.zeros((*shape, enemies, NUM_MOVE_ACTIONS), jnp.float32),
+        jnp.zeros((*shape, allies, NUM_TARGET_ACTIONS), jnp.float32),
+        jnp.zeros((*shape, enemies, NUM_TARGET_ACTIONS), jnp.float32),
+        jnp.zeros((*shape, allies, NUM_ULTIMATE_ACTIONS), jnp.float32),
+        jnp.zeros((*shape, enemies, NUM_ULTIMATE_ACTIONS), jnp.float32),
+    )
+
+
+def oracle_member(member: System, *, reads_rows: bool) -> System:
+    """Wrap one team member so the oracle can hand it rows and read its distribution.
+
+    Parameters
+    ----------
+    member : System
+        A built-in method's System or a team of the scripted bots (see
+        ``fixed_member_step``): the learner, or one of its fixed opponents.
+    reads_rows : bool
+        Keyword-only. True for the learner and its copies, whose networks carry
+        the handed weight and are called with the rows. False for a fixed
+        opponent (a frozen saved team or the bots), which chooses first, cannot
+        read a block and is called with none.
+
+    Returns
+    -------
+    System
+        A JAX System with the member's own variables and components, whose
+        memory is an ``OracleMemory``. Its apply calls the member's step with the
+        memory's rows and returns exactly the member's actions, next memory and
+        learning values; it writes the distribution into the memory's
+        ``probabilities`` for valid games and owned slots only. Its init adds
+        zero rows and probabilities to the member's own init; it has no custom
+        reset hook, so the shared runner resets every leaf of a new game, and
+        it can be the base of ``make_opponent_system``. It is lane-independent
+        whenever the member is, as every built-in method and the bots are.
+
+    Raises
+    ------
+    ValueError
+        member has no route (``fixed_member_step``).
+    """
+    step = fixed_member_step(member)
+    inner_init = member.init
+
+    def init(variables: Tree, inputs: SystemInput, keys: Array) -> OracleMemory:
+        """Start the member's memory, handing nothing yet."""
+        games = inputs.valid.shape[0]
+        return OracleMemory(
+            inner_init(variables, inputs, keys) if inner_init is not None else (),
+            _zero_rows(games),
+            jnp.zeros((games, MAX_AGENTS_PER_TEAM, NUM_ACTIONS), jnp.float32),
+        )
+
+    def apply(
+        variables: Tree, memory: OracleMemory, inputs: SystemInput, keys: Array
+    ) -> SystemOutput:
+        """Act as the member does, handed the memory's rows."""
+        result = step(
+            variables,
+            memory.inner,
+            inputs,
+            keys,
+            handed=memory.rows if reads_rows else None,
+        )
+        owned = inputs.valid[:, None] & (
+            inputs.active_mask
+            if inputs.controlled_mask is None
+            else inputs.controlled_mask
+        )
+        return SystemOutput(
+            decode_actions(result.indices),
+            OracleMemory(
+                result.memory,
+                memory.rows,
+                jnp.where(owned[..., None], result.probabilities, memory.probabilities),
+            ),
+            learning_outputs=result.learning_outputs,
+        )
+
+    return System(
+        f"Oracle: {member.name}",
+        _declare_lane_independent(apply),
+        variables=member.variables,
+        init=init,
+        components=member.components,
+        checkpoint=member.checkpoint,
+    )
+
+
+def _is_oracle_memory(node: object) -> bool:
+    """Tell an OracleMemory node apart from the tree around it."""
+    return isinstance(node, OracleMemory)
+
+
+def _hand(memory: Tree, rows: PreviousTimestepActionObservation) -> Tree:
+    """Write rows into every OracleMemory of one team and zero its distributions."""
+
+    def hand(node: object) -> object:
+        """Hand one wrapped member this turn's rows."""
+        if not isinstance(node, OracleMemory):
+            return node
+        return node._replace(
+            rows=rows, probabilities=jnp.zeros_like(node.probabilities)
+        )
+
+    return jax.tree.map(hand, memory, is_leaf=_is_oracle_memory)
+
+
+def _acted_probabilities(memory: Tree) -> Array:
+    """Sum one team's distributions over its wrapped members.
+
+    Before each turn every member's distribution is zeroed, and a member writes
+    only the games and slots it acted for, so the sum is the distribution of
+    the member that acted in each game and slot.
+    """
+    nodes = [
+        node
+        for node in jax.tree.leaves(memory, is_leaf=_is_oracle_memory)
+        if isinstance(node, OracleMemory)
+    ]
+    if not nodes:
+        raise ValueError("An oracle team needs its members wrapped with oracle_member")
+    return functools.reduce(jnp.add, (node.probabilities for node in nodes))
+
+
+class OracleStep(NamedTuple):
+    """One decision of an oracle run, in the shape the training loop needs.
+
+    Attributes
+    ----------
+    actions : Action
+        The joint actions submitted: each slot's choice from its own turn.
+    memory : SystemState
+        Both teams' next memories and reset bindings.
+    learning_outputs : tuple[Tree, Tree]
+        Each team's learning values, per slot from its own turn.
+    handed : PreviousTimestepActionObservation
+        Each slot's handed rows from its own turn, leading axes (B,10).
+    """
+
+    actions: Action
+    memory: SystemState
+    learning_outputs: tuple[Tree, Tree]
+    handed: PreviousTimestepActionObservation
+
+
+def oracle_apply_systems(
+    actor: System,
+    opponent: System,
+    memory: SystemState,
+    observations: Observations,
+    state: EnvironmentState,
+    action_roots: Array,
+    *,
+    variables_a: Tree,
+    variables_b: Tree,
+    ranks: Array,
+    teammates_only: bool,
+    hand_sampled_actions: bool,
+) -> OracleStep:
+    """Choose both teams' actions in the oracle's order, once per training decision.
+
+    The oracle's form of ``apply_systems`` for native JAX training batches. Both
+    Systems are built from ``oracle_member`` wrappers. It first applies the
+    shared runner's own reset of new games' memory, with the runner's keys, so
+    that the rows written before each turn are not wiped; then it runs ten
+    turns through the runner's own pair call, each with the same memory, keys
+    and variables, and keeps each slot's result from its own turn.
+
+    Parameters
+    ----------
+    actor, opponent : System
+        Team A's and Team B's Systems, built from wrapped members.
+    memory : SystemState
+        The latest memories, as ``apply_systems`` takes them.
+    observations, state
+        The current native decision (leading axis B).
+    action_roots : Array
+        The B lane action keys the training loop gives ``apply_systems``.
+    variables_a, variables_b : Tree
+        Each team's dynamic variables, as for ``apply_systems``.
+    ranks : Array
+        Int32 (B,10) turn ranks from ``turn_order``.
+    teammates_only, hand_sampled_actions : bool
+        Static; see ``choose_in_order``.
+
+    Returns
+    -------
+    OracleStep
+        The actions to submit, the next memory, the learning values and the
+        handed rows.
+
+    Notes
+    -----
+    With every row zero and a zero-started handed weight, each slot's call
+    computes exactly what ``apply_systems`` computes (proved by the switch's
+    off-equivalence test). Pure JAX; works inside jit and scan.
+    """
+    execution_a, execution_b = _execution(actor), _execution(opponent)
+    ids, generations = state.episode_id, state.reset_generation
+    reset = (generations != memory.reset_generation) & ~state.done.done
+    fresh: list[Tree] = []
+    for team, (execution, old, variables) in enumerate(
+        (
+            (execution_a, memory.team_a, variables_a),
+            (execution_b, memory.team_b, variables_b),
+        )
+    ):
+        keys = _action_keys(action_roots, ids, team)
+        init_keys = (
+            _initialization_keys(memory.init_key, ids, team)
+            if execution.init is not None
+            else keys
+        )
+        fresh.append(
+            _reset_for_decision(
+                execution,
+                variables,
+                memory.adapter_templates[team],
+                old,
+                system_inputs(observations, state, team=team),
+                init_keys,
+                reset,
+            )
+        )
+    ready = memory._replace(
+        team_a=fresh[0], team_b=fresh[1], reset_generation=generations
+    )
+    calls: list[tuple[Action, SystemState]] = []
+
+    def pair(
+        rows_a: PreviousTimestepActionObservation,
+        rows_b: PreviousTimestepActionObservation,
+    ) -> tuple[_ActorStep, _ActorStep]:
+        """Run one turn of both teams through the shared runner's pair call."""
+        actions, updated, learning = _apply_system_pair(
+            execution_a,
+            execution_b,
+            variables_a,
+            variables_b,
+            ready._replace(
+                team_a=_hand(ready.team_a, rows_a), team_b=_hand(ready.team_b, rows_b)
+            ),
+            observations,
+            state,
+            action_roots,
+        )
+        calls.append((actions, updated))
+        indices = encode_actions(
+            ActorAction(actions.move, actions.select_target, actions.use_ultimate)
+        )
+        steps = tuple(
+            _ActorStep(
+                indices[
+                    :, team * MAX_AGENTS_PER_TEAM : (team + 1) * MAX_AGENTS_PER_TEAM
+                ],
+                team_memory,
+                jnp.zeros((indices.shape[0], MAX_AGENTS_PER_TEAM), jnp.float32),
+                _acted_probabilities(team_memory),
+                team_learning,
+            )
+            for team, (team_memory, team_learning) in enumerate(
+                ((updated.team_a, learning[0]), (updated.team_b, learning[1]))
+            )
+        )
+        return steps[0], steps[1]
+
+    choices = choose_in_order(
+        state.core_state,
+        ranks,
+        state.core_state.alive_mask,
+        pair,
+        teammates_only=teammates_only,
+        hand_sampled_actions=hand_sampled_actions,
+    )
+    chosen = decode_actions(choices.indices)
+    return OracleStep(
+        Action(chosen.move, chosen.select_target, chosen.use_ultimate),
+        calls[-1][1],
+        choices.learning_outputs,
+        choices.handed,
     )

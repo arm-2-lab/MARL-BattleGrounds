@@ -15,10 +15,16 @@ games against a fixed opponent and against a copy, with probabilities or with
 sampled actions, and keeps each slot's result from its own turn. A fixed
 opponent's route is its own marked step for a built-in method; a team of the
 scripted bots hands its unchanged actions as certain one-hot rows, the same
-whatever key it gets; any other fixed opponent is refused.
+whatever key it gets; any other fixed opponent is refused. Played through the
+shared runner's pair call against a pool of a saved team and a bot team, an
+oracle whose handed weight starts at zero gives exactly the runner's actions,
+learning values and memory, tick after tick, in both arms; and each slot is
+handed all five enemies (which choose first) and exactly the teammates chosen
+before it, each once.
 """
 
 import functools
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -52,6 +58,7 @@ from marl_battlegrounds.evaluation.policy_execution import (
     apply_systems,
     init_systems,
     policy,
+    pool,
     shared_policy,
     system_inputs,
 )
@@ -63,10 +70,13 @@ from marl_battlegrounds.training._oracle import (
     chosen_before,
     fixed_member_step,
     handed_rows,
+    oracle_apply_systems,
+    oracle_member,
     turn_order,
 )
 
 Parts = tuple[Array, Array, Array]
+type Tree = Any
 ALLY_OF, ENEMY_OF = _build_ally_enemy_one_hot_action_tensors(jnp.eye(10), 10)
 NOT_SELF = ~jnp.eye(10, dtype=bool)
 
@@ -260,8 +270,7 @@ def test_choosing_in_turn_hands_each_slot_the_earlier_slots(
         states,
         ranks,
         present,
-        _counting_step,
-        _counting_step,
+        lambda rows_a, rows_b: (_counting_step(rows_a), _counting_step(rows_b)),
         teammates_only=teammates_only,
         hand_sampled_actions=sampled,
     )
@@ -329,3 +338,114 @@ def test_unrouted_fixed_opponents_are_refused() -> None:
     for member in (shared_policy(policy("random")), System("plain", plain)):
         with pytest.raises(ValueError, match="no route"):
             fixed_member_step(member)
+
+
+def _with_handed_weight(params: Tree) -> Tree:
+    torso = {
+        **params["params"]["post_torso"],
+        "handed": {"kernel": jnp.zeros((_HANDED_WIDTH, 128), jnp.float32)},
+    }
+    return {"params": {**params["params"], "post_torso": torso}}
+
+
+@pytest.mark.parametrize("teammates_only", [False, True])
+def test_a_zero_started_oracle_plays_exactly_as_the_shared_runner(
+    teammates_only: bool,
+) -> None:
+    env = marl_bgs.make(
+        "tdm",
+        env_config=evaluation_env_config(team_sizes=(5, 5), max_steps=12),
+        num_envs=4,
+        metrics="none",
+    )
+    observations, game = env.reset(jax.random.key(11))
+    learner = initialize_ppo(jax.random.key(1), DEFAULT_PPO_CONFIG, method="mappo")
+    saved = initialize_ppo(jax.random.key(2), DEFAULT_PPO_CONFIG, method="mappo")
+    bots = shared_policy(policy("tdm-alpha"))
+    plain_a = make_ppo_system(learner.actor_params)
+    plain_b = pool({make_ppo_system(saved.actor_params): 1.0, bots: 1.0})
+    oracle_a = oracle_member(
+        make_ppo_system(_with_handed_weight(learner.actor_params)), reads_rows=True
+    )
+    oracle_b = pool(
+        {
+            oracle_member(make_ppo_system(saved.actor_params), reads_rows=False): 1.0,
+            oracle_member(bots, reads_rows=False): 1.0,
+        }
+    )
+    plain = init_systems(plain_a, plain_b, observations, game, jax.random.key(3))
+    oracle = init_systems(oracle_a, oracle_b, observations, game, jax.random.key(3))
+    fixed = jnp.broadcast_to(jnp.arange(10) >= 5, (4, 10))
+    for tick in range(3):
+        roots = _lane_keys(20 + tick)
+        actions, plain, learning = apply_systems(
+            plain_a, plain_b, plain, observations, game, roots
+        )
+        step = oracle_apply_systems(
+            oracle_a,
+            oracle_b,
+            oracle,
+            observations,
+            game,
+            roots,
+            variables_a=oracle_a.variables,
+            variables_b=oracle_b.variables,
+            ranks=jax.vmap(turn_order)(_lane_keys(40 + tick), fixed),
+            teammates_only=teammates_only,
+            hand_sampled_actions=False,
+        )
+        oracle = step.memory
+        for left, right in zip(step.actions, actions, strict=True):
+            np.testing.assert_array_equal(left, right)
+        for left, right in zip(
+            jax.tree.leaves(step.learning_outputs[0]),
+            jax.tree.leaves(learning[0]),
+            strict=True,
+        ):
+            np.testing.assert_array_equal(left, right)
+        np.testing.assert_array_equal(oracle.team_a.inner, plain.team_a)
+        observations, game = env.step(_lane_keys(60 + tick), game, actions)[:2]
+
+
+def test_each_slot_is_handed_every_earlier_choice_once() -> None:
+    env = marl_bgs.make(
+        "tdm",
+        env_config=evaluation_env_config(team_sizes=(5, 5), max_steps=12),
+        num_envs=4,
+        metrics="none",
+    )
+    observations, game = env.reset(jax.random.key(12))
+    learner = initialize_ppo(jax.random.key(1), DEFAULT_PPO_CONFIG, method="mappo")
+    saved = initialize_ppo(jax.random.key(2), DEFAULT_PPO_CONFIG, method="mappo")
+    team_a = oracle_member(
+        make_ppo_system(_with_handed_weight(learner.actor_params)), reads_rows=True
+    )
+    team_b = pool(
+        {
+            oracle_member(make_ppo_system(saved.actor_params), reads_rows=False): 1.0,
+            oracle_member(shared_policy(policy("tdm-beta")), reads_rows=False): 1.0,
+        }
+    )
+    memory = init_systems(team_a, team_b, observations, game, jax.random.key(3))
+    fixed = jnp.broadcast_to(jnp.arange(10) >= 5, (4, 10))
+    ranks = jax.vmap(turn_order)(_lane_keys(5), fixed)
+    step = oracle_apply_systems(
+        team_a,
+        team_b,
+        memory,
+        observations,
+        game,
+        _lane_keys(6),
+        variables_a=team_a.variables,
+        variables_b=team_b.variables,
+        ranks=ranks,
+        teammates_only=False,
+        hand_sampled_actions=False,
+    )
+    earlier = jax.vmap(functools.partial(chosen_before, teammates_only=False))(
+        ranks, game.core_state.alive_mask
+    )
+    allies = step.handed.ally_previous_timestep_move_actions_one_hot.sum((-2, -1))
+    enemies = step.handed.enemy_previous_timestep_move_actions_one_hot.sum((-2, -1))
+    np.testing.assert_allclose(allies + enemies, earlier.sum(-1), atol=1e-5)
+    np.testing.assert_allclose(enemies[:, :5], 5.0, atol=1e-5)
