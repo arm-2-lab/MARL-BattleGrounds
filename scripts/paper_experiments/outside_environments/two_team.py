@@ -3,10 +3,13 @@
 This module gives every outside game (SMAX, simple world comm and predator-prey) one
 array interface, so each JaxMARL reference learner reads Team A and Team B the same
 way in every game. Team A is the side that learns the method; Team B is its
-opponents. Each game's own file builds one ``TwoTeamEnv`` from a JaxMARL
-``MultiAgentEnv`` plus the few facts that differ per game (which agents form each
-team, the critic's global state, the team reward, who is alive, and whether the game
-has a win or a loss).
+opponents. To train a side that a game's file builds as Team B (world comm's
+evaders, for example), build a second ``TwoTeamEnv`` with ``team_a`` and ``team_b``
+swapped: that side becomes Team A, and the default ``global_state`` and
+``team_reward`` then serve it. Each game's own file builds one ``TwoTeamEnv`` from a
+JaxMARL ``MultiAgentEnv`` plus the few facts that differ per game (which agents form
+each team, the critic's global state, the team reward, who is alive, and whether the
+game has a win or a loss).
 
 Who uses it: the vendored JaxMARL learners in ``hosts/``, the opponent panels and the
 run scripts in this folder. It runs only in ``.venv-outside``, the environment that
