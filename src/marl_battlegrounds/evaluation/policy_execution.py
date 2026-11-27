@@ -1774,9 +1774,11 @@ def team(
 
     Notes
     -----
-    Ownership grants no extra information rights. Whole-team members must honor
-    each actor's permitted input and memory. Custom memory keeps its existing
-    reset hook. Member zero retains initialization/action keys; later generic
+    Owning a slot grants no extra information: every member receives the same
+    team inputs, which hold only what the team can see. Only controlled_mask
+    and valid differ, marking the slots and games the member acts for. Each
+    member keeps its own memory. Custom memory keeps its existing reset hook.
+    Member zero retains initialization/action keys; later generic
     members fold the fixed MEMB domain and index. Scalar Policy adapters always
     retain physical-slot keys, including evaluator-supplied keys.
     Concrete coverage is checked at initialization/application; compiled callers

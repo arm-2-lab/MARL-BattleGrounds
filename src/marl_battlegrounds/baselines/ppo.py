@@ -831,7 +831,8 @@ class RecurrentActor(nn.Module):
             Float32 (E,5,128) memory immediately before the sequence.
         features : Array
             Float32 (T,E,5,F) encoded actor inputs. F must match the initialized
-            width, normally ACTOR_FEATURE_SIZE. Rows may not pool private inputs.
+            width, normally ACTOR_FEATURE_SIZE. Each actor row is read on its
+            own: no row's features reach another row's memory or logits.
         resets : Array
             Boolean (T,E,5) true only when a new episode starts before a decision.
         valid : Array
