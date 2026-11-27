@@ -70,8 +70,8 @@ class ActorInput(NamedTuple):
     Notes
     -----
     This immutable tuple is JAX-compatible. It contains no action masks or random
-    keys. Returning actions for several actors does not authorize sharing their
-    private observation rows with one another.
+    keys. Every row holds only what its team can see, so a method that returns
+    actions for several teammates may use any of their rows.
     """
 
     observation: Observation
@@ -164,8 +164,8 @@ def build_team_actor_input(observations: Observations, team: int) -> ActorInput:
 
     Notes
     -----
-    Only the requested team's bank is built. The five recipient rows retain
-    separate information rights; they do not form a shared private observation.
+    Only the requested team's bank is built. The five recipient rows stay
+    separate, one per actor, and each holds only what this team can see.
     Inputs stay unchanged and numerical values stay on device. Shapes and
     permission validity are caller preconditions. Use jit with a static team
     and vmap to add environment batches. Keep the expanded result transient
