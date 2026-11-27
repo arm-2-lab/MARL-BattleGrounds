@@ -5,7 +5,7 @@ spawn_frame_flag names the rows a baseline reflects before encoding when its
 spawn frame is "left"; "world" encodes raw coordinates.
 team_obstacle_partners makes the obstacle mirror decision once per game for a
 team's five actors, who share one map table, so the reflection stays cheap.
-Actor features retain each recipient's own information rights. Training-state
+Actor features hold only what the recipient's team can see. Training-state
 features are privileged and must never enter an actor's network or memory.
 The ordered layouts below own the versioned offsets; Core still owns field and
 category meanings. This module needs only the ordinary JAX environment install.

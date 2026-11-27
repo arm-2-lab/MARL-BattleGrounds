@@ -134,8 +134,8 @@ class Policy:
         name is blank or execution is not "jax" or "host".
 
     The descriptor is frozen; referenced mutable objects are not made immutable
-    by constructing it. The callable owns its method and must respect each
-    actor's information limits, including any memory or predictions it uses.
+    by constructing it. The callable owns its method and may use only what its
+    team can see, including in any memory or predictions it keeps.
     """
 
     name: str
@@ -794,8 +794,8 @@ class System:
 
     Notes
     -----
-    Every component influencing an action must honor that actor's information
-    rights. A team function is not a security sandbox. Predicting hidden facts
+    Every component influencing an action may use only what the team can see.
+    A team function is not a security sandbox. Predicting hidden facts
     from allowed inputs is permitted; reading privileged state is separate.
     Memory for invalid lanes must remain unchanged, including custom layouts.
     This descriptor is frozen; referenced parameters and host objects are not.

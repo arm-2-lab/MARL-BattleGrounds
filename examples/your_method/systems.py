@@ -78,8 +78,8 @@ def host_act(
 
     variables and JAX keys are unused; inputs are NumPy arrays with stable B.
     This stateless provider returns zero action heads shaped (B,5) and unchanged
-    empty memory. A real provider must honor valid and each actor's information
-    rights, gather its own requests and restore the same response order.
+    empty memory. A real provider must honor valid, use only what the team can
+    see, gather its own requests and restore the same response order.
     """
     del variables, keys
     zero = cast(Array, np.zeros(inputs.active_mask.shape, np.int32))
