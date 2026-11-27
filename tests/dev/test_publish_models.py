@@ -39,6 +39,10 @@ and a fake Hugging Face client. They check these contracts of
   arXiv id. The
   real README's paper citation names the same title and authors, in order, as
   ``CITATION.cff``'s preferred citation.
+- Every card says how its models run: the model card gives the Execution and
+  Teammate Messages lines right after the method, the dataset card's opening
+  paragraph ends with its sentence, and the organization card's paragraph
+  follows the scripted bots'.
 """
 
 # The fake inputs reuse the tool's private artifact paths.
@@ -327,6 +331,10 @@ def test_build_writes_index_config_records_and_card(
         f" [Method Sources]({publish.METHOD_SOURCES_URL})"
     ) in text
     assert "official MAPPO code" not in text
+    method_then_execution = r"^- \*\*Method:\*\* .+\n" + re.escape(
+        publish.EXECUTION_LINES
+    )
+    assert re.search(method_then_execution + r"- \*\*Learner", text, re.MULTILINE)
 
 
 class FakeHub:
@@ -723,6 +731,16 @@ def test_cards_cite_the_paper_and_take_its_arxiv_number(paper_readme: Path) -> N
         [], (numbered, "2610.01234")
     )
     assert "img.shields.io/badge/arXiv" not in publish.org_card([], (entry, None))
+
+
+def test_cards_say_how_the_models_run(paper_readme: Path) -> None:
+    citation = publish.paper_citation(paper_readme.read_text())
+    org = publish.org_card([], citation)
+    assert f"{publish.DATASET_URL}).\n\n{publish.ORG_EXECUTION}\n## Use One" in org
+    dataset = publish.dataset_card(7_200, [47, 48], ["opponent-a"], citation)
+    assert (
+        "and the training opponents.\n" + publish.DATASET_EXECUTION + "\nEach model"
+    ) in dataset
 
 
 def test_readme_citation_matches_citation_cff() -> None:

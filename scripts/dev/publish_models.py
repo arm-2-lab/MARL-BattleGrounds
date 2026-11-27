@@ -142,6 +142,36 @@ GUIDE_URL = f"{CODE_URL}/blob/main/docs/released_models.md"
 METHOD_SOURCES_URL = f"{CODE_URL}/blob/main/docs/method_sources.md"
 # The public rulebook; the dataset and organization cards link its leaderboard.
 RULES_URL = f"{CODE_URL}/blob/main/docs/tournament_rules.md"
+# The site's definitions of the leaderboard's Execution and Teammate Messages
+# columns. The model, dataset and organization cards link it.
+DEFINITIONS_URL = (
+    "https://marl-battlegrounds.com/#leaderboard-rules~execution-and-teammate-messages"
+)
+# How every model this tool publishes runs, in the cards' words.
+# match_model_files accepts only format 1 files, whose decision program decides
+# for each agent on its own row and has no message output, so every card says
+# Decentralized and None. Before this tool accepts format 2, which can say
+# Centralized or Next tick, these values must come from each file instead. The
+# two definitions in ORG_EXECUTION copy the rules page word for word.
+EXECUTION_LINES = (
+    "- **Execution:** Decentralized (the model decides for each agent separately;"
+    f" [leaderboard definitions]({DEFINITIONS_URL}))\n"
+    "- **Teammate Messages:** None (no messages between teammates)\n"
+)
+DATASET_EXECUTION = (
+    "All nine teams, and every training opponent, are decentralized and send no\n"
+    f"teammate messages ([leaderboard definitions]({DEFINITIONS_URL})).\n"
+)
+ORG_EXECUTION = f"""\
+All the models we have released so far, and the three scripted bots, are
+decentralized and send no teammate messages. Decentralized: the program decides
+for each agent separately, using only that agent's view (which includes what its
+teammates see), its own memory and the messages sent to it. Centralized: one
+program picks all five actions together, so on the same tick it can also use
+each teammate's memory and the actions it picks for them. Any centralized model
+we release says so on its card. The leaderboard shows both facts in its
+[Execution and Teammate Messages columns]({DEFINITIONS_URL}).
+"""
 # The day the clean copy replaced every released file, once (see clean).
 RE_RELEASE_DAY = "10 October 2026"
 DATASET_URL = f"https://huggingface.co/datasets/{ORG}/{DATASET_REPO}"
@@ -1223,7 +1253,9 @@ def model_card(
     -------
     str
         Hugging Face YAML metadata, then the card in plain English, ending
-        with "Cite This Work" and "License and Contact".
+        with "Cite This Work" and "License and Contact". Its facts list gives
+        the Execution and Teammate Messages lines (EXECUTION_LINES) right
+        after the method.
 
     Raises
     ------
@@ -1278,7 +1310,7 @@ holds a portable model file for every save of its training, and its training
 records.
 
 - **Method:** {entrant.label} (`{entrant.method}`)
-- **Learner Code:** {learner_code_text(entrant.method)}
+{EXECUTION_LINES}- **Learner Code:** {learner_code_text(entrant.method)}
 - **Training Seed:** {entrant.seed}
 - **Saves:** {len(steps):,}, from step {first:,} to step {last:,}
 - **Season 0 Save:** Step {entrant.step:,} (`models/{model_file_name(entrant.step)}`)
@@ -1573,7 +1605,8 @@ def dataset_card(
     -------
     str
         Hugging Face YAML metadata, with ``configs`` naming only the small
-        tables in ``_VIEWER_TABLES``, then the card in plain English.
+        tables in ``_VIEWER_TABLES``, then the card in plain English. Its
+        opening paragraph ends with DATASET_EXECUTION.
     """
     metadata = DatasetCardData(
         license="apache-2.0",
@@ -1609,7 +1642,7 @@ a round robin of nine teams: six trained models and the three scripted bots
 TDM-Alpha, TDM-Beta and TDM-Gamma, which ship inside the package. They played
 {games:,} games on test maps {_numbers_text(maps)}. This dataset holds every game,
 the ratings, the original save folders and the training opponents.
-
+{DATASET_EXECUTION}
 Each model comes from a training run of about 250 million game steps.
 
 | Path | Holds |
@@ -1863,7 +1896,8 @@ def org_card(rows: Sequence[OrgRow], citation: tuple[str, str | None]) -> str:
         tagline, the arXiv badge (when ``citation`` has an arXiv id), what
         MARL-BGs is (its opening follows the repository README's), the game
         and its classes, what wins and what its leaderboard rewards, the models
-        with their Season 0 results, the one-line names, three lines of code,
+        with their Season 0 results, how they run (ORG_EXECUTION), the
+        one-line names, three lines of code,
         who may enter the leaderboard, links, the citation and the contact.
         Hugging Face shows this file as the organization card when the Space
         has no ``index.html``.
@@ -1922,6 +1956,7 @@ The scripted bots TDM-Alpha, TDM-Beta and TDM-Gamma ship inside the package and
 complete the Big Nine, the nine systems in the Season 0 table. Every game, rating
 and original save folder is in the dataset [{ORG}/{DATASET_REPO}]({DATASET_URL}).
 
+{ORG_EXECUTION}
 ## Use One in Three Lines
 
 ```python
