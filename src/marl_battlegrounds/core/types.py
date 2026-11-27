@@ -1001,8 +1001,9 @@ class Observation(NamedTuple):
     Hidden unit rows are zero. Public geometry remains present even for unused
     observers, so a complete unused Observation need not be all zero.
 
-    Each actor may use only its permitted row. Holding this whole runner payload
-    does not grant permission to share private observations or memory. All fields
+    A team's method may use any of its own team's rows, since each holds only what
+    that team can see. This whole runner payload also holds the other team's rows,
+    and no team may read those. All fields
     are required; the immutable tuple does not build, validate, filter or flatten
     data. env.observation_space(agent) describes one actor's field structure.
     """

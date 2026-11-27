@@ -742,7 +742,7 @@ class Environment:
         Notes
         -----
         This describes Core's existing data. It does not flatten features or add
-        identities, and structural membership does not authorize sharing inputs.
+        identities.
         """
         if agent not in self.agents:
             raise ValueError(f"unknown agent {agent!r}")
@@ -852,10 +852,8 @@ class Environment:
         Works in jit and vmap with a static team. The supplied snapshot must be
         coherent; this helper does not compare epochs. It builds only this
         team's transient source banks and does not transfer data to the host.
-        Each recipient's private rows remain separate information rights.
-        Within one decision, a method must not use another actor's private
-        input to choose its action. Teammates may pass information only across
-        decisions, so a message sent on one tick arrives on the next.
+        Every recipient's rows hold only what this team can see, so a method may
+        use any of them to choose any of the team's actions.
         """
         from marl_battlegrounds.evaluation.policy_execution import system_inputs
 

@@ -566,11 +566,9 @@ class SystemInput(NamedTuple):
     Attributes
     ----------
     actors : ActorInput
-        Permitted inputs with leading axes (B, 5). Each recipient retains its
-        own information rights: within one decision, the team method must not
-        use one actor's private rows to choose another actor's action.
-        Teammates may pass information only across decisions, so a message
-        sent on one tick arrives on the next.
+        Permitted inputs with leading axes (B, 5). They hold only what the
+        team can see, so a method may use any row to choose any actor's
+        action.
     action_mask : ActionMask
         Boolean move, target, Ultimate and joint masks shaped (B,5,9),
         (B,5,11), (B,5,2) and (B,5,11,2).
@@ -583,8 +581,8 @@ class SystemInput(NamedTuple):
         False lanes are padding and must not update method-owned memory.
     controlled_mask : Array | None
         Optional Boolean (B,5) action ownership. None means every active slot.
-        Actor rows and physical activity remain unchanged. Ownership grants no
-        extra information rights. This trailing field changes tuple unpacking.
+        Actor rows and physical activity remain unchanged; ownership adds no
+        input. This trailing field changes tuple unpacking.
 
     Notes
     -----
