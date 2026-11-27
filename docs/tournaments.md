@@ -157,7 +157,7 @@ The command needs the exact run folder, as [`population_selection.py`](../exampl
 ## Enter the Leaderboard
 
 We train every entry once on our machine, under the same budget for everyone: 255
-million game steps and 8 hours on one RTX 5090 (see the [Tournament Rules](tournament_rules.md)).
+million game steps and 10 hours on one RTX 5090 (see the [Tournament Rules](tournament_rules.md)).
 So the leaderboard rewards methods that are efficient in both samples and compute.
 
 ```bash
@@ -252,8 +252,8 @@ downloaded.
   your run brings in.
 - Settings you choose by hand, even ones tuned at home, are fine: they are not
   trained or recorded.
-- Our run is the same check on our RTX 5090, training for up to 8 hours. Nothing
-  else runs on the card. At 8 hours we send SIGINT, wait 60 seconds, then kill
+- Our run is the same check on our RTX 5090, training for up to 10 hours. Nothing
+  else runs on the card. At 10 hours we send SIGINT, wait 60 seconds, then kill
   it. Its speed test is the one that counts.
 - Our games play the portable model file that `marl_bgs.export_model` writes
   from your entry: a JAX `Policy` that acts per agent, or a built-in actor
@@ -267,7 +267,7 @@ downloaded.
   `XLA_PYTHON_CLIENT_MEM_FRACTION`. Weights & Biases logs in offline mode.
 - On a GPU, our run does not repeat your home run exactly. Setting
   `XLA_FLAGS=--xla_gpu_deterministic_ops=true` in your train command makes it
-  repeat on an RTX 5090, but it trains 3.6 times slower in the same 8 hours.
+  repeat on an RTX 5090, but it trains 3.6 times slower in the same 10 hours.
 - If your run crashes, we enter its last choice, or else its last save. You may
   then send a version with the bug fixed; one that changes only its settings is
   a duplicate. A different algorithm or model design is a different method. If
@@ -329,11 +329,12 @@ leaderboard stays in the pool and in past tables.
 
 **Why These Numbers.**
 
-- **255 million game steps and 8 hours** sit just above our own slowest
-  baseline. Our six baselines took about 3.6 to 7.0 hours to reach 250 million
-  game steps on one RTX 5090, counting each first run and its continuation (see the
-  [hyperparameter search record](../scripts/paper_experiments/hyperparameter_search.md)), so
-  every Season 0 learned entrant meets the limits an entry faces.
+- **255 million game steps and 10 hours** sit above our own slowest baseline,
+  which takes about 8.7 hours to reach 250 million game steps on one RTX 5090.
+  The six Season 0 baselines took about 3.6 to 7.0 hours, counting each first run
+  and its continuation (see the
+  [hyperparameter search record](../scripts/paper_experiments/hyperparameter_search.md)),
+  so every learned entrant of ours meets the limits an entry faces.
 - **One budget for everyone** means an entry wins by learning more from each
   game step and doing more with each hour on the card.
 - **The play limits** exist because every entrant becomes a downloadable

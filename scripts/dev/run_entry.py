@@ -14,7 +14,7 @@ around it. Name the card in ``CUDA_VISIBLE_DEVICES``::
 
 - ``intake`` checks COMMIT of REPOSITORY with 15 minutes of training, in a
   temporary folder under /tmp that the check removes.
-- ``official`` is the same check with 8 hours of training, in
+- ``official`` is the same check with 10 hours of training, in
   ``FOLDER/official/run``, which must not exist yet and is kept: the clone is
   ``FOLDER/official/run/entry``, with the run's output and its model cache.
 - Both start a systemd user unit and return at once. The unit is
@@ -297,7 +297,7 @@ def _start(kind: str, repository: str, commit: str, folder: Path) -> int:
     Parameters
     ----------
     kind : {"intake", "official"}
-        Which check: 15 minutes of training in a temporary folder, or 8 hours
+        Which check: 15 minutes of training in a temporary folder, or 10 hours
         kept in ``folder / "official" / "run"``.
     repository, commit : str
         What to check: a repository URL or path (a local path is made absolute),
