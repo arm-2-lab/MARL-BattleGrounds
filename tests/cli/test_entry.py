@@ -460,7 +460,7 @@ def test_a_run_with_nothing_saved_waits_only_when_stopped(
     stopped.after_training()
     statuses = ["skipped", "skipped", "not measured", "skipped"]
     assert [stopped.steps[n].status for n in (6, 7, 8, 9)] == statuses
-    assert "Our run trains for up to 8 hours" in stopped.steps[8].detail
+    assert "Our run trains for up to 10 hours" in stopped.steps[8].detail
 
     _write_entry(starter, train="true")
     ended = _checker(starter)

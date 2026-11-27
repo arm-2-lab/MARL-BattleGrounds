@@ -69,8 +69,8 @@ FORM_URL = "https://github.com/arm-2-lab/MARL-BattleGrounds/issues/new"
 FORM_TEMPLATE = "leaderboard_submission.yml"
 """The issue form's file name in ``.github/ISSUE_TEMPLATE``."""
 
-OFFICIAL_TRAIN_MINUTES = 480.0
-"""How long our official run trains each entry, in minutes (8 hours)."""
+OFFICIAL_TRAIN_MINUTES = 600.0
+"""How long our official run trains each entry, in minutes (10 hours)."""
 
 OFFICIAL_GPU = "NVIDIA GeForce RTX 5090"
 """The name JAX and nvidia-smi give our run's card. Step 9 decides only there."""
@@ -1701,7 +1701,7 @@ def check_entry(
         The full 40-character commit SHA to check, with ``repository``.
     train_minutes : float, default=15.0
         How long step 5 trains, in minutes: 15 for the check,
-        OFFICIAL_TRAIN_MINUTES (480) for our official run. Must be above 0.
+        OFFICIAL_TRAIN_MINUTES (600) for our official run. Must be above 0.
     sandbox : callable or None, default=None
         For maintainers: a function ``sandbox(clone, online)`` that returns a
         command prefix (a list of strings, for example a ``bwrap`` command).
