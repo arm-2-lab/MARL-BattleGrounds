@@ -150,8 +150,8 @@ class TrainConfig:
         refuses a curriculum system roster that repeats a class. "tarmac"
         (TarMAC, Das et al., ICML 2019) is recurrent MAPPO's learner, critic
         and recipe with learned messages between teammates: each actor reads,
-        by attention, what its teammates sent at the end of the last tick
-        (rule 6, "Each Agent Decides Alone"). It needs parameter_sharing
+        by attention, what its teammates sent at the end of the last tick.
+        It needs parameter_sharing
         "all". ppo.messages picks "attention" (the paper), "mean" or "blocked"
         (its controls); every other method refuses a value other than
         "attention". ppo.message_rounds is 1 (the default) or 2 (the paper's

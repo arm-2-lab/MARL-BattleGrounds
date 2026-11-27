@@ -1126,7 +1126,7 @@ class TarMACRNN(nn.Module):
     with c_i (160 values). Both rounds use only last-tick memories and this
     tick's sender mask, which holds only public team facts (who is present and
     alive), so a message sent at tick t-1 is read at tick t and never within
-    a tick: rule 6 of the tournament rules, "Each Agent Decides Alone".
+    the tick it was sent.
     messages is "attention", "mean" (every valid sender weighted equally) or
     "blocked" (every sender masked), in every round. Reset and padding rules
     follow ScannedRNN: reset before the cell, invalid rows keep their memory
@@ -1221,9 +1221,10 @@ class TarMACActor(nn.Module):
     GRU's input widened by the 32-float message (``TarMACRNN``): about 20,500
     more weights, and 20,480 more with rounds 2. One shared network for all
     five actors (parameter sharing "all" only). A message is a channel, not
-    sight: it ignores the sensor limits in ``source_availability``, as rule 6 ("Each
-    Agent Decides Alone") allows for messages sent on earlier ticks. No actor reads
-    another's current view. input_scale and messages are fixed settings, as in
+    sight: it ignores the sensor limits in ``source_availability``, as rule 6
+    ("Only What Your Team Sees") allows, since teammates may share anything their
+    team can see. Messages arrive on the next tick, so no actor reads another's
+    current view. input_scale and messages are fixed settings, as in
     RecurrentActor and PPOConfig; rounds (1 or 2) must match the variables,
     which code holding weights reads with ``_tarmac_rounds``.
     """

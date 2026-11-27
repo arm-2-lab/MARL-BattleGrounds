@@ -10,8 +10,8 @@ h' through the same key, value and query layers, over the same senders), and a
 receiver with no valid sender reads an all-zero message; a reset row starts
 its GRU from zero and an invalid row keeps its memory and emits zero; the
 gradient stays finite on a first tick where no sender is valid, in both round
-counts. A message sent on one tick is read on the next and never within it
-(rule 6, "Each Agent Decides Alone"), with one round and with two: a
+counts. A message sent on one tick is read on the next and never within it,
+with one round and with two: a
 teammate's view at tick t never changes another actor's tick-t logits and does
 change its tick t+1 logits, never under "blocked". message_rounds is 1 or 2,
 only TarMAC may set 2, saved settings leave it out at 1, and the weights say how
